@@ -1,0 +1,144 @@
+.image-crop-modal .ant-modal-content {
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid #d9dee6;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 24px 56px rgba(15, 23, 42, 0.24);
+}
+
+.image-crop-modal .ant-modal-body {
+  padding: 0;
+}
+
+.image-crop-modal__header {
+  height: 58px;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #e6e9ee;
+  background: #f7f9fb;
+}
+
+.image-crop-modal__header h2 {
+  margin: 0;
+  color: #1f2937;
+  font-size: 17px;
+  line-height: 24px;
+}
+
+.image-crop-modal__close {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #7b8492;
+  cursor: pointer;
+}
+
+.image-crop-modal__close:hover {
+  background: #eceff3;
+  color: #344054;
+}
+
+.image-crop-modal__body {
+  padding: 18px 24px 20px;
+}
+
+.image-crop-modal__viewport {
+  position: relative;
+  width: 100%;
+  max-width: 500px;
+  aspect-ratio: 1;
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid #d2d8e1;
+  border-radius: 7px;
+  background: #111827;
+  cursor: grab;
+  touch-action: none;
+}
+
+.image-crop-modal__viewport:active {
+  cursor: grabbing;
+}
+
+.image-crop-modal__viewport > img {
+  position: absolute;
+  max-width: none;
+  display: block;
+  user-select: none;
+  pointer-events: none;
+}
+
+.image-crop-modal__grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.image-crop-modal__grid i {
+  position: absolute;
+  display: block;
+  background: rgba(255, 255, 255, 0.48);
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.image-crop-modal__grid .is-v1,
+.image-crop-modal__grid .is-v2 {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+.image-crop-modal__grid .is-v1 {
+  left: 33.333%;
+}
+
+.image-crop-modal__grid .is-v2 {
+  left: 66.666%;
+}
+
+.image-crop-modal__grid .is-h1,
+.image-crop-modal__grid .is-h2 {
+  right: 0;
+  left: 0;
+  height: 1px;
+}
+
+.image-crop-modal__grid .is-h1 {
+  top: 33.333%;
+}
+
+.image-crop-modal__grid .is-h2 {
+  top: 66.666%;
+}
+
+.image-crop-modal__footer {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.image-crop-modal__footer .ant-btn {
+  height: 40px;
+  border-radius: 7px;
+  font-weight: 600;
+}
+
+@media (max-width: 600px) {
+  .image-crop-modal {
+    max-width: calc(100vw - 24px);
+  }
+
+  .image-crop-modal__body {
+    padding: 14px 16px 16px;
+  }
+}

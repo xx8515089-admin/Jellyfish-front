@@ -1,0 +1,25 @@
+{
+  "confirm": "确定",
+  "cancel": "取消",
+  "yes": "是",
+  "no": "否",
+  "search": "搜索",
+  "reset": "重置",
+  "save": "保存",
+  "shotFrames": {
+    "first": "首帧",
+    "key": "关键帧",
+    "last": "尾帧",
+    "upload": {
+      "selectShotFirst": "请先选择一个分镜",
+      "selectImageFile": "请选择图片文件",
+      "createDetailFailed": "创建镜头细节失败，无法绑定图片",
+      "missingFileId": "上传失败：缺少文件 ID",
+      "createSlotFailed": "创建分镜帧槽位失败",
+      "success": "已上传并设为{{frame}}",
+      "failed": "上传并绑定{{frame}}失败：{{error}}",
+      "progress": "上传中 {{percent}}%",
+      "setAsFrame": "上传并设为{{frame}}"
+    }
+  }
+}

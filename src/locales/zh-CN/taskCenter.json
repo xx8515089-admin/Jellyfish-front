@@ -1,0 +1,12 @@
+{
+  "source": {
+    "chapter": "章节：{{name}}",
+    "shot": "镜头：{{name}}",
+    "shotWithIndex": "镜头：{{name}}（第 {{index}} 镜）",
+    "actor": "演员：{{name}}",
+    "scene": "场景：{{name}}",
+    "prop": "道具：{{name}}",
+    "costume": "服装：{{name}}",
+    "character": "角色：{{name}}"
+  }
+}

@@ -1,0 +1,203 @@
+.voice-library-modal {
+  --voice-library-primary: var(--project-create-primary, #1677ff);
+}
+
+.voice-library-modal .ant-modal-content {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 10px;
+  box-shadow: 0 24px 70px rgba(16, 24, 40, 0.24);
+}
+
+.voice-library-modal .ant-modal-header {
+  margin: 0;
+  padding: 18px 22px 12px;
+}
+
+.voice-library-modal .ant-modal-title {
+  color: #1f2d3d;
+  font-size: 16px;
+}
+
+.voice-library-modal .ant-modal-close {
+  top: 12px;
+  right: 14px;
+}
+
+.voice-library-modal .ant-modal-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.voice-library-modal__toolbar {
+  padding: 0 22px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.voice-library-modal__category {
+  color: #27364a;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 32px;
+}
+
+.voice-library-modal__filters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.voice-library-modal__filters .ant-select {
+  min-width: 92px;
+}
+
+.voice-library-modal__filters .ant-select:nth-child(2) {
+  min-width: 110px;
+}
+
+.voice-library-modal__filters .ant-select-selector {
+  border-color: #e2e7ed !important;
+  border-radius: 7px !important;
+  background: #f7f9fb !important;
+  box-shadow: none !important;
+  font-size: 12px;
+}
+
+.voice-library-modal__list {
+  min-height: 360px;
+  max-height: min(52vh, 500px);
+  padding: 4px 22px 16px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-content: start;
+  gap: 10px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.voice-library-modal__list > .ant-empty {
+  grid-column: 1 / -1;
+  margin-top: 110px;
+}
+
+.voice-library-modal__voice {
+  position: relative;
+  min-width: 0;
+  height: 52px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: #f5f7f9;
+  color: #344054;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+.voice-library-modal__voice:hover {
+  background: #eef2f6;
+}
+
+.voice-library-modal__voice.is-selected {
+  border-color: color-mix(in srgb, var(--voice-library-primary) 58%, #d6dee8);
+  background: color-mix(in srgb, var(--voice-library-primary) 6%, #fff);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--voice-library-primary) 8%, transparent);
+}
+
+.voice-library-modal__preview-icon {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 50%;
+  background: #fff;
+  color: #617084;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+  font-size: 10px;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease, box-shadow 150ms ease,
+    transform 150ms ease;
+}
+
+.voice-library-modal__preview-icon svg {
+  transform: translateX(0.5px);
+}
+
+.voice-library-modal__voice:hover .voice-library-modal__preview-icon {
+  border-color: color-mix(in srgb, var(--voice-library-primary) 28%, #e2e8f0);
+  color: var(--voice-library-primary);
+  box-shadow: 0 2px 6px rgba(16, 24, 40, 0.09);
+  transform: scale(1.04);
+}
+
+.voice-library-modal__voice.is-selected .voice-library-modal__preview-icon {
+  border-color: var(--voice-library-primary);
+  background: var(--voice-library-primary);
+  color: #fff;
+  box-shadow: 0 2px 7px color-mix(in srgb, var(--voice-library-primary) 24%, transparent);
+}
+
+.voice-library-modal__voice strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-library-modal__voice small {
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: #e5e9ee;
+  color: #7b8797;
+  font-size: 8px;
+  line-height: 13px;
+}
+
+.voice-library-modal__selected-mark {
+  margin-left: auto;
+  color: var(--voice-library-primary);
+  font-size: 11px;
+}
+
+.voice-library-modal__footer {
+  padding: 12px 22px 16px;
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid #edf0f3;
+}
+
+.voice-library-modal__footer .ant-btn {
+  min-width: 86px;
+  height: 36px;
+  border-radius: 7px;
+  font-weight: 600;
+}
+
+@media (max-width: 760px) {
+  .voice-library-modal__toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .voice-library-modal__filters .ant-select {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .voice-library-modal__list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

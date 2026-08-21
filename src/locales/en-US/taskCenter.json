@@ -1,0 +1,12 @@
+{
+  "source": {
+    "chapter": "Chapter: {{name}}",
+    "shot": "Shot: {{name}}",
+    "shotWithIndex": "Shot: {{name}} (No. {{index}})",
+    "actor": "Actor: {{name}}",
+    "scene": "Scene: {{name}}",
+    "prop": "Prop: {{name}}",
+    "costume": "Costume: {{name}}",
+    "character": "Character: {{name}}"
+  }
+}

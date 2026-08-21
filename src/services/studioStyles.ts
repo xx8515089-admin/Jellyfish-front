@@ -1,0 +1,135 @@
+import { OpenAPI } from './generated'
+import type { CancelablePromise } from './generated'
+import { request as __request } from './generated/core/request'
+
+type ApiEnvelope<T> = {
+  code?: number
+  message?: string
+  data?: T | null
+}
+
+export type StudioCustomStyleType = 1 | 2
+
+export type StudioCustomStyleCreate = {
+  styleType: StudioCustomStyleType
+  name: string
+  promptTemplate: string
+  description: string
+  coverUrl: string
+  publicOption: boolean
+  sortOrder: number
+}
+
+export type StudioCustomStyle = Partial<StudioCustomStyleCreate> & {
+  id?: string | number | null
+  code?: string | null
+  styleCode?: string | null
+}
+
+export type StudioCustomStyleCover = {
+  createdAt?: string | null
+  updatedAt?: string | null
+  id?: string | number | null
+  name?: string | null
+  fileType?: string | null
+  storageKey?: string | null
+  url: string
+  mimeType?: string | null
+  sizeBytes?: number | null
+  width?: number | null
+  height?: number | null
+  sourceType?: number | null
+}
+
+export type StudioStyleOption = {
+  createdAt?: string | null
+  updatedAt?: string | null
+  id: string | number
+  styleType: StudioCustomStyleType
+  name: string
+  language?: string | null
+  coverUrl?: string | null
+  description?: string | null
+  promptTemplate?: string | null
+  status?: number | null
+  defaultOption?: boolean
+  sortOrder?: number | null
+  customOption?: boolean
+  publicOption?: boolean
+}
+
+function createCustomStyle(
+  requestBody: StudioCustomStyleCreate,
+): CancelablePromise<ApiEnvelope<StudioCustomStyle>> {
+  return __request(OpenAPI, {
+    method: 'POST',
+    url: '/api/v1/studio/styles/custom',
+    body: requestBody,
+    mediaType: 'application/json',
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+/** Uploads one cropped JPG or PNG custom-style cover. */
+function uploadCustomStyleCover(
+  file: File,
+): CancelablePromise<ApiEnvelope<StudioCustomStyleCover>> {
+  return __request(OpenAPI, {
+    method: 'POST',
+    url: '/api/v1/studio/styles/custom/covers',
+    formData: { file },
+    mediaType: 'multipart/form-data',
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+/** Loads the enabled style options for one backend style category. */
+function getStyleOptions(
+  styleType: StudioCustomStyleType,
+): CancelablePromise<ApiEnvelope<StudioStyleOption[]>> {
+  return __request(OpenAPI, {
+    method: 'GET',
+    url: '/api/v1/studio/styles/options',
+    query: {
+      type: styleType,
+    },
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+export const StudioStylesApi = {
+  /** Uploads a custom cover and returns its persistent online URL metadata. */
+  async uploadCustomCover(file: File): Promise<StudioCustomStyleCover> {
+    const response = await uploadCustomStyleCover(file)
+    if ((response.code ?? 200) >= 400) {
+      throw new Error(response.message || 'Custom style cover upload failed')
+    }
+    if (!response.data?.url?.trim()) {
+      throw new Error(response.message || 'Custom style cover upload returned no URL')
+    }
+    return response.data
+  },
+  /** Returns visual styles for type 1 or tone styles for type 2. */
+  async getOptions(styleType: StudioCustomStyleType): Promise<StudioStyleOption[]> {
+    const response = await getStyleOptions(styleType)
+    if ((response.code ?? 200) >= 400) {
+      throw new Error(response.message || 'Style options loading failed')
+    }
+    return Array.isArray(response.data) ? response.data : []
+  },
+  async createCustom(requestBody: StudioCustomStyleCreate): Promise<StudioCustomStyle> {
+    const response = await createCustomStyle(requestBody)
+    if ((response.code ?? 200) >= 400) {
+      throw new Error(response.message || 'Custom style creation failed')
+    }
+    return response.data && typeof response.data === 'object'
+      ? response.data
+      : requestBody
+  },
+}

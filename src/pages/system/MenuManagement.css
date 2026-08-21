@@ -1,0 +1,220 @@
+.menu-editor-modal .ant-modal-content {
+  overflow: hidden;
+  border-radius: 12px;
+  padding: 0;
+  box-shadow: 0 22px 48px rgb(15 23 42 / 20%);
+}
+
+.menu-editor-modal .ant-modal-close {
+  top: 18px;
+  right: 18px;
+  color: #64748b;
+}
+
+.menu-editor-modal .ant-modal-close:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.menu-editor-modal .ant-modal-body {
+  padding: 0;
+}
+
+.menu-editor-modal .ant-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0;
+  padding: 14px 24px 18px;
+  border-top: 1px solid #eef1f5;
+  background: #fbfcfe;
+}
+
+.menu-editor-modal .ant-modal-footer .ant-btn + .ant-btn {
+  margin-inline-start: 0;
+}
+
+.menu-editor-modal .ant-modal-footer .ant-btn {
+  min-width: 72px;
+  border-radius: 7px;
+  font-weight: 500;
+}
+
+.menu-editor-modal .ant-modal-footer .ant-btn-primary {
+  box-shadow: 0 6px 14px rgb(22 119 255 / 18%);
+}
+
+.menu-editor {
+  background: #ffffff;
+}
+
+.menu-editor__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 24px 64px 18px 28px;
+  border-bottom: 1px solid #eef1f5;
+  background: linear-gradient(180deg, #fbfdff 0%, #ffffff 100%);
+}
+
+.menu-editor__eyebrow {
+  margin-bottom: 4px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.menu-editor__title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-height: 30px;
+}
+
+.menu-editor__title.ant-typography {
+  margin: 0;
+  color: #111827;
+  font-size: 20px;
+  line-height: 28px;
+}
+
+.menu-editor__mode.ant-tag {
+  margin: 1px 0 0;
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 22px;
+}
+
+.menu-editor__form {
+  padding: 22px 28px 2px;
+}
+
+.menu-editor__section {
+  padding-bottom: 8px;
+}
+
+.menu-editor__section + .menu-editor__section {
+  margin-top: 4px;
+  padding-top: 18px;
+  border-top: 1px dashed #e5eaf0;
+}
+
+.menu-editor__section-title {
+  position: relative;
+  margin-bottom: 14px;
+  padding-left: 10px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.menu-editor__section-title::before {
+  position: absolute;
+  top: 4px;
+  left: 0;
+  width: 3px;
+  height: 12px;
+  border-radius: 999px;
+  background: #1677ff;
+  content: '';
+}
+
+.menu-editor__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 18px;
+  row-gap: 2px;
+}
+
+.menu-editor__wide {
+  grid-column: 1 / -1;
+}
+
+.menu-editor__form .ant-form-item {
+  margin-bottom: 16px;
+}
+
+.menu-editor__form .ant-form-item-label {
+  padding-bottom: 6px;
+}
+
+.menu-editor__form .ant-form-item-label > label {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.menu-editor__form .ant-input,
+.menu-editor__form .ant-select-selector,
+.menu-editor__form .ant-input-number {
+  border-radius: 7px;
+}
+
+.menu-editor__form .ant-input,
+.menu-editor__form .ant-select-single .ant-select-selector,
+.menu-editor__form .ant-input-number {
+  min-height: 34px;
+}
+
+.menu-editor__form .ant-select-single .ant-select-selection-item,
+.menu-editor__form .ant-select-single .ant-select-selection-placeholder {
+  line-height: 32px;
+}
+
+.menu-editor__form .ant-input-number {
+  width: 100%;
+}
+
+.menu-editor__form .ant-input-number-input {
+  height: 32px;
+}
+
+.menu-editor__form .ant-input:hover,
+.menu-editor__form .ant-select:not(.ant-select-disabled):hover .ant-select-selector,
+.menu-editor__form .ant-input-number:hover {
+  border-color: #94a3b8;
+}
+
+.menu-editor__form .ant-input:focus,
+.menu-editor__form .ant-input-focused,
+.menu-editor__form .ant-select-focused .ant-select-selector,
+.menu-editor__form .ant-input-number-focused {
+  border-color: #1677ff;
+  box-shadow: 0 0 0 3px rgb(22 119 255 / 10%);
+}
+
+.menu-editor__switch-item .ant-form-item-control-input {
+  min-height: 32px;
+}
+
+.menu-editor__switch-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+@media (max-width: 680px) {
+  .menu-editor__header {
+    padding: 22px 56px 16px 22px;
+  }
+
+  .menu-editor__form {
+    padding: 20px 22px 4px;
+  }
+
+  .menu-editor__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .menu-editor__wide {
+    grid-column: auto;
+  }
+}

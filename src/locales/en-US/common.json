@@ -1,0 +1,25 @@
+{
+  "confirm": "Confirm",
+  "cancel": "Cancel",
+  "yes": "Yes",
+  "no": "No",
+  "search": "Search",
+  "reset": "Reset",
+  "save": "Save",
+  "shotFrames": {
+    "first": "First frame",
+    "key": "Key frame",
+    "last": "Last frame",
+    "upload": {
+      "selectShotFirst": "Select a shot first",
+      "selectImageFile": "Choose an image file",
+      "createDetailFailed": "Could not create shot detail, so the image cannot be linked",
+      "missingFileId": "Upload failed: missing file ID",
+      "createSlotFailed": "Could not create the shot frame slot",
+      "success": "Uploaded and set as {{frame}}",
+      "failed": "Failed to upload and bind {{frame}}: {{error}}",
+      "progress": "Uploading {{percent}}%",
+      "setAsFrame": "Upload and set as {{frame}}"
+    }
+  }
+}

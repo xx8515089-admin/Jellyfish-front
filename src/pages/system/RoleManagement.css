@@ -1,0 +1,159 @@
+.role-management.ant-card {
+  width: 100%;
+  min-width: 0;
+}
+
+.role-management .ant-card-head {
+  min-height: 56px;
+}
+
+.role-management .ant-card-body {
+  padding: 20px 24px 24px;
+}
+
+.role-management__table .ant-table {
+  border-radius: 8px;
+}
+
+.role-management__table .ant-table-container {
+  width: 100%;
+}
+
+.role-management__table .ant-table-thead > tr > th {
+  background: #fafafa;
+  color: #111827;
+  font-weight: 600;
+}
+
+.role-management__table .ant-table-cell {
+  vertical-align: middle;
+}
+
+.role-management__description {
+  display: inline-block;
+  overflow: hidden;
+  max-width: 220px;
+  color: #334155;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-management__actions {
+  white-space: nowrap;
+}
+
+.role-management__permission-list {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 26px;
+}
+
+.role-management__permission-pill {
+  display: inline-flex;
+  align-items: center;
+  max-width: 180px;
+  min-width: 34px;
+  height: 26px;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #26364d;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 24px;
+  padding: 0 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-management__permission-more {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 24px;
+  padding: 0 9px;
+}
+
+.role-management__permission-select .ant-select-selector {
+  min-height: 38px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.role-management__permission-select .ant-select-selection-overflow {
+  row-gap: 4px;
+}
+
+.role-management__permission-select .ant-select-selection-item {
+  height: auto;
+  line-height: normal;
+}
+
+.role-management__permission-tag {
+  display: inline-flex;
+  align-items: center;
+  max-width: 220px;
+  min-width: 46px;
+  height: 26px;
+  margin: 2px 4px 2px 0;
+  overflow: hidden;
+  border: 1px solid #dbe4ef;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #26364d;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 24px;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+
+.role-management__permission-tag-text {
+  overflow: hidden;
+  min-width: 0;
+  padding-left: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-management__permission-tag-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  margin: 0 5px 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.role-management__permission-tag-close:hover {
+  background: rgb(15 23 42 / 7%);
+  color: #0f172a;
+}
+
+@media (max-width: 1180px) {
+  .role-management__table .ant-table-content {
+    overflow-x: auto;
+  }
+
+  .role-management__table table {
+    min-width: 1040px;
+  }
+}

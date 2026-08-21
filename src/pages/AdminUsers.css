@@ -1,0 +1,95 @@
+.system-users.ant-card {
+  width: 100%;
+  min-width: 0;
+}
+
+.system-users .ant-card-head {
+  min-height: 56px;
+}
+
+.system-users .ant-card-body {
+  padding: 20px 24px 24px;
+}
+
+.system-users__toolbar {
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid #eef2f7;
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.system-users__id-filter {
+  width: 140px;
+}
+
+.system-users__name-filter {
+  width: 260px;
+}
+
+.system-users__table .ant-table {
+  border-radius: 8px;
+}
+
+.system-users__table .ant-table-thead > tr > th {
+  background: #fafafa;
+  color: #111827;
+  font-weight: 600;
+}
+
+.system-users__table .ant-table-cell {
+  vertical-align: middle;
+}
+
+.system-users__form {
+  padding-top: 8px;
+}
+
+.system-users__form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 16px;
+}
+
+.system-users__switch-item .ant-form-item-control-input {
+  min-height: 32px;
+}
+
+.system-users__date-picker {
+  width: 100%;
+}
+
+.system-users__switch-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+@media (max-width: 720px) {
+  .system-users .ant-card-body {
+    padding: 16px;
+  }
+
+  .system-users__id-filter,
+  .system-users__name-filter {
+    width: 100%;
+  }
+
+  .system-users__form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1180px) {
+  .system-users__table .ant-table-content {
+    overflow-x: auto;
+  }
+
+  .system-users__table table {
+    min-width: 1080px;
+  }
+}

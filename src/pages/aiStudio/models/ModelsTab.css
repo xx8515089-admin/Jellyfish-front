@@ -1,0 +1,23 @@
+.model-editor-modal .ant-modal-body {
+  max-height: calc(100vh - 180px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-width: thin;
+}
+
+.model-editor-modal .menu-editor__header {
+  position: sticky;
+  z-index: 5;
+  top: 0;
+}
+
+.model-editor-modal .ant-segmented {
+  padding: 3px;
+  background: #f1f5f9;
+}
+
+.model-editor-modal .ant-segmented-item-label {
+  min-height: 30px;
+  line-height: 30px;
+}

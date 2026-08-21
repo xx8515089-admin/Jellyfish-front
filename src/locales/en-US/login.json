@@ -1,0 +1,11 @@
+﻿{
+  "subtitle": "AI Short-form Studio",
+  "username": "Username",
+  "password": "Password",
+  "usernameRequired": "Enter your username",
+  "passwordRequired": "Enter your password",
+  "submit": "Sign in",
+  "success": "Signed in",
+  "failed": "Sign-in failed. Check your username and password.",
+  "secureNotice": "Accounts are created by an administrator and sessions are validated by the backend."
+}
