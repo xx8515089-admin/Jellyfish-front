@@ -1,7 +1,7 @@
 /* App-specific styles */
 .app-header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: linear-gradient(135deg, #242424 0%, #111111 100%);
+  color: #f2f2f2;
   padding: 2rem 0;
   margin-bottom: 2rem;
   border-radius: 8px;
@@ -15,45 +15,70 @@
 }
 
 .feature-card {
-  background: white;
+  background: #242424;
+  border: 1px solid #3d3d3d;
+  color: #f2f2f2;
   border-radius: 8px;
   padding: 1.5rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.2);
   transition: all 0.3s ease;
 }
 
 .feature-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
   transform: translateY(-2px);
 }
 
 /* Tailwind and Ant Design compatibility */
 .ant-card {
-  border: 1px solid #f0f0f0;
+  border: 1px solid #3d3d3d;
 }
 
 .ant-btn-primary {
-  background: #1890ff;
-  border-color: #1890ff;
+  background: #3c3c3c;
+  border-color: #5a5a5a;
 }
 
 .ant-btn-primary:hover {
-  background: #40a9ff;
-  border-color: #40a9ff;
+  background: #4a4a4a;
+  border-color: #6c6c6c;
 }
 
 /* Project workbench: tab 选中态主色下划线 */
 .project-workbench-tabs.ant-tabs .ant-tabs-ink-bar {
-  background: #6366f1;
+  background: #d7d9df;
   height: 3px;
 }
 .project-workbench-tabs.ant-tabs .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
-  color: #6366f1;
+  color: #f2f2f2;
   font-weight: 600;
 }
 .project-workbench-tabs.ant-tabs .ant-tabs-tab:hover .ant-tabs-tab-btn {
-  color: #6366f1;
+  color: #f2f2f2;
 }
+
+.app-route-loading {
+  display: grid;
+  width: 100vw;
+  height: 100vh;
+  place-items: center;
+  background: #111111;
+}
+
+.app-route-loading::before {
+  width: 22px;
+  height: 22px;
+  border: 2px solid rgb(255 255 255 / 12%);
+  border-top-color: rgb(255 255 255 / 72%);
+  border-radius: 999px;
+  animation: app-route-loading-spin 0.8s linear infinite;
+  content: '';
+}
+
+@keyframes app-route-loading-spin {
+  to { transform: rotate(360deg); }
+}
+
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }

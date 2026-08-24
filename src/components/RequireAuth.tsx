@@ -13,6 +13,7 @@ import {
 } from '../auth'
 import type { AuthUserSnapshot } from '../auth'
 import { useAppStore } from '../store/useAppStore'
+import { withTimeout } from '../utils/withTimeout'
 
 /** 校验 bearer token，并定期刷新当前用户与额度展示。 */
 const RequireAuth: React.FC<{ children: React.ReactElement }> = ({ children }) => {
@@ -47,10 +48,13 @@ const RequireAuth: React.FC<{ children: React.ReactElement }> = ({ children }) =
         if (active) setStatus('anonymous')
         return
       }
-
       refreshInFlight = true
       try {
-        const response = await AuthService.meApiV1AuthMeGet()
+        const response = await withTimeout(
+          AuthService.meApiV1AuthMeGet(),
+          5_000,
+          'Auth check timed out',
+        )
         if (!active) return
         if (response.code === 401) {
           rejectCurrentSession(requestToken)

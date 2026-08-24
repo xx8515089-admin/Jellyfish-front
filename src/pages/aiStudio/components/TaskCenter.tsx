@@ -6,6 +6,7 @@ import {
   PushpinOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons'
+import { BarChart3 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FilmService } from '../../../services/generated'
@@ -460,9 +461,22 @@ export function TaskCenter() {
             size="small"
             className="shadow-lg"
             extra={
-              <Button size="small" type="text" onClick={() => setOpen(false)}>
-                {l('收起', 'Collapse')}
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<BarChart3 size={14} strokeWidth={1.75} />}
+                  onClick={() => {
+                    navigate('/efficiency-overview')
+                    setOpen(false)
+                  }}
+                >
+                  {l('效能总览', 'Efficiency')}
+                </Button>
+                <Button size="small" type="text" onClick={() => setOpen(false)}>
+                  {l('收起', 'Collapse')}
+                </Button>
+              </div>
             }
             bodyStyle={{ maxHeight: 304, overflow: 'auto' }}
           >
@@ -682,7 +696,7 @@ export function TaskCenter() {
           onPointerMove={handleButtonPointerMove}
           onPointerUp={handleButtonPointerUp}
           onPointerCancel={handleButtonPointerUp}
-          className="shadow-lg pointer-events-auto touch-none select-none"
+          className="task-center-trigger shadow-lg pointer-events-auto touch-none select-none"
         >
           <span className="inline-flex items-center gap-1">
             <span>{open ? l('收起任务', 'Collapse tasks') : l('任务中心', 'Task center')}</span>

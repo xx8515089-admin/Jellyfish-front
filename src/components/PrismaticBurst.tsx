@@ -375,10 +375,11 @@ const PrismaticBurst = ({
       if (!ro) window.removeEventListener('resize', resize);
       io?.disconnect();
       document.removeEventListener('visibilitychange', onVis);
-      try {
-        container.removeChild(gl.canvas);
-      } catch (e) {
-        void e;
+      const canvas = gl.canvas;
+      if (canvas.parentNode === container) {
+        container.removeChild(canvas);
+      } else {
+        canvas.remove();
       }
       meshRef.current = null;
       triRef.current = null;

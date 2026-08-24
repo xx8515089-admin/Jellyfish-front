@@ -17,6 +17,7 @@ import {
 import type { AuthUserSnapshot } from '../auth'
 import { useAppStore } from '../store/useAppStore'
 import PrismaticBurst from '../components/PrismaticBurst'
+import { withTimeout } from '../utils/withTimeout'
 import './Login.css'
 
 interface LoginValues { username: string; password: string }
@@ -44,7 +45,11 @@ const Login: React.FC = () => {
     if (submitting) return
     setSubmitting(true)
     try {
-      const response = await AuthService.loginApiV1AuthLoginPost({ requestBody: values })
+      const response = await withTimeout(
+        AuthService.loginApiV1AuthLoginPost({ requestBody: values }),
+        10_000,
+        '登录接口响应超时，请检查后端服务是否启动',
+      )
       if (response.code !== undefined && response.code !== 0 && response.code >= 400) {
         throw new Error(response.message || t('failed'))
       }
@@ -61,7 +66,11 @@ const Login: React.FC = () => {
         { replace: true },
       )
     } catch (error) {
-      const detail = error instanceof ApiError ? error.body?.message : undefined
+      const detail = error instanceof ApiError
+        ? error.body?.message
+        : error instanceof Error
+          ? error.message
+          : undefined
       void messageApi.error(detail ?? t('failed'))
     } finally {
       setSubmitting(false)

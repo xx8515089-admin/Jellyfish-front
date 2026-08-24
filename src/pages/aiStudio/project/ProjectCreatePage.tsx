@@ -146,6 +146,11 @@ const canReadImportedScriptAsText = (fileName: string) => {
   return TEXT_IMPORT_EXTENSIONS.some((extension) => normalizedName.endsWith(extension))
 }
 
+const toManualScriptFileName = (title: string) => {
+  const safeTitle = title.trim().replace(/[\\/:*?"<>|]+/g, '_').slice(0, 60)
+  return `${safeTitle || 'script'}.txt`
+}
+
 const ProjectCreatePage: React.FC = () => {
   const l = useBilingualText()
   const navigate = useNavigate()
@@ -400,41 +405,64 @@ const ProjectCreatePage: React.FC = () => {
     || scriptImportId !== null
   )
 
-  const buildBasicInfoConfirmRequest = () => {
+  const validateBasicInfo = () => {
     if (!name.trim()) {
       message.warning(l('请输入作品名称', 'Enter a project name'))
-      return null
+      return false
     }
     if (!script.trim()) {
       message.warning(l('请输入剧本原文', 'Enter the script'))
-      return null
-    }
-    if (scriptImportId === null) {
-      message.warning(l('请先上传并解析剧本', 'Upload and parse a script first'))
-      return null
+      return false
     }
     if (!selectedVisualStyle || !selectedToneStyle) {
       message.warning(l('请选择画面风格和影调风格', 'Select both a visual style and a tone style'))
-      return null
+      return false
     }
+    return true
+  }
 
+  const buildBasicInfoConfirmRequest = (
+    importId: StudioScriptImportId,
+    visualStyleOption: DisplayedStyle,
+    toneStyleOption: DisplayedStyle,
+  ) => {
     return {
-      id: scriptImportId,
+      id: importId,
       title: name.trim(),
       videoRatio: ratio,
       rawText: script,
       targetMarket: 'overseas',
-      visualStyleId: selectedVisualStyle.id ?? null,
-      toneStyleId: selectedToneStyle.id ?? null,
+      visualStyleId: visualStyleOption.id ?? null,
+      toneStyleId: toneStyleOption.id ?? null,
     }
   }
 
+  const ensureScriptImportId = async () => {
+    if (scriptImportId !== null) return scriptImportId
+
+    const fileName = toManualScriptFileName(name)
+    const parsed = await StudioScriptsApi.parse(
+      new File([script], fileName, { type: 'text/plain' }),
+    )
+    if (parsed.id === null || parsed.id === undefined) {
+      throw new Error(l('剧本解析未返回导入 ID', 'Script parsing did not return an import ID'))
+    }
+    const parsedText = (parsed.rawText ?? '').trim()
+    if (parsedText) setScript(parsedText.slice(0, MAX_SCRIPT_LENGTH))
+    setImportedFileName(parsed.fileName?.trim() || fileName)
+    setScriptImportId(parsed.id)
+    return parsed.id
+  }
+
   const handleEnterEpisodes = async () => {
-    const requestBody = buildBasicInfoConfirmRequest()
-    if (!requestBody) return
+    const visualStyleOption = selectedVisualStyle
+    const toneStyleOption = selectedToneStyle
+    if (!validateBasicInfo() || !visualStyleOption || !toneStyleOption) return
 
     setSubmitting(true)
     try {
+      const importId = await ensureScriptImportId()
+      const requestBody = buildBasicInfoConfirmRequest(importId, visualStyleOption, toneStyleOption)
       const confirmed = await StudioScriptsApi.confirmBasicInfo(requestBody)
       if (confirmed.id === null || confirmed.id === undefined) {
         throw new Error(l('确认接口未返回剧本导入 ID', 'The confirmation response did not include an import ID'))
@@ -469,11 +497,14 @@ const ProjectCreatePage: React.FC = () => {
   }
 
   const handleSaveAndExit = async () => {
-    const requestBody = buildBasicInfoConfirmRequest()
-    if (!requestBody) return
+    const visualStyleOption = selectedVisualStyle
+    const toneStyleOption = selectedToneStyle
+    if (!validateBasicInfo() || !visualStyleOption || !toneStyleOption) return
 
     setSubmitting(true)
     try {
+      const importId = await ensureScriptImportId()
+      const requestBody = buildBasicInfoConfirmRequest(importId, visualStyleOption, toneStyleOption)
       await StudioScriptsApi.confirmBasicInfo(requestBody)
       message.success(l('基础信息已保存', 'Basic information saved'))
       leaveProjectCreation()
@@ -706,7 +737,6 @@ const ProjectCreatePage: React.FC = () => {
       && script.trim()
       && ratio
       && visualStyle
-      && scriptImportId !== null
       && selectedVisualStyle
       && selectedToneStyle
     )

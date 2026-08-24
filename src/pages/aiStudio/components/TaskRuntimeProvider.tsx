@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import type { ReactNode } from 'react'
-import { FilmService } from '../../../services/generated'
+import { ApiError, FilmService } from '../../../services/generated'
+import { hasAuthSession } from '../../../auth'
 import { useTaskUiStore } from './taskUiStore'
 
 const TASK_POLL_INTERVAL_MS = 4000
@@ -19,6 +20,10 @@ export function TaskRuntimeProvider({ children }: TaskRuntimeProviderProps) {
     let timer: number | null = null
 
     const load = async () => {
+      if (!hasAuthSession()) {
+        setServerTasks([])
+        return
+      }
       try {
         const res = await FilmService.listTasksApiV1FilmTasksGet({
           recentSeconds: TASK_RECENT_SECONDS,
@@ -27,9 +32,12 @@ export function TaskRuntimeProvider({ children }: TaskRuntimeProviderProps) {
         })
         if (cancelled) return
         setServerTasks(res.data?.items ?? [])
-      } catch {
-        if (!cancelled) {
-          setServerTasks([])
+      } catch (error) {
+        if (cancelled) return
+        setServerTasks([])
+        if (error instanceof ApiError && error.status === 401) {
+          cancelled = true
+          return
         }
       } finally {
         if (!cancelled) {

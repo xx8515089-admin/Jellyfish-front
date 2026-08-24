@@ -22,12 +22,8 @@ import {
   Typography,
 } from 'antd'
 import type { TableColumnsType } from 'antd'
-import {
-  PlusOutlined,
-  EditOutlined,
-  DeleteOutlined,
-  RightOutlined,
-} from '@ant-design/icons'
+import { DeleteOutlined, EditOutlined } from '@ant-design/icons'
+import { ChevronRight, Plus } from 'lucide-react'
 import { LlmService } from '../../../services/generated/services/LlmService'
 import type {
   ModelRead,
@@ -233,7 +229,6 @@ export default function ModelsTab() {
   const selectedFormCategory = Form.useWatch<ModelCategoryKey | undefined>('category', form)
   const { lg } = Grid.useBreakpoint()
   const isLargeScreen = lg ?? false
-
   const load = async () => {
     setLoading(true)
     setProviderOptionsLoading(true)
@@ -491,35 +486,35 @@ export default function ModelsTab() {
     {
       title: l('操作', 'Actions'),
       key: 'action',
-      width: '10%',
-      align: 'center',
+      width: '14%',
+      align: 'left',
       render: (_, record) => (
-        <Space size={4} className="flex-nowrap justify-center">
-          <Tooltip title={l('编辑', 'Edit')}>
-            <Button
-              type="text"
-              size="small"
-              className={TABLE_ACTION_BTN_EDIT_CLASS}
-              icon={<EditOutlined />}
-              onClick={(e) => {
-                e.stopPropagation()
-                openModelModal(record)
-              }}
-            />
-          </Tooltip>
-          <Tooltip title={l('删除', 'Delete')}>
-            <Button
-              type="text"
-              size="small"
-              danger
-              className={TABLE_ACTION_BTN_DELETE_CLASS}
-              icon={<DeleteOutlined />}
-              onClick={(event) => {
-                event.stopPropagation()
-                handleDeleteModel(record)
-              }}
-            />
-          </Tooltip>
+        <Space size={10} className="flex-nowrap justify-start">
+          <Button
+            type="text"
+            size="small"
+            className={TABLE_ACTION_BTN_EDIT_CLASS}
+            icon={<EditOutlined />}
+            onClick={(e) => {
+              e.stopPropagation()
+              openModelModal(record)
+            }}
+          >
+            {l('编辑', 'Edit')}
+          </Button>
+          <Button
+            type="text"
+            size="small"
+            danger
+            className={TABLE_ACTION_BTN_DELETE_CLASS}
+            icon={<DeleteOutlined />}
+            onClick={(event) => {
+              event.stopPropagation()
+              handleDeleteModel(record)
+            }}
+          >
+            {l('删除', 'Delete')}
+          </Button>
         </Space>
       ),
     },
@@ -527,26 +522,26 @@ export default function ModelsTab() {
 
   return (
     <>
-      <div className="flex-shrink-0 px-4 py-2 border-b border-gray-100 bg-white flex flex-wrap items-center justify-between gap-2">
+      <div className="model-management__toolbar flex-shrink-0 px-4 py-2 border-b border-gray-100 bg-white flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="text-gray-600 text-sm">{l('共 {{count}} 个模型', '{{count}} models').replace('{{count}}', String(models.length))}</span>
         </div>
         <Space wrap>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => openModelModal()}>
+          <Button type="primary" icon={<Plus size={17} strokeWidth={1.75} />} onClick={() => openModelModal()}>
             {l('添加模型', 'Add model')}
           </Button>
         </Space>
       </div>
 
-      <Layout className="flex-1 min-h-0 flex-row overflow-hidden">
+      <Layout className="model-management__workspace flex-1 min-h-0 flex-row overflow-hidden">
         <div
-          className="flex-shrink-0 border-r border-gray-200 bg-white overflow-auto"
-          style={{ width: treeCollapsed ? 48 : 200 }}
+          className="model-management__rail flex-shrink-0 border-r border-gray-200 bg-white overflow-auto"
+          style={{ width: treeCollapsed ? 42 : 176 }}
         >
           {treeCollapsed ? (
             <Button
               type="text"
-              icon={<RightOutlined />}
+              icon={<ChevronRight size={17} strokeWidth={1.75} />}
               onClick={() => setTreeCollapsed(false)}
               className="w-full rounded-none"
             />
@@ -557,7 +552,7 @@ export default function ModelsTab() {
                 <Button
                   type="text"
                   size="small"
-                  icon={<RightOutlined rotate={180} />}
+                  icon={<ChevronRight size={17} strokeWidth={1.75} style={{ transform: 'rotate(180deg)' }} />}
                   onClick={() => setTreeCollapsed(true)}
                 />
               </div>
@@ -573,19 +568,19 @@ export default function ModelsTab() {
           )}
         </div>
 
-        <div className="flex-1 min-w-0 overflow-auto p-4 bg-gray-50">
+        <div className="model-management__content flex-1 min-w-0 overflow-auto p-4 bg-gray-50">
           {modelList.length === 0 ? (
-            <Card>
+            <Card className="model-management__table-card">
               <Empty description={models.length === 0 ? l('暂无模型', 'No models') : l('当前分类暂无模型', 'No models in this category')}>
                 {providers.length > 0 && models.length === 0 && (
-                  <Button type="primary" icon={<PlusOutlined />} onClick={() => openModelModal()}>
+                  <Button type="primary" icon={<Plus size={17} strokeWidth={1.75} />} onClick={() => openModelModal()}>
                     {l('添加第一个模型', 'Add the first model')}
                   </Button>
                 )}
               </Empty>
             </Card>
           ) : (
-            <Card>
+            <Card className="model-management__table-card">
               <Table<ModelListItem>
                 rowKey="id"
                 loading={loading}
@@ -608,7 +603,7 @@ export default function ModelsTab() {
 
         {selectedModel && isLargeScreen && (
           <div
-            className="flex-shrink-0 overflow-auto border-l border-gray-200 bg-white"
+            className="model-management__detail flex-shrink-0 overflow-auto border-l border-gray-200 bg-white"
             style={{ width: '36%', minWidth: 320 }}
           >
             <div className="p-4 border-b border-gray-100 flex items-center justify-between">
@@ -675,6 +670,14 @@ export default function ModelsTab() {
                   {getCategoryLabel(selectedModel.category)}
                 </Tag>
               </div>
+              <div>
+                <div className="text-sm text-gray-500 mb-1">{l('关联供应商', 'Provider')}</div>
+                <div>{getProviderName(selectedModel.provider_id)}</div>
+              </div>
+              <div>
+                <div className="text-sm text-gray-500 mb-1">{l('描述', 'Description')}</div>
+                <div className="text-gray-700 text-sm">{selectedModel.description || '—'}</div>
+              </div>
               <Space>
                 <Button
                   type="primary"
@@ -697,7 +700,7 @@ export default function ModelsTab() {
         }}
         onOk={() => void handleSaveModel()}
         afterOpenChange={handleModelModalOpenChange}
-        width={720}
+        width="min(960px, calc(100vw - 48px))"
         className="menu-editor-modal model-editor-modal"
         okText={l('保存', 'Save')}
         cancelText={l('取消', 'Cancel')}

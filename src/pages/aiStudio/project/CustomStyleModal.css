@@ -51,7 +51,7 @@
 }
 
 .custom-style-modal__heading-note a:hover {
-  color: #1677ff;
+  color: var(--jf-accent-strong, #8f8172);
 }
 
 .custom-style-modal__close {
@@ -126,8 +126,8 @@
 .custom-style-modal .ant-input:focus,
 .custom-style-modal .ant-input-focused,
 .custom-style-modal .ant-input-affix-wrapper-focused {
-  border-color: #1677ff;
-  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.1);
+  border-color: var(--jf-accent-border, #bfb8ae);
+  box-shadow: 0 0 0 2px rgba(143, 129, 114, 0.1);
 }
 
 .custom-style-modal .ant-input::placeholder,

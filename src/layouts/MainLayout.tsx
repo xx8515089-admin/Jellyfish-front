@@ -1,12 +1,8 @@
 import type React from 'react';
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Layout, Menu, theme, Dropdown, Space, Avatar, Select, Breadcrumb, Tag, Tooltip, Button } from 'antd'
 import type { MenuProps } from 'antd'
-import {
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
-  UserOutlined,
-} from '@ant-design/icons'
+import { PanelLeftClose, PanelLeftOpen, UserRound } from 'lucide-react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
@@ -15,7 +11,7 @@ import { TaskRuntimeProvider } from '../pages/aiStudio/components/TaskRuntimePro
 import { clearAuthSession, getFirstMenuPath } from '../auth'
 import type { AuthMenuSnapshot } from '../auth'
 import { MenuIconPreview } from '../components'
-import { AuthService } from '../services/generated'
+import { AuthService, StudioProjectsService } from '../services/generated'
 
 const { Header, Sider, Content } = Layout
 
@@ -25,6 +21,12 @@ const CONTENT_PADDING = 5
 type CurrentMenuMatch = {
   key: string
   ancestorKeys: string[]
+}
+
+type SidebarProject = {
+  id: string
+  name: string
+  description: string
 }
 
 const getMenuKey = (menu: AuthMenuSnapshot) => `auth-menu-${menu.id}`
@@ -110,12 +112,21 @@ function requiredQueryMatches(requiredSearch: string, currentSearch: string): bo
   return true
 }
 
+function getProjectIdFromPathname(pathname: string): string | null {
+  const segments = normalizePathname(pathname).replace(/^\/+/, '').split('/').filter(Boolean)
+  if (segments[0] !== 'projects' || !segments[1] || segments[1] === 'create') return null
+  try {
+    return decodeURIComponent(segments[1])
+  } catch {
+    return segments[1]
+  }
+}
+
 const MainLayout: React.FC = () => {
   const { t, i18n } = useTranslation('layout')
   const location = useLocation()
   const navigate = useNavigate()
   const { token } = theme.useToken()
-
   const collapsed = useAppStore((state) => state.siderCollapsed)
   const toggleCollapsed = useAppStore((state) => state.toggleSider)
   const user = useAppStore((state) => state.user)
@@ -123,10 +134,50 @@ const MainLayout: React.FC = () => {
   const setLanguage = useAppStore((state) => state.setLanguage)
   const authMenus = useAppStore((state) => state.menus)
   const setAuthMenus = useAppStore((state) => state.setMenus)
-  const sidebarToggleLabel = collapsed ? t('actions.expandSidebar') : t('actions.collapseSidebar')
+  const sidebarToggleLabel = collapsed
+    ? t('actions.expandSidebar', { defaultValue: language === 'en-US' ? 'Expand sidebar' : '展开侧边栏' })
+    : t('actions.collapseSidebar', { defaultValue: language === 'en-US' ? 'Collapse sidebar' : '收起侧边栏' })
+  const currentProjectId = useMemo(() => getProjectIdFromPathname(location.pathname), [location.pathname])
+  const [sidebarProject, setSidebarProject] = useState<SidebarProject | null>(null)
+
+  useEffect(() => {
+    let ignore = false
+    if (!currentProjectId) {
+      setSidebarProject(null)
+      return () => {
+        ignore = true
+      }
+    }
+
+    void StudioProjectsService.getProjectApiV1StudioProjectsProjectIdGet({ projectId: currentProjectId })
+      .then((response) => {
+        if (ignore) return
+        const project = response.data
+        setSidebarProject(project
+          ? {
+            id: project.id,
+            name: project.name,
+            description: project.description ?? '',
+          }
+          : null)
+      })
+      .catch(() => {
+        if (!ignore) setSidebarProject(null)
+      })
+
+    return () => {
+      ignore = true
+    }
+  }, [currentProjectId])
 
   const menuItems = useMemo(() => buildNavigationItems(authMenus), [authMenus])
   const homePath = useMemo(() => getFirstMenuPath(authMenus) ?? '/projects', [authMenus])
+  const appTitle = t('title', { defaultValue: 'Jellyfish' })
+  const appSubtitle = t('subtitle', { defaultValue: language === 'en-US' ? 'AI Short-form Studio' : 'AI 短剧工作台' })
+  const brandTitle = sidebarProject?.name?.trim() || appTitle
+  const brandSubtitle = currentProjectId
+    ? sidebarProject?.description?.trim() || t('breadcrumb.projectWorkspace', { defaultValue: language === 'en-US' ? 'Project Workspace' : '项目工作台' })
+    : appSubtitle
   const currentMenu = useMemo(
     () => findCurrentMenu(authMenus, location.pathname, location.search),
     [authMenus, location.pathname, location.search],
@@ -234,10 +285,10 @@ const MainLayout: React.FC = () => {
             {!collapsed && (
               <div className="min-w-0">
                 <div className="text-base font-semibold text-gray-900 truncate">
-                  {t('title')}
+                  {brandTitle}
                 </div>
                 <div className="text-xs text-gray-500 truncate">
-                  {t('subtitle')}
+                  {brandSubtitle}
                 </div>
               </div>
             )}
@@ -245,6 +296,7 @@ const MainLayout: React.FC = () => {
         </div>
 
         <Menu
+          theme="dark"
           mode="inline"
           selectedKeys={selectedKeys}
           defaultOpenKeys={defaultOpenKeys}
@@ -277,7 +329,9 @@ const MainLayout: React.FC = () => {
             <Button
               type="text"
               aria-label={sidebarToggleLabel}
-              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              icon={collapsed
+                ? <PanelLeftOpen size={18} strokeWidth={1.75} />
+                : <PanelLeftClose size={18} strokeWidth={1.75} />}
               onClick={toggleCollapsed}
               style={{
                 width: 32,
@@ -336,7 +390,7 @@ const MainLayout: React.FC = () => {
               placement="bottomRight"
             >
               <div className="flex items-center gap-2 cursor-pointer">
-                <Avatar size={32} icon={<UserOutlined />} />
+                <Avatar size={32} icon={<UserRound size={16} strokeWidth={1.75} />} />
                 <div className="hidden md:flex flex-col leading-tight">
                   <span className="text-sm font-medium text-gray-800">{user.name}</span>
                   <span className="text-xs text-gray-500">{user.role}</span>

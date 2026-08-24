@@ -17,7 +17,24 @@ export type SystemSupplierCreateRequest = {
   active: boolean
 }
 
+export type SystemSupplierUpdateRequest = {
+  id: number
+  name: string
+  baseUrl: string
+  apiKey: string
+  apiSecret: string
+  description: string
+  active: boolean
+}
+
 export type SystemSupplierModelType = 1 | 2 | 3
+
+export type SystemSupplierModelsQuery = {
+  supplierId: number
+  type?: SystemSupplierModelType
+  page: number
+  pageSize: number
+}
 
 export type SystemSupplierImageCapabilities = {
   aspectRatios: string[]
@@ -128,6 +145,13 @@ export type SystemSupplierModelRead = {
   speechVoiceProviderCode?: string | null
 }
 
+export type SystemSupplierModelsPage = {
+  items: SystemSupplierModelRead[]
+  page: number
+  pageSize: number
+  total: number
+}
+
 export type SystemSupplierRead = {
   createdAt?: string | null
   updatedAt?: string | null
@@ -148,6 +172,20 @@ function createSystemSupplier(
   return __request(OpenAPI, {
     method: 'POST',
     url: '/api/v1/system/suppliers/create',
+    body: requestBody,
+    mediaType: 'application/json',
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function updateSystemSupplier(
+  requestBody: SystemSupplierUpdateRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'POST',
+    url: '/api/v1/system/suppliers/update',
     body: requestBody,
     mediaType: 'application/json',
     errors: {
@@ -191,6 +229,19 @@ function getAllSystemSuppliers(): CancelablePromise<ApiEnvelope<SystemSupplierRe
   })
 }
 
+function getSystemSupplierModels(
+  query: SystemSupplierModelsQuery,
+): CancelablePromise<ApiEnvelope<SystemSupplierModelsPage>> {
+  return __request(OpenAPI, {
+    method: 'GET',
+    url: '/api/v1/system/suppliers/getModels',
+    query,
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
 export const SystemSuppliersApi = {
   async getAll(): Promise<SystemSupplierRead[]> {
     const response = await getAllSystemSuppliers()
@@ -199,10 +250,28 @@ export const SystemSuppliersApi = {
     }
     return Array.isArray(response.data) ? response.data : []
   },
+  async getModels(query: SystemSupplierModelsQuery): Promise<SystemSupplierModelsPage> {
+    const response = await getSystemSupplierModels(query)
+    if ((response.code ?? 200) >= 400) {
+      throw new Error(response.message || 'Supplier models loading failed')
+    }
+    return {
+      items: Array.isArray(response.data?.items) ? response.data.items : [],
+      page: response.data?.page ?? query.page,
+      pageSize: response.data?.pageSize ?? query.pageSize,
+      total: response.data?.total ?? 0,
+    }
+  },
   async create(requestBody: SystemSupplierCreateRequest): Promise<void> {
     const response = await createSystemSupplier(requestBody)
     if ((response.code ?? 200) >= 400) {
       throw new Error(response.message || 'Supplier creation failed')
+    }
+  },
+  async update(requestBody: SystemSupplierUpdateRequest): Promise<void> {
+    const response = await updateSystemSupplier(requestBody)
+    if ((response.code ?? 200) >= 400) {
+      throw new Error(response.message || 'Supplier update failed')
     }
   },
   async createModel(requestBody: SystemSupplierModelCreateRequest): Promise<void> {

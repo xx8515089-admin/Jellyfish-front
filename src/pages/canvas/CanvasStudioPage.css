@@ -87,9 +87,8 @@
   text-align: center;
 }
 
-.canvas-studio-error > .anticon {
+.canvas-studio-error__icon {
   color: #f59e0b;
-  font-size: 30px;
 }
 
 .canvas-studio-error h1,
@@ -107,7 +106,7 @@
     grid-template-columns: auto minmax(0, 1fr);
   }
 
-  .canvas-studio-page__back.ant-btn > span:not(.anticon) {
+  .canvas-studio-page__back.ant-btn > span:last-child {
     display: none;
   }
 
@@ -119,6 +118,73 @@
 .canvas-studio-page__viewport > .jellyfish-canvas-runtime {
   width: 100%;
   height: 100%;
+}
+
+:where(
+  .jellyfish-canvas-runtime,
+  .jellyfish-canvas-runtime *,
+  .jellyfish-canvas-runtime::before,
+  .jellyfish-canvas-runtime::after,
+  .jellyfish-canvas-runtime *::before,
+  .jellyfish-canvas-runtime *::after
+) {
+  box-sizing: border-box;
+  border-width: 0;
+  border-style: solid;
+  border-color: #e4e4e7;
+}
+
+:where(
+  .jellyfish-canvas-runtime button,
+  .jellyfish-canvas-runtime input,
+  .jellyfish-canvas-runtime optgroup,
+  .jellyfish-canvas-runtime select,
+  .jellyfish-canvas-runtime textarea
+) {
+  margin: 0;
+  padding: 0;
+  color: inherit;
+  font-family: inherit;
+  font-size: 100%;
+  font-weight: inherit;
+  line-height: inherit;
+}
+
+:where(.jellyfish-canvas-runtime button, .jellyfish-canvas-runtime select) {
+  text-transform: none;
+}
+
+:where(
+  .jellyfish-canvas-runtime button,
+  .jellyfish-canvas-runtime [type='button'],
+  .jellyfish-canvas-runtime [type='reset'],
+  .jellyfish-canvas-runtime [type='submit']
+) {
+  -webkit-appearance: button;
+  background-color: transparent;
+  background-image: none;
+}
+
+:where(.jellyfish-canvas-runtime button, .jellyfish-canvas-runtime [role='button']) {
+  cursor: pointer;
+}
+
+:where(.jellyfish-canvas-runtime :disabled) {
+  cursor: default;
+}
+
+:where(.jellyfish-canvas-runtime textarea) {
+  resize: vertical;
+}
+
+:where(.jellyfish-canvas-runtime input::placeholder, .jellyfish-canvas-runtime textarea::placeholder) {
+  color: #a1a1aa;
+  opacity: 1;
+}
+
+:where(.jellyfish-canvas-runtime img, .jellyfish-canvas-runtime video) {
+  max-width: 100%;
+  height: auto;
 }
 
 .jellyfish-canvas-runtime .art-loader-container {

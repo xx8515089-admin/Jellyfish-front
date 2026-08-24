@@ -13,16 +13,17 @@ import {
 } from 'antd'
 import type { InputRef } from 'antd'
 import {
-  PlusOutlined,
-  EditOutlined,
-  DeleteOutlined,
-  InfoCircleOutlined,
-  MoreOutlined,
-  SearchOutlined,
-  PictureOutlined,
-  FileTextOutlined,
-  FolderOpenOutlined,
-} from '@ant-design/icons'
+  AlertTriangle,
+  FileText,
+  FolderOpen,
+  Image as ImageIcon,
+  Info,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+} from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { StudioProjectsService } from '../../../services/generated'
 import { StudioScriptsApi } from '../../../services/studioScripts'
@@ -325,7 +326,7 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
             <img className="project-lobby-card__image" src={p.coverUrl} alt="" />
           ) : (
             <div className="project-lobby-card__placeholder" aria-hidden="true">
-              <PictureOutlined />
+              <ImageIcon size={28} strokeWidth={1.6} />
               <span>{l('暂无图片', 'No image')}</span>
             </div>
           )}
@@ -348,7 +349,7 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
               type="text"
               size="small"
               className="project-lobby-card__info-button"
-              icon={<InfoCircleOutlined />}
+              icon={<Info size={16} strokeWidth={1.75} />}
               aria-label={isCanvasView ? l('画布详情', 'Canvas details') : l('项目详情', 'Project details')}
               aria-expanded={visibleInfoProjectId === p.id}
               onMouseEnter={() => setVisibleInfoProjectId(p.id)}
@@ -369,10 +370,10 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
               }}
               menu={{
                 items: [
-                  { key: 'rename', icon: <EditOutlined />, label: l('重命名', 'Rename') },
+                  { key: 'rename', icon: <Pencil size={15} strokeWidth={1.75} />, label: l('重命名', 'Rename') },
                   {
                     key: 'delete',
-                    icon: <DeleteOutlined />,
+                    icon: <Trash2 size={15} strokeWidth={1.75} />,
                     label: isCanvasView ? l('删除画布', 'Delete canvas') : l('删除项目', 'Delete project'),
                     danger: true,
                   },
@@ -391,16 +392,24 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
                   window.setTimeout(() => {
                     setOpenProjectMenuId(null)
                     Modal.confirm({
+                      rootClassName: 'project-lobby-delete-confirm-root',
                       className: 'project-lobby-delete-confirm',
-                       title: isCanvasView
-                         ? l('删除这个画布？', 'Delete this canvas?')
-                         : l('确定删除该项目？', 'Delete this project?'),
-                       content: isCanvasView
-                         ? l('画布及其本地保存的数据将被永久删除，此操作无法撤销。', 'The canvas and its locally saved data will be permanently deleted. This cannot be undone.')
-                         : l('删除后无法恢复，相关章节与素材将不再关联。', 'This cannot be undone. Related chapters and assets will no longer be linked.'),
+                      centered: true,
+                      icon: (
+                        <span className="project-lobby-delete-confirm__icon" aria-hidden="true">
+                          <AlertTriangle size={18} strokeWidth={2} />
+                        </span>
+                      ),
+                      title: isCanvasView
+                        ? l('删除这个画布？', 'Delete this canvas?')
+                        : l('确定删除该项目？', 'Delete this project?'),
+                      content: isCanvasView
+                        ? l('画布及其本地保存的数据将被永久删除，此操作无法撤销。', 'The canvas and its locally saved data will be permanently deleted. This cannot be undone.')
+                        : l('删除后无法恢复，相关章节与素材将不再关联。', 'This cannot be undone. Related chapters and assets will no longer be linked.'),
                       okText: l('删除', 'Delete'),
                       cancelText: l('取消', 'Cancel'),
-                      okButtonProps: { danger: true },
+                      okButtonProps: { danger: true, className: 'project-lobby-delete-confirm__delete-button' },
+                      cancelButtonProps: { className: 'project-lobby-delete-confirm__cancel-button' },
                       onOk: () => handleDelete(p.id),
                     })
                   }, 0)
@@ -410,7 +419,7 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
               <Button
                 type="text"
                 size="small"
-                icon={<MoreOutlined />}
+                icon={<MoreHorizontal size={17} strokeWidth={1.75} />}
                 aria-label={l('更多操作', 'More actions')}
                 onClick={(event) => event.stopPropagation()}
               />
@@ -477,7 +486,7 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
                     }
                   }}
                 >
-                  <SearchOutlined />
+                  <Search size={17} strokeWidth={1.75} />
                 </button>
               )}
               onFocus={() => setSearchOpen(true)}
@@ -490,8 +499,8 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
               }}
             />
           </div>
-          <Button icon={<FileTextOutlined />} onClick={() => navigate('/prompts')}>{l('Prompt 定制', 'Prompt templates')}</Button>
-          <Button icon={<FolderOpenOutlined />} onClick={() => navigate('/assets')}>{l('资产中心', 'Asset center')}</Button>
+          <Button icon={<FileText size={16} strokeWidth={1.75} />} onClick={() => navigate('/prompts')}>{l('Prompt 定制', 'Prompt templates')}</Button>
+          <Button icon={<FolderOpen size={16} strokeWidth={1.75} />} onClick={() => navigate('/assets')}>{l('资产中心', 'Asset center')}</Button>
           {/* <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>
             {l('新建项目', 'New project')}
           </Button> */}
@@ -506,8 +515,8 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
             <div className="project-lobby__content">
               <div className="project-lobby__grid">
                 <button type="button" className="project-lobby-create" onClick={handleOpenCreate}>
-                  <span className="project-lobby-create__icon"><PlusOutlined /></span>
-                   <span>{workspaceView === 'canvas' ? l('新建画布', 'Create canvas') : l('点击创作', 'Create project')}</span>
+                  <span className="project-lobby-create__icon"><Plus size={20} strokeWidth={1.75} /></span>
+                  <span>{workspaceView === 'canvas' ? l('新建画布', 'Create canvas') : l('点击创作', 'Create project')}</span>
                 </button>
                 {filteredSorted.map(renderCard)}
               </div>

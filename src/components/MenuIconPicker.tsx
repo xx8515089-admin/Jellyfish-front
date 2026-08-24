@@ -2,6 +2,46 @@ import type React from 'react'
 import { useMemo, useState } from 'react'
 import { Button, Empty, Input, Popover, Tooltip } from 'antd'
 import * as AntIcons from '@ant-design/icons'
+import {
+  BarChart3,
+  Bell,
+  Bot,
+  Building2,
+  ChevronDown,
+  Cloud,
+  Code2,
+  Cpu,
+  Database,
+  FileCheck2,
+  FileSearch,
+  FileText,
+  FlaskConical,
+  Folder,
+  FolderKanban,
+  Home,
+  Image,
+  Images,
+  KeyRound,
+  LayoutGrid,
+  ListChecks,
+  LockKeyhole,
+  Menu,
+  PanelTop,
+  PlayCircle,
+  Plug,
+  Search,
+  Settings,
+  ShieldCheck,
+  SlidersHorizontal,
+  Store,
+  Tags,
+  UserRound,
+  UsersRound,
+  Video,
+  WalletCards,
+  Workflow,
+  Wrench,
+} from 'lucide-react'
 import './MenuIconPicker.css'
 
 type IconComponent = React.ElementType<{ className?: string }>
@@ -31,57 +71,58 @@ type CommonMenuIconDefinition = {
   value: string
   label: string
   keywords: string
-  exportName: string
+  Icon: IconComponent
+  legacyExportName: string
 }
 
 const ANT_ICON_EXPORTS = AntIcons as unknown as Record<string, unknown>
 
 const COMMON_MENU_ICON_DEFINITIONS: CommonMenuIconDefinition[] = [
-  { value: 'system', label: 'System', keywords: 'system admin permission safety 系统 管理', exportName: 'SafetyCertificateOutlined' },
-  { value: 'settings', label: 'Settings', keywords: 'setting settings config 系统 设置', exportName: 'SettingOutlined' },
-  { value: 'menu', label: 'Menu', keywords: 'menu navigation 菜单 导航', exportName: 'MenuOutlined' },
-  { value: 'appstore', label: 'App Store', keywords: 'app application grid 应用', exportName: 'AppstoreOutlined' },
-  { value: 'user', label: 'User', keywords: 'user account member 用户', exportName: 'UserOutlined' },
-  { value: 'users', label: 'Users', keywords: 'users team group 用户组', exportName: 'TeamOutlined' },
-  { value: 'role', label: 'Role', keywords: 'role permission safety 角色 权限', exportName: 'SafetyCertificateOutlined' },
-  { value: 'permission', label: 'Permission', keywords: 'permission key access 权限', exportName: 'KeyOutlined' },
-  { value: 'lock', label: 'Security', keywords: 'lock secure auth 安全', exportName: 'LockOutlined' },
-  { value: 'project', label: 'Project', keywords: 'project workspace 项目', exportName: 'ProjectOutlined' },
-  { value: 'folder', label: 'Folder', keywords: 'folder directory 文件夹', exportName: 'FolderOutlined' },
-  { value: 'asset', label: 'Asset', keywords: 'asset media image 资产', exportName: 'FileImageOutlined' },
-  { value: 'image', label: 'Image', keywords: 'image picture photo 图片', exportName: 'PictureOutlined' },
-  { value: 'prompt', label: 'Prompt', keywords: 'prompt text file 提示词', exportName: 'FileTextOutlined' },
-  { value: 'model', label: 'Model', keywords: 'model api llm 模型', exportName: 'ApiOutlined' },
-  { value: 'api', label: 'API', keywords: 'api service 接口', exportName: 'ApiOutlined' },
-  { value: 'workflow', label: 'Workflow', keywords: 'workflow flow deploy 流程', exportName: 'DeploymentUnitOutlined' },
-  { value: 'task', label: 'Task', keywords: 'task branch job 任务', exportName: 'BranchesOutlined' },
-  { value: 'dashboard', label: 'Dashboard', keywords: 'dashboard chart stats 看板', exportName: 'BarChartOutlined' },
-  { value: 'canvas', label: 'Canvas', keywords: 'canvas board 画布', exportName: 'BorderOutlined' },
-  { value: 'home', label: 'Home', keywords: 'home index 首页', exportName: 'HomeOutlined' },
-  { value: 'database', label: 'Database', keywords: 'database storage data 数据', exportName: 'DatabaseOutlined' },
-  { value: 'cloud', label: 'Cloud', keywords: 'cloud service 云服务', exportName: 'CloudOutlined' },
-  { value: 'experiment', label: 'Experiment', keywords: 'experiment test lab 实验', exportName: 'ExperimentOutlined' },
-  { value: 'video', label: 'Video', keywords: 'video camera film 视频', exportName: 'VideoCameraOutlined' },
-  { value: 'play', label: 'Play', keywords: 'play preview player 播放', exportName: 'PlayCircleOutlined' },
-  { value: 'notice', label: 'Notice', keywords: 'notice notification message 通知', exportName: 'NotificationOutlined' },
-  { value: 'tool', label: 'Tool', keywords: 'tool maintenance 工具', exportName: 'ToolOutlined' },
-  { value: 'tag', label: 'Tag', keywords: 'tag label category 标签', exportName: 'TagsOutlined' },
-  { value: 'code', label: 'Code', keywords: 'code develop 代码', exportName: 'CodeOutlined' },
-  { value: 'audit', label: 'Audit', keywords: 'audit search inspect 审计', exportName: 'FileSearchOutlined' },
-  { value: 'document', label: 'Document', keywords: 'document file protect 文档', exportName: 'FileProtectOutlined' },
-  { value: 'config', label: 'Config', keywords: 'config control slider 配置', exportName: 'ControlOutlined' },
-  { value: 'finance', label: 'Quota', keywords: 'quota wallet finance 额度', exportName: 'WalletOutlined' },
-  { value: 'tenant', label: 'Tenant', keywords: 'tenant company bank 组织', exportName: 'BankOutlined' },
-  { value: 'store', label: 'Store', keywords: 'store shop market 商店', exportName: 'ShopOutlined' },
-  { value: 'agent', label: 'Agent', keywords: 'agent robot bot 智能体', exportName: 'RobotOutlined' },
+  { value: 'system', label: 'System', keywords: 'system admin permission safety 系统 管理', Icon: ShieldCheck, legacyExportName: 'SafetyCertificateOutlined' },
+  { value: 'settings', label: 'Settings', keywords: 'setting settings config 系统 设置', Icon: Settings, legacyExportName: 'SettingOutlined' },
+  { value: 'menu', label: 'Menu', keywords: 'menu navigation 菜单 导航', Icon: Menu, legacyExportName: 'MenuOutlined' },
+  { value: 'appstore', label: 'App Store', keywords: 'app application grid 应用', Icon: LayoutGrid, legacyExportName: 'AppstoreOutlined' },
+  { value: 'user', label: 'User', keywords: 'user account member 用户', Icon: UserRound, legacyExportName: 'UserOutlined' },
+  { value: 'users', label: 'Users', keywords: 'users team group 用户组', Icon: UsersRound, legacyExportName: 'TeamOutlined' },
+  { value: 'role', label: 'Role', keywords: 'role permission safety 角色 权限', Icon: ShieldCheck, legacyExportName: 'SafetyCertificateOutlined' },
+  { value: 'permission', label: 'Permission', keywords: 'permission key access 权限', Icon: KeyRound, legacyExportName: 'KeyOutlined' },
+  { value: 'lock', label: 'Security', keywords: 'lock secure auth 安全', Icon: LockKeyhole, legacyExportName: 'LockOutlined' },
+  { value: 'project', label: 'Project', keywords: 'project workspace 项目', Icon: FolderKanban, legacyExportName: 'ProjectOutlined' },
+  { value: 'folder', label: 'Folder', keywords: 'folder directory 文件夹', Icon: Folder, legacyExportName: 'FolderOutlined' },
+  { value: 'asset', label: 'Asset', keywords: 'asset media image 资产', Icon: Images, legacyExportName: 'FileImageOutlined' },
+  { value: 'image', label: 'Image', keywords: 'image picture photo 图片', Icon: Image, legacyExportName: 'PictureOutlined' },
+  { value: 'prompt', label: 'Prompt', keywords: 'prompt text file 提示词', Icon: FileText, legacyExportName: 'FileTextOutlined' },
+  { value: 'model', label: 'Model', keywords: 'model api llm 模型', Icon: Cpu, legacyExportName: 'ApiOutlined' },
+  { value: 'api', label: 'API', keywords: 'api service 接口', Icon: Plug, legacyExportName: 'ApiOutlined' },
+  { value: 'workflow', label: 'Workflow', keywords: 'workflow flow deploy 流程', Icon: Workflow, legacyExportName: 'DeploymentUnitOutlined' },
+  { value: 'task', label: 'Task', keywords: 'task branch job 任务', Icon: ListChecks, legacyExportName: 'BranchesOutlined' },
+  { value: 'dashboard', label: 'Dashboard', keywords: 'dashboard chart stats 看板', Icon: BarChart3, legacyExportName: 'BarChartOutlined' },
+  { value: 'canvas', label: 'Canvas', keywords: 'canvas board 画布', Icon: PanelTop, legacyExportName: 'BorderOutlined' },
+  { value: 'home', label: 'Home', keywords: 'home index 首页', Icon: Home, legacyExportName: 'HomeOutlined' },
+  { value: 'database', label: 'Database', keywords: 'database storage data 数据', Icon: Database, legacyExportName: 'DatabaseOutlined' },
+  { value: 'cloud', label: 'Cloud', keywords: 'cloud service 云服务', Icon: Cloud, legacyExportName: 'CloudOutlined' },
+  { value: 'experiment', label: 'Experiment', keywords: 'experiment test lab 实验', Icon: FlaskConical, legacyExportName: 'ExperimentOutlined' },
+  { value: 'video', label: 'Video', keywords: 'video camera film 视频', Icon: Video, legacyExportName: 'VideoCameraOutlined' },
+  { value: 'play', label: 'Play', keywords: 'play preview player 播放', Icon: PlayCircle, legacyExportName: 'PlayCircleOutlined' },
+  { value: 'notice', label: 'Notice', keywords: 'notice notification message 通知', Icon: Bell, legacyExportName: 'NotificationOutlined' },
+  { value: 'tool', label: 'Tool', keywords: 'tool maintenance 工具', Icon: Wrench, legacyExportName: 'ToolOutlined' },
+  { value: 'tag', label: 'Tag', keywords: 'tag label category 标签', Icon: Tags, legacyExportName: 'TagsOutlined' },
+  { value: 'code', label: 'Code', keywords: 'code develop 代码', Icon: Code2, legacyExportName: 'CodeOutlined' },
+  { value: 'audit', label: 'Audit', keywords: 'audit search inspect 审计', Icon: FileSearch, legacyExportName: 'FileSearchOutlined' },
+  { value: 'document', label: 'Document', keywords: 'document file protect 文档', Icon: FileCheck2, legacyExportName: 'FileProtectOutlined' },
+  { value: 'config', label: 'Config', keywords: 'config control slider 配置', Icon: SlidersHorizontal, legacyExportName: 'ControlOutlined' },
+  { value: 'finance', label: 'Quota', keywords: 'quota wallet finance 额度', Icon: WalletCards, legacyExportName: 'WalletOutlined' },
+  { value: 'tenant', label: 'Tenant', keywords: 'tenant company bank 组织', Icon: Building2, legacyExportName: 'BankOutlined' },
+  { value: 'store', label: 'Store', keywords: 'store shop market 商店', Icon: Store, legacyExportName: 'ShopOutlined' },
+  { value: 'agent', label: 'Agent', keywords: 'agent robot bot 智能体', Icon: Bot, legacyExportName: 'RobotOutlined' },
 ]
 
 const COMMON_MENU_ICON_OPTIONS = COMMON_MENU_ICON_DEFINITIONS.map((item) => ({
   value: item.value,
   label: item.label,
   keywords: item.keywords,
-  Icon: getAntIconComponent(item.exportName),
-  exportName: item.exportName,
+  Icon: item.Icon,
+  exportName: item.legacyExportName,
   common: true,
 }))
 
@@ -129,7 +170,7 @@ export const MenuIconPicker: React.FC<MenuIconPickerProps> = ({ value, onChange,
     <div className="menu-icon-picker__panel">
       <Input
         allowClear
-        prefix={<AntIcons.SearchOutlined />}
+        prefix={<Search size={16} strokeWidth={1.75} />}
         placeholder="Search icon name or code"
         value={keyword}
         onChange={(event) => setKeyword(event.target.value)}
@@ -196,7 +237,7 @@ export const MenuIconPicker: React.FC<MenuIconPickerProps> = ({ value, onChange,
             {displayText}
           </span>
         </span>
-        <AntIcons.DownOutlined className="menu-icon-picker__trigger-arrow" />
+        <ChevronDown className="menu-icon-picker__trigger-arrow" size={15} strokeWidth={1.75} />
       </Button>
     </Popover>
   )
@@ -238,13 +279,6 @@ function getAntOutlinedIconOptions(commonOptions: MenuIconOption[]): MenuIconOpt
     })
     .filter((option) => !commonValues.has(option.value))
     .sort((first, second) => first.label.localeCompare(second.label))
-}
-
-/** 从 AntD 导出对象中解析具体图标组件。 */
-function getAntIconComponent(exportName: string): IconComponent {
-  const icon = ANT_ICON_EXPORTS[exportName]
-  if (isIconComponent(icon)) return icon
-  return AntIcons.AppstoreOutlined
 }
 
 /** 判断导出对象是否可作为 React 图标组件渲染。 */

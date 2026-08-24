@@ -65,7 +65,7 @@ import {
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
-import i18n from './i18n';
+import i18n, { normalizeCanvasLanguage, toJellyfishLanguage } from './i18n';
 import {
     activeCanvasStorage,
     configureCanvasRuntime,
@@ -1551,7 +1551,7 @@ const MaskEditor = ({ nodeId, imageUrl, imageDimensions, isActive, onClose, onSa
             {/* 工具栏 - 使用 Portal 固定到 Body，避免被 Canvas Transform 影响 */}
             {createPortal(
                 <div
-                    className={`fixed bottom-4 left-1/2 -translate-x-1/2 flex flex-row items-center gap-4 p-2 rounded-full border backdrop-blur-md shadow-xl z-[9999] ${theme === 'dark'
+                    className={`jellyfish-canvas-runtime theme-${theme} fixed bottom-4 left-1/2 -translate-x-1/2 flex flex-row items-center gap-4 p-2 rounded-full border backdrop-blur-md shadow-xl z-[9999] ${theme === 'dark'
                         ? 'bg-zinc-900/90 border-zinc-700 text-zinc-200'
                         : 'bg-white/90 border-zinc-300 text-zinc-800'
                         }`}
@@ -4758,7 +4758,7 @@ const Lightbox = ({ item, onClose, onNavigate, onShotNavigate, onHistoryNavigate
     );
 };
 
-function TapnowApp({ workspaceId = 'default', workspaceName = '', onWorkspaceChanged } = {}) {
+function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appLanguage, onLanguageChange, onWorkspaceChanged } = {}) {
     const localStorage = useMemo(
         () => createCanvasStorage(workspaceId, onWorkspaceChanged),
         [workspaceId, onWorkspaceChanged]
@@ -4773,13 +4773,23 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', onWorkspaceCha
             return 'dark';
         }
     });
-    const [language, setLanguage] = useState('zh');
+    const [language, setLanguage] = useState(() => normalizeCanvasLanguage(appLanguage || i18n.language));
+
+    const handleLanguageChange = useCallback((nextLanguage, notifyHost = true) => {
+        const normalizedLanguage = normalizeCanvasLanguage(nextLanguage);
+        if (i18n.language !== normalizedLanguage) {
+            void i18n.changeLanguage(normalizedLanguage);
+        }
+        setLanguage(prev => prev === normalizedLanguage ? prev : normalizedLanguage);
+        if (notifyHost && typeof onLanguageChange === 'function') {
+            onLanguageChange(toJellyfishLanguage(normalizedLanguage));
+        }
+    }, [onLanguageChange]);
 
     useEffect(() => {
-        if (i18n.language !== language) {
-            i18n.changeLanguage(language);
-        }
-    }, [language]);
+        if (!appLanguage) return;
+        handleLanguageChange(appLanguage, false);
+    }, [appLanguage, handleLanguageChange]);
 
     // V3.7.27: Toast 通知系统
     const [toasts, setToasts] = useState([]);
@@ -30074,7 +30084,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                                                     </button>
                                                     {activeDropdown?.nodeId === node.id && activeDropdown.type === 'storyboard-download' && activeDropdown.anchor && createPortal(
                                                         <div
-                                                            className={`fixed mt-1 w-32 rounded-lg shadow-xl py-1 z-[9999] border ${theme === 'dark'
+                                                            className={`jellyfish-canvas-runtime theme-${theme} fixed mt-1 w-32 rounded-lg shadow-xl py-1 z-[9999] border ${theme === 'dark'
                                                                 ? 'bg-[#18181b] border-zinc-700'
                                                                 : theme === 'solarized' ? 'bg-[#eee8d5] border-[#d7cfb2]' : 'bg-white border-zinc-200'
                                                                 }`}
@@ -30152,7 +30162,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                                                     </button>
                                                     {activeDropdown?.nodeId === node.id && activeDropdown.type === 'batch-queue' && activeDropdown.anchor && createPortal(
                                                         <div
-                                                            className={`fixed mt-1 w-64 rounded-lg shadow-xl py-2 z-[9999] border ${theme === 'dark'
+                                                            className={`jellyfish-canvas-runtime theme-${theme} fixed mt-1 w-64 rounded-lg shadow-xl py-2 z-[9999] border ${theme === 'dark'
                                                                 ? 'bg-[#18181b] border-zinc-700'
                                                                 : theme === 'solarized' ? 'bg-[#eee8d5] border-[#d7cfb2]' : 'bg-white border-zinc-200'
                                                                 }`}
@@ -33973,7 +33983,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                             })()}
                         </button>
                         <button
-                            onClick={() => setLanguage(prev => prev === 'zh' ? 'en' : 'zh')}
+                            onClick={() => handleLanguageChange(language === 'zh' ? 'en' : 'zh')}
                             className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${theme === 'dark'
                                 ? 'bg-zinc-900 border-zinc-700 text-zinc-200 hover:bg-zinc-800'
                                 : theme === 'solarized'
@@ -36709,7 +36719,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                                                         </div>
                                                         <div className="flex items-center gap-1 ml-3">
                                                             <button
-                                                                onClick={() => setLanguage('zh')}
+                                                                onClick={() => handleLanguageChange('zh')}
                                                                 className={`px-2 py-1 text-[10px] rounded border transition-colors ${language === 'zh'
                                                                     ? 'bg-blue-600 text-white border-blue-500'
                                                                     : theme === 'dark'
@@ -36720,7 +36730,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                                                                 {t('中文')}
                                                             </button>
                                                             <button
-                                                                onClick={() => setLanguage('en')}
+                                                                onClick={() => handleLanguageChange('en')}
                                                                 className={`px-2 py-1 text-[10px] rounded border transition-colors ${language === 'en'
                                                                     ? 'bg-blue-600 text-white border-blue-500'
                                                                     : theme === 'dark'

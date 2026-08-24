@@ -5,7 +5,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 32px;
+  padding: 72px 32px 48px;
   background: #060b17;
   color: #172033;
   isolation: isolate;
@@ -61,29 +61,58 @@
   line-height: 16px;
 }
 
-.login-card.ant-card {
+.login-page .login-card.ant-card {
   position: relative;
-  flex: 0 1 500px;
+  flex: 0 1 450px;
   width: 100%;
   min-width: 0;
-  max-width: 500px;
+  max-width: 450px;
   box-sizing: border-box;
   overflow: hidden;
-  border: 0;
-  border-radius: 8px;
-  background: rgba(7, 11, 18, 0.68);
-  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.46);
-  -webkit-backdrop-filter: blur(22px) saturate(112%);
-  backdrop-filter: blur(22px) saturate(112%);
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 18px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.01) 48%, rgba(0, 0, 0, 0.035)),
+    rgba(0, 0, 0, 0.08) !important;
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.025);
+  -webkit-backdrop-filter: blur(26px) saturate(160%) brightness(1.06);
+  backdrop-filter: blur(26px) saturate(160%) brightness(1.06);
+  transform: translateY(-2vh);
+}
+
+.login-page .login-card.ant-card::before {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  content: '';
+  background:
+    radial-gradient(circle at 18% 8%, rgba(255, 255, 255, 0.045), transparent 30%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.022), transparent 44%);
+}
+
+.login-page .login-card.ant-card::after {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  content: '';
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.045);
 }
 
 .login-card .ant-card-body {
   position: relative;
-  padding: 42px 44px 36px;
+  z-index: 1;
+  background: transparent !important;
+  padding: 40px 42px 34px;
 }
 
 .login-card__heading {
-  margin-bottom: 32px;
+  margin-bottom: 28px;
 }
 
 .login-card__heading .ant-typography {
@@ -92,7 +121,7 @@
 
 .login-card__heading h1.ant-typography {
   color: #f8fafc;
-  font-size: 30px;
+  font-size: 29px;
   font-weight: 640;
   line-height: 38px;
   letter-spacing: 0;
@@ -108,7 +137,7 @@
 
 .login-form .ant-form-item {
   min-width: 0;
-  margin-bottom: 24px;
+  margin-bottom: 22px;
 }
 
 .login-form .ant-form-item-label {
@@ -121,28 +150,35 @@
   font-weight: 550;
 }
 
+.login-form .ant-input-affix-wrapper,
+.login-form__submit.ant-btn {
+  width: 100%;
+}
+
 .login-form .ant-input-affix-wrapper {
   height: 50px;
   padding-inline: 16px;
-  border-color: rgba(203, 213, 225, 0.14);
-  border-radius: 8px;
-  background: rgba(15, 22, 33, 0.82);
+  border-color: rgba(255, 255, 255, 0.13) !important;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035) !important;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.02),
-    inset 0 -1px 2px rgba(0, 0, 0, 0.12);
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.05);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
+  backdrop-filter: blur(14px) saturate(130%);
   transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
 
 .login-form .ant-input-affix-wrapper:hover,
 .login-form .ant-input-affix-wrapper-focused {
-  border-color: rgba(103, 166, 255, 0.72);
-  background: rgba(17, 25, 38, 0.92);
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.048) !important;
 }
 
 .login-form .ant-input-affix-wrapper-focused {
   box-shadow:
-    0 0 0 3px rgba(47, 128, 237, 0.11),
-    inset 0 1px 2px rgba(0, 0, 0, 0.12);
+    0 0 0 3px rgba(255, 255, 255, 0.08),
+    inset 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 
 .login-form .ant-input,
@@ -151,8 +187,10 @@
   color: #f8fafc !important;
   font-size: 14px;
   font-weight: 500;
-  background: transparent;
-  caret-color: #69a7ff;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  caret-color: #f8fafc;
 }
 
 .login-form .ant-input::placeholder,
@@ -181,26 +219,37 @@
   -webkit-background-clip: text;
   background-clip: text;
   box-shadow: 0 0 0 1000px transparent inset;
-  caret-color: #69a7ff;
+  caret-color: #f8fafc;
   transition: background-color 9999s ease-out;
 }
 
-.login-form__submit.ant-btn {
+.login-form__submit.ant-btn.ant-btn-primary {
   height: 50px;
-  margin-top: 2px;
-  border-color: #2689ef;
-  border-radius: 8px;
-  background: #2689ef;
+  margin-top: 4px;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.07)),
+    rgba(255, 255, 255, 0.045) !important;
+  color: #f8fafc !important;
   font-weight: 600;
-  box-shadow: 0 10px 26px rgba(13, 106, 206, 0.24);
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  -webkit-backdrop-filter: blur(14px) saturate(128%);
+  backdrop-filter: blur(14px) saturate(128%);
   transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
-.login-form__submit.ant-btn:hover,
-.login-form__submit.ant-btn:focus-visible {
-  border-color: #439cf5 !important;
-  background: #439cf5 !important;
-  box-shadow: 0 12px 30px rgba(22, 119, 255, 0.3);
+.login-form__submit.ant-btn.ant-btn-primary:hover,
+.login-form__submit.ant-btn.ant-btn-primary:focus-visible {
+  border-color: rgba(255, 255, 255, 0.28) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.09)),
+    rgba(255, 255, 255, 0.06) !important;
+  box-shadow:
+    0 14px 32px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 .login-form__submit.ant-btn:active {
@@ -208,7 +257,7 @@
 }
 
 .login-card__notice.ant-typography {
-  margin: 22px 0 0;
+  margin: 20px 0 0;
   color: #a8b4c5;
   font-size: 12px;
   line-height: 19px;

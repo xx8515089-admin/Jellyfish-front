@@ -9,6 +9,7 @@ import { SystemRolesService, SystemUsersService } from '../services/generated'
 import type { SystemRoleRead, SystemUserCreate, SystemUserRead, SystemUserUpdate } from '../services/generated'
 import { useAppStore } from '../store/useAppStore'
 import { assertApiSuccess, getErrorMessage, normalizeNullableText } from './system/systemApiHelpers'
+import './system/MenuManagement.css'
 import './AdminUsers.css'
 
 type UserSearchValues = {
@@ -357,88 +358,116 @@ const AdminUsers: React.FC = () => {
       />
 
       <Modal
-        title={editing ? text('编辑用户', 'Edit user') : text('新增用户', 'Add user')}
+        title={null}
+        className="menu-editor-modal"
         open={modalOpen}
         onCancel={closeUserModal}
         onOk={() => void submitUser()}
         afterOpenChange={handleUserModalOpenChange}
         confirmLoading={saving}
-        width={640}
+        width={720}
         okText={text('保存', 'Save')}
         cancelText={text('取消', 'Cancel')}
         destroyOnHidden
       >
-        <Form form={form} layout="vertical" className="system-users__form">
-          <Form.Item
-            name="username"
-            label={text('用户名', 'Username')}
-            rules={[
-              { required: true, message: text('请输入用户名', 'Enter username') },
-              { min: 3, message: text('用户名至少 3 个字符', 'Username must be at least 3 characters') },
-            ]}
-          >
-            <Input placeholder="jellyfish_user" />
-          </Form.Item>
-          {!editing && (
-            <Form.Item
-              name="displayName"
-              label={text('显示名称', 'Display name')}
-              rules={[{ required: true, message: text('请输入显示名称', 'Enter display name') }]}
-            >
-              <Input placeholder={text('内容编辑', 'Content Editor')} />
-            </Form.Item>
-          )}
-          <Form.Item
-            name="password"
-            label={editing ? text('新密码（留空不修改）', 'New password (leave blank to keep)') : text('初始密码', 'Initial password')}
-            rules={[
-              { required: !editing, message: text('请输入初始密码', 'Enter initial password') },
-              { min: 8, message: text('密码至少 8 个字符', 'Password must be at least 8 characters') },
-            ]}
-          >
-            <Input.Password autoComplete="new-password" />
-          </Form.Item>
-          <Form.Item
-            name="roleIds"
-            label={text('角色', 'Roles')}
-            rules={[{ required: true, type: 'array', min: 1, message: text('请至少选择一个角色', 'Select at least one role') }]}
-          >
-            <Select
-              mode="multiple"
-              placeholder={text('选择角色', 'Select roles')}
-              options={roleOptions}
-              showSearch
-              optionFilterProp="label"
-            />
-          </Form.Item>
-          <div className="system-users__form-grid">
-            <Form.Item name="apiQuota" label={text('API 总额度', 'Total API quota')}>
-              <InputNumber min={0} precision={0} className="w-full" />
-            </Form.Item>
-            <Form.Item
-              name="apiQuotaResetAt"
-              label={text('额度重置时间', 'Quota reset at')}
-            >
-              <DatePicker
-                allowClear
-                showTime={{ format: 'HH:mm:ss' }}
-                format="YYYY-MM-DD HH:mm:ss"
-                placeholder={text('选择额度重置时间', 'Select reset time')}
-                className="system-users__date-picker"
-              />
-            </Form.Item>
-          </div>
-          {editing && (
-            <Form.Item label={text('启用状态', 'Active state')} className="system-users__switch-item">
-              <div className="system-users__switch-row">
-                <Form.Item name="active" valuePropName="checked" noStyle>
-                  <Switch />
-                </Form.Item>
-                <span>{text('启用后该用户可以登录系统', 'The user can sign in when active')}</span>
+        <div className="menu-editor">
+          <div className="menu-editor__header">
+            <div>
+              <div className="menu-editor__eyebrow">{text('系统管理', 'System Management')}</div>
+              <div className="menu-editor__title-row">
+                <Typography.Title level={4} className="menu-editor__title">
+                  {editing ? text('编辑用户', 'Edit user') : text('新增用户', 'Add user')}
+                </Typography.Title>
+                <Tag color={editing ? 'blue' : 'green'} className="menu-editor__mode">
+                  {editing ? text('编辑', 'Editing') : text('新增', 'Creating')}
+                </Tag>
               </div>
-            </Form.Item>
-          )}
-        </Form>
+            </div>
+          </div>
+
+          <Form form={form} layout="vertical" className="menu-editor__form">
+            <div className="menu-editor__section">
+              <div className="menu-editor__section-title">{text('基础信息', 'Basic information')}</div>
+              <div className="menu-editor__grid">
+                <Form.Item
+                  name="username"
+                  label={text('用户名', 'Username')}
+                  rules={[
+                    { required: true, message: text('请输入用户名', 'Enter username') },
+                    { min: 3, message: text('用户名至少 3 个字符', 'Username must be at least 3 characters') },
+                  ]}
+                >
+                  <Input placeholder="jellyfish_user" />
+                </Form.Item>
+                {!editing && (
+                  <Form.Item
+                    name="displayName"
+                    label={text('显示名称', 'Display name')}
+                    rules={[{ required: true, message: text('请输入显示名称', 'Enter display name') }]}
+                  >
+                    <Input placeholder={text('内容编辑', 'Content Editor')} />
+                  </Form.Item>
+                )}
+                <Form.Item
+                  name="password"
+                  label={editing ? text('新密码（留空不修改）', 'New password (leave blank to keep)') : text('初始密码', 'Initial password')}
+                  className="menu-editor__wide"
+                  rules={[
+                    { required: !editing, message: text('请输入初始密码', 'Enter initial password') },
+                    { min: 8, message: text('密码至少 8 个字符', 'Password must be at least 8 characters') },
+                  ]}
+                >
+                  <Input.Password autoComplete="new-password" />
+                </Form.Item>
+                <Form.Item
+                  name="roleIds"
+                  label={text('角色', 'Roles')}
+                  className="menu-editor__wide"
+                  rules={[{ required: true, type: 'array', min: 1, message: text('请至少选择一个角色', 'Select at least one role') }]}
+                >
+                  <Select
+                    mode="multiple"
+                    placeholder={text('选择角色', 'Select roles')}
+                    options={roleOptions}
+                    showSearch
+                    optionFilterProp="label"
+                  />
+                </Form.Item>
+              </div>
+            </div>
+
+            <div className="menu-editor__section">
+              <div className="menu-editor__section-title">{text('额度与状态', 'Quota and status')}</div>
+              <div className="menu-editor__grid">
+                <Form.Item name="apiQuota" label={text('API 总额度', 'Total API quota')}>
+                  <InputNumber min={0} precision={0} className="w-full" />
+                </Form.Item>
+                <Form.Item
+                  name="apiQuotaResetAt"
+                  label={text('额度重置时间', 'Quota reset at')}
+                >
+                  <DatePicker
+                    allowClear
+                    showTime={{ format: 'HH:mm:ss' }}
+                    format="YYYY-MM-DD HH:mm:ss"
+                    placeholder={text('选择额度重置时间', 'Select reset time')}
+                    className="system-users__date-picker"
+                  />
+                </Form.Item>
+                {editing && (
+                  <Form.Item label={text('启用状态', 'Active state')} className="menu-editor__wide system-users__switch-item">
+                    <div className="system-users__switch-row">
+                      <Form.Item name="active" valuePropName="checked" noStyle>
+                        <Switch />
+                      </Form.Item>
+                      <span>{text('启用后该用户可以登录系统', 'The user can sign in when active')}</span>
+                    </div>
+                  </Form.Item>
+                )}
+              </div>
+            </div>
+          </Form>
+        </div>
       </Modal>
     </Card>
   )
