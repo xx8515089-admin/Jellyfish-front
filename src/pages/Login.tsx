@@ -92,10 +92,10 @@ const Login: React.FC = () => {
         />
       </div>
 
-      <div className="login-page__brand" aria-label="Jellyfish AI 短剧工作台">
+      <div className="login-page__brand" aria-label="Reelmax AI 短剧工作台">
         <img src="/logo.svg" alt="" />
         <div>
-          <span className="login-page__brand-name">Jellyfish</span>
+          <span className="login-page__brand-name">Reelmax</span>
           <span className="login-page__brand-subtitle">AI 短剧工作台</span>
         </div>
       </div>

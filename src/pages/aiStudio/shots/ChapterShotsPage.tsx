@@ -346,7 +346,7 @@ export function ChapterShotsPage() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = 'jellyfish_storyboard_import_template.csv'
+    a.download = 'reelmax_storyboard_import_template.csv'
     a.click()
     URL.revokeObjectURL(url)
   }, [storyboardTemplate])
@@ -888,7 +888,7 @@ export function ChapterShotsPage() {
       >
         <Space direction="vertical" className="w-full" size="middle">
           <Typography.Paragraph type="secondary" className="!mb-0">
-            {l('这个入口与 AI 自动分镜平行，导入后仍写入 Jellyfish 原生 shots / shot_details / shot links，后续继续走分镜准备、关键帧和视频生成。', 'This import path runs alongside AI storyboarding and writes native Jellyfish shots, shot details, and shot links. Preparation, keyframes, and video generation continue normally.')}
+            {l('这个入口与 AI 自动分镜平行，导入后仍写入 Reelmax 原生 shots / shot_details / shot links，后续继续走分镜准备、关键帧和视频生成。', 'This import path runs alongside AI storyboarding and writes native Reelmax shots, shot details, and shot links. Preparation, keyframes, and video generation continue normally.')}
           </Typography.Paragraph>
           <Space wrap>
             <Button onClick={downloadImportTemplate}>{l('下载 CSV 模板', 'Download CSV template')}</Button>

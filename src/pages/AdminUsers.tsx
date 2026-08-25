@@ -397,7 +397,7 @@ const AdminUsers: React.FC = () => {
                     { min: 3, message: text('用户名至少 3 个字符', 'Username must be at least 3 characters') },
                   ]}
                 >
-                  <Input placeholder="jellyfish_user" />
+                  <Input placeholder="reelmax_user" />
                 </Form.Item>
                 {!editing && (
                   <Form.Item

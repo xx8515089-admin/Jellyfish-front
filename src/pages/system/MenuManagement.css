@@ -201,6 +201,46 @@
   line-height: 20px;
 }
 
+.menu-management__actions {
+  display: inline-flex;
+  align-items: center;
+}
+
+.menu-management__action.ant-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent !important;
+  color: #c9c9c9 !important;
+  box-shadow: none !important;
+}
+
+.menu-management__action.ant-btn:hover,
+.menu-management__action.ant-btn:focus,
+.menu-management__action.ant-btn:active {
+  background: transparent !important;
+  color: #f2f2f2 !important;
+}
+
+.menu-management__action .anticon {
+  font-size: 14px;
+}
+
+.menu-management__action--danger.ant-btn {
+  color: #d68a8a !important;
+}
+
+.menu-management__action--danger.ant-btn:hover,
+.menu-management__action--danger.ant-btn:focus,
+.menu-management__action--danger.ant-btn:active {
+  background: transparent !important;
+  color: #ffb0b0 !important;
+}
+
 @media (max-width: 680px) {
   .menu-editor__header {
     padding: 22px 56px 16px 22px;

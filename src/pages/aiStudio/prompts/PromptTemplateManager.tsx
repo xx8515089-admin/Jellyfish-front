@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FC } from 'react'
 import { Button, Form, Input, Modal, Pagination, Switch, Table, Tag, Typography, message } from 'antd'
+import { DeleteOutlined, EditOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
-import { Pencil, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { useBilingualText } from '../../../i18n/useBilingualText'
 import {
   SystemPromptTemplatesApi,
@@ -29,7 +30,7 @@ function getTemplateVariables(template: SystemPromptTemplateRead): string[] {
 }
 
 function compareTemplateId(template: SystemPromptTemplateRead, id: number | string | null): boolean {
-  return id != null && String(template.id) === String(id)
+  return id !== null && String(template.id) === String(id)
 }
 
 function formatDateTime(value?: string | null): string {
@@ -52,6 +53,7 @@ const PromptTemplateManager: FC = () => {
   const [formOpen, setFormOpen] = useState(false)
   const [modalMode, setModalMode] = useState<PromptModalMode>('create')
   const [editingTemplateId, setEditingTemplateId] = useState<number | null>(null)
+  const [deletingTemplateId, setDeletingTemplateId] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [createForm] = Form.useForm<CreatePromptForm>()
 
@@ -111,11 +113,11 @@ const PromptTemplateManager: FC = () => {
 
   useEffect(() => {
     if (pagedTemplates.length === 0) {
-      if (selectedId != null) setSelected(null)
+      if (selectedId !== null) setSelected(null)
       return
     }
 
-    if (selectedId == null || !pagedTemplates.some((template) => compareTemplateId(template, selectedId))) {
+    if (selectedId === null || !pagedTemplates.some((template) => compareTemplateId(template, selectedId))) {
       setSelected(pagedTemplates[0])
     }
   }, [pagedTemplates, selectedId])
@@ -187,7 +189,7 @@ const PromptTemplateManager: FC = () => {
         return
       }
 
-      if (editingTemplateId == null) {
+      if (editingTemplateId === null) {
         messageApi.error(l('编辑目标不存在', 'The prompt to edit does not exist'))
         return
       }
@@ -214,6 +216,33 @@ const PromptTemplateManager: FC = () => {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const handleDeleteTemplate = (template: SystemPromptTemplateRead) => {
+    Modal.confirm({
+      title: l('删除这个提示词？', 'Delete this prompt?'),
+      content: l('删除后无法恢复，使用该模板的流程可能无法继续引用它。', 'This cannot be undone. Flows using this template may no longer be able to reference it.'),
+      okText: l('删除', 'Delete'),
+      cancelText: l('取消', 'Cancel'),
+      okButtonProps: { danger: true },
+      centered: true,
+      onOk: async () => {
+        setDeletingTemplateId(template.id)
+        try {
+          await SystemPromptTemplatesApi.delete({ id: template.id })
+          messageApi.success(l('提示词已删除', 'Prompt deleted'))
+          if (compareTemplateId(template, selectedId)) {
+            setSelected(null)
+          }
+          await loadTemplates()
+        } catch (error) {
+          void messageApi.error(error instanceof Error ? error.message : l('删除提示词失败', 'Failed to delete prompt'))
+          throw error
+        } finally {
+          setDeletingTemplateId(null)
+        }
+      },
+    })
   }
 
   const renderFlags = (template: SystemPromptTemplateRead) => (
@@ -248,7 +277,7 @@ const PromptTemplateManager: FC = () => {
       ),
     },
     {
-      title: l('类别', 'Category'),
+      title: l('编码', 'Category'),
       dataIndex: 'category',
       width: 170,
       render: (category: string) => (
@@ -268,20 +297,36 @@ const PromptTemplateManager: FC = () => {
     },
     {
       title: l('操作', 'Actions'),
-      width: 92,
+      width: 156,
       render: (_, record) => (
-        <Button
-          type="text"
-          size="small"
-          icon={<Pencil size={14} strokeWidth={1.8} />}
-          className="prompt-template-management__action"
-          onClick={(event) => {
-            event.stopPropagation()
-            openEditModal(record)
-          }}
-        >
-          {l('编辑', 'Edit')}
-        </Button>
+        <div className="prompt-template-management__actions">
+          <Button
+            type="text"
+            size="small"
+            icon={<EditOutlined />}
+            className="prompt-template-management__action"
+            onClick={(event) => {
+              event.stopPropagation()
+              openEditModal(record)
+            }}
+          >
+            {l('编辑', 'Edit')}
+          </Button>
+          <Button
+            type="text"
+            size="small"
+            danger
+            icon={<DeleteOutlined />}
+            loading={deletingTemplateId === record.id}
+            className="prompt-template-management__action prompt-template-management__action--danger"
+            onClick={(event) => {
+              event.stopPropagation()
+              handleDeleteTemplate(record)
+            }}
+          >
+            {l('删除', 'Delete')}
+          </Button>
+        </div>
       ),
     },
   ]
@@ -358,15 +403,28 @@ const PromptTemplateManager: FC = () => {
                     <span>{l('详情', 'Details')}</span>
                     <h3>{selected.name}</h3>
                   </div>
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<Pencil size={14} strokeWidth={1.8} />}
-                    className="prompt-template-management__action"
-                    onClick={() => openEditModal(selected)}
-                  >
-                    {l('编辑', 'Edit')}
-                  </Button>
+                  <div className="prompt-template-management__actions">
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<EditOutlined />}
+                      className="prompt-template-management__action"
+                      onClick={() => openEditModal(selected)}
+                    >
+                      {l('编辑', 'Edit')}
+                    </Button>
+                    <Button
+                      type="text"
+                      size="small"
+                      danger
+                      icon={<DeleteOutlined />}
+                      loading={deletingTemplateId === selected.id}
+                      className="prompt-template-management__action prompt-template-management__action--danger"
+                      onClick={() => handleDeleteTemplate(selected)}
+                    >
+                      {l('删除', 'Delete')}
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="prompt-template-management__meta-grid">

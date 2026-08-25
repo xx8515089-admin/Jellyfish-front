@@ -240,14 +240,33 @@ const MenuManagement: React.FC = () => {
       width: 220,
       fixed: 'right',
       render: (_, record) => (
-        <Space size={4}>
-          <Button size="small" type="link" icon={<PlusOutlined />} onClick={() => openCreateModal(record)}>
+        <Space size={12} className="menu-management__actions">
+          <Button
+            size="small"
+            type="text"
+            icon={<PlusOutlined />}
+            className="menu-management__action"
+            onClick={() => openCreateModal(record)}
+          >
             {text('新增子级', 'Add child')}
           </Button>
-          <Button size="small" type="link" icon={<EditOutlined />} onClick={() => openEditModal(record)}>
+          <Button
+            size="small"
+            type="text"
+            icon={<EditOutlined />}
+            className="menu-management__action"
+            onClick={() => openEditModal(record)}
+          >
             {text('编辑', 'Edit')}
           </Button>
-          <Button size="small" type="link" danger icon={<DeleteOutlined />} onClick={() => confirmDeleteMenu(record)}>
+          <Button
+            size="small"
+            type="text"
+            danger
+            icon={<DeleteOutlined />}
+            className="menu-management__action menu-management__action--danger"
+            onClick={() => confirmDeleteMenu(record)}
+          >
             {text('删除', 'Delete')}
           </Button>
         </Space>

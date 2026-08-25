@@ -6,7 +6,7 @@ export const normalizeCanvasLanguage = (language) => {
     return raw.startsWith('en') ? 'en' : 'zh';
 };
 
-export const toJellyfishLanguage = (language) => normalizeCanvasLanguage(language) === 'en' ? 'en-US' : 'zh-CN';
+export const toReelmaxLanguage = (language) => normalizeCanvasLanguage(language) === 'en' ? 'en-US' : 'zh-CN';
 
 const getInitialLanguage = () => {
     try {

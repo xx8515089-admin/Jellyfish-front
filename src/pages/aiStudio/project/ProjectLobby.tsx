@@ -11,6 +11,7 @@ import {
   Pagination,
   theme,
 } from 'antd'
+import { EditOutlined } from '@ant-design/icons'
 import type { InputRef } from 'antd'
 import {
   AlertTriangle,
@@ -19,7 +20,6 @@ import {
   Image as ImageIcon,
   Info,
   MoreHorizontal,
-  Pencil,
   Plus,
   Search,
   Trash2,
@@ -370,7 +370,7 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
               }}
               menu={{
                 items: [
-                  { key: 'rename', icon: <Pencil size={15} strokeWidth={1.75} />, label: l('重命名', 'Rename') },
+                  { key: 'rename', icon: <EditOutlined />, label: l('重命名', 'Rename') },
                   {
                     key: 'delete',
                     icon: <Trash2 size={15} strokeWidth={1.75} />,

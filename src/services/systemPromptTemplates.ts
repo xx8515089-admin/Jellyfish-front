@@ -38,6 +38,10 @@ export type SystemPromptTemplateUpdatePayload = SystemPromptTemplatePayload & {
   id: number
 }
 
+export type SystemPromptTemplateDeletePayload = {
+  id: number
+}
+
 function assertSystemSuccess(response: ApiEnvelope<unknown>, fallback: string): void {
   if (response.code !== undefined && response.code !== 0 && response.code !== 200) {
     throw new Error(response.message || fallback)
@@ -79,6 +83,20 @@ function updatePromptTemplate(
   })
 }
 
+function deletePromptTemplate(
+  requestBody: SystemPromptTemplateDeletePayload,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'POST',
+    url: '/api/v1/system/promptTemplates/delete',
+    body: requestBody,
+    mediaType: 'application/json',
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
 export const SystemPromptTemplatesApi = {
   async findAll(): Promise<SystemPromptTemplateRead[]> {
     const response = await findAllPromptTemplates()
@@ -92,5 +110,9 @@ export const SystemPromptTemplatesApi = {
   async update(requestBody: SystemPromptTemplateUpdatePayload): Promise<void> {
     const response = await updatePromptTemplate(requestBody)
     assertSystemSuccess(response, 'Prompt template update failed')
+  },
+  async delete(requestBody: SystemPromptTemplateDeletePayload): Promise<void> {
+    const response = await deletePromptTemplate(requestBody)
+    assertSystemSuccess(response, 'Prompt template deletion failed')
   },
 }

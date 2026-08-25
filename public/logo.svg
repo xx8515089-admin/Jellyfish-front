@@ -1,6 +1,6 @@
 <svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="gradient_jellyfish" x1="100" y1="20" x2="100" y2="180" gradientUnits="userSpaceOnUse">
+    <linearGradient id="gradient_reelmax" x1="100" y1="20" x2="100" y2="180" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#00E0FF" />
       <stop offset="0.5" stop-color="#A78BFA" />
       <stop offset="1" stop-color="#FF71CE" />
@@ -15,7 +15,7 @@
     </filter>
   </defs>
 
-  <g filter="url(#glow)" stroke="url(#gradient_jellyfish)" stroke-width="2" fill="none" stroke-linecap="round">
+  <g filter="url(#glow)" stroke="url(#gradient_reelmax)" stroke-width="2" fill="none" stroke-linecap="round">
     <path d="M100,30 C60,30 30,60 30,100 C30,120 40,135 60,135 C70,135 80,130 90,130 C100,130 110,135 120,135 C140,135 170,120 170,100 C170,60 140,30 100,30 Z" opacity="0.8"/>
     
     <path d="M50,70 Q100,40 150,70" opacity="0.3" stroke-width="1"/>
@@ -29,7 +29,7 @@
       <path d="M130,135 Q125,160 135,185" />
     </g>
     
-    <g fill="url(#gradient_jellyfish)" stroke="none">
+    <g fill="url(#gradient_reelmax)" stroke="none">
       <circle cx="68" cy="160" r="1.5" />
       <circle cx="83" cy="170" r="1.5" />
       <circle cx="100" cy="175" r="1.5" />

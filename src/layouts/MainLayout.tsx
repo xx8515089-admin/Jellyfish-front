@@ -172,7 +172,7 @@ const MainLayout: React.FC = () => {
 
   const menuItems = useMemo(() => buildNavigationItems(authMenus), [authMenus])
   const homePath = useMemo(() => getFirstMenuPath(authMenus) ?? '/projects', [authMenus])
-  const appTitle = t('title', { defaultValue: 'Jellyfish' })
+  const appTitle = t('title', { defaultValue: 'Reelmax' })
   const appSubtitle = t('subtitle', { defaultValue: language === 'en-US' ? 'AI Short-form Studio' : 'AI 短剧工作台' })
   const brandTitle = sidebarProject?.name?.trim() || appTitle
   const brandSubtitle = currentProjectId
@@ -281,7 +281,7 @@ const MainLayout: React.FC = () => {
           style={{ borderColor: token.colorBorderSecondary }}
         >
           <Link to={homePath} className="flex items-center gap-2 min-w-0">
-            <img src="/logo.svg" alt="Jellyfish" className={`${collapsed ? 'w-7 h-7' : 'w-8 h-8'} shrink-0`} />
+            <img src="/logo.svg" alt="Reelmax" className={`${collapsed ? 'w-7 h-7' : 'w-8 h-8'} shrink-0`} />
             {!collapsed && (
               <div className="min-w-0">
                 <div className="text-base font-semibold text-gray-900 truncate">

@@ -516,14 +516,14 @@ function MetricCard({
   change: number | null
   icon: React.ReactNode
 }) {
-  const improved = change == null || change >= 0
+  const improved = change === null || change >= 0
   return (
     <article className="efficiency-overview__metric-card">
       <div className="efficiency-overview__metric-label">{label}</div>
       <div className="efficiency-overview__metric-value">
         <strong>{value}</strong>
         <span>{unit}</span>
-        {change == null ? (
+        {change === null ? (
           <small>-</small>
         ) : (
           <small className={improved ? 'is-positive' : 'is-negative'}>

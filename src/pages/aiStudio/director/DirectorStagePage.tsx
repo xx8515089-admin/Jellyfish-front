@@ -307,7 +307,7 @@ export default function DirectorStagePage() {
             <Card size="small" title={l('接入说明', 'Integration notes')}>
               <Space direction="vertical" size={6} className="text-xs text-slate-600">
                 <div><VideoCameraOutlined /> {l('导演台只生成站位/机位参考图，不直接调用任何外部 AI 供应商。', 'The director stage only creates blocking and camera references; it does not call any external AI provider directly.')}</div>
-                <div>{l('截图会作为普通 Jellyfish File 上传，并可写入 shot_frame_images 的 first/key/last 槽。', 'Captures are uploaded as regular Jellyfish files and can be written to first, key, or last shot_frame_images slots.')}</div>
+                <div>{l('截图会作为普通 Reelmax File 上传，并可写入 shot_frame_images 的 first/key/last 槽。', 'Captures are uploaded as regular Reelmax files and can be written to first, key, or last shot_frame_images slots.')}</div>
                 <div>{l('后续生图时，把该帧作为参考图或首尾帧使用即可。', 'Use the frame later as a reference image or as the first or last frame for image generation.')}</div>
               </Space>
             </Card>
