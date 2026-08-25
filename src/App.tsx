@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import RequireAuth from './components/RequireAuth'
+import GlobalAiChat from './components/GlobalAiChat'
 import './App.css'
 import './theme/dark.css'
 
@@ -83,6 +84,7 @@ const App = () => {
           </Route>
         </Routes>
       </Suspense>
+      <GlobalAiChat />
     </BrowserRouter>
   )
 }
