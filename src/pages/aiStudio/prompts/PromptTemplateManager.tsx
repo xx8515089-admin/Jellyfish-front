@@ -1,224 +1,124 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { FC, Key } from 'react'
-import { Card, Tree, Input, Row, Col, Tag, Pagination, Button, Modal, Form, Select, Switch, message } from 'antd'
-import type { DataNode } from 'antd/es/tree'
-import { StudioPromptsService } from '../../../services/generated'
-import type { PromptCategory, PromptTemplateRead } from '../../../services/generated'
+import { useEffect, useMemo, useState } from 'react'
+import type { FC } from 'react'
+import { Button, Form, Input, Modal, Pagination, Switch, Table, Tag, Typography, message } from 'antd'
+import type { ColumnsType } from 'antd/es/table'
+import { Pencil, Plus } from 'lucide-react'
 import { useBilingualText } from '../../../i18n/useBilingualText'
-
-const fallbackCategoryLabels: Record<string, string> = {
-  frame_head_image: '首帧图片',
-  frame_tail_image: '尾帧图片',
-  frame_key_image: '关键帧图片',
-  frame_head_prompt: '首帧提示词',
-  frame_tail_prompt: '尾帧提示词',
-  frame_key_prompt: '关键帧提示词',
-  video_prompt: '视频提示词',
-  storyboard_prompt: '分镜',
-  bgm: '配乐',
-  sfx: '音效',
-  character_image_front: '角色正面',
-  character_image_other: '角色其他',
-  actor_image_front: '角色形象正面',
-  actor_image_other: '角色形象其他',
-  prop_image_front: '道具正面',
-  prop_image_other: '道具其他',
-  scene_image_front: '场景正面',
-  scene_image_other: '场景其他',
-  costume_image_front: '服装正面',
-  costume_image_other: '服装其他',
-  combined: '综合提示词',
-}
+import {
+  SystemPromptTemplatesApi,
+  type SystemPromptTemplatePayload,
+  type SystemPromptTemplateRead,
+} from '../../../services/systemPromptTemplates'
+import './PromptTemplateManager.css'
 
 const PAGE_SIZE = 10
 
-const defaultPromptCategories: PromptCategory[] = [
-  'frame_head_image',
-  'frame_tail_image',
-  'frame_key_image',
-  'frame_head_prompt',
-  'frame_tail_prompt',
-  'frame_key_prompt',
-  'video_prompt',
-  'storyboard_prompt',
-  'bgm',
-  'sfx',
-  'character_image_front',
-  'character_image_other',
-  'actor_image_front',
-  'actor_image_other',
-  'prop_image_front',
-  'prop_image_other',
-  'scene_image_front',
-  'scene_image_other',
-  'costume_image_front',
-  'costume_image_other',
-  'combined',
-]
-
 type CreatePromptForm = {
-  category: PromptCategory
+  category: string
   name: string
   content: string
   preview?: string
-  variables?: string[]
-  is_default?: boolean
+  system?: boolean
+  defaultTemplate?: boolean
 }
 
 type PromptModalMode = 'create' | 'edit'
 
-const groupOrder = [
-  'frame',
-  'video',
-  'audio',
-  'chapter',
-  'actor',
-  'scene',
-  'prop',
-  'costume',
-  'combined',
-  'other',
-] as const
-
-const groupTitles: Record<(typeof groupOrder)[number], string> = {
-  frame: '首/尾/关键帧',
-  video: '视频生成 / 分镜',
-  audio: '配乐 / 音效 / 角色',
-  chapter: '角色',
-  actor: '角色形象',
-  scene: '场景',
-  prop: '道具',
-  costume: '服装',
-  combined: '综合提示词',
-  other: '其他',
+function getTemplateVariables(template: SystemPromptTemplateRead): string[] {
+  return Array.isArray(template.variables) ? template.variables.filter(Boolean) : []
 }
 
-function getGroupKey(category: string): (typeof groupOrder)[number] {
-  if (category.startsWith('frame_')) return 'frame'
-  if (category === 'video_prompt' || category === 'storyboard_prompt') return 'video'
-  if (['bgm', 'sfx'].includes(category)) return 'audio'
-  if (category.startsWith('character_image_')) return 'chapter'
-  if (category.startsWith('actor_image')) return 'actor'
-  if (category.startsWith('scene_image_')) return 'scene'
-  if (category.startsWith('prop_image_')) return 'prop'
-  if (category.startsWith('costume_image_')) return 'costume'
-  if (category === 'combined') return 'combined'
-  return 'other'
+function compareTemplateId(template: SystemPromptTemplateRead, id: number | string | null): boolean {
+  return id != null && String(template.id) === String(id)
+}
+
+function formatDateTime(value?: string | null): string {
+  return value?.trim() || '--'
+}
+
+function formatCategory(value?: string | null): string {
+  return value?.trim() || '--'
 }
 
 const PromptTemplateManager: FC = () => {
   const l = useBilingualText()
-  const englishCategoryLabels: Record<string, string> = {
-    frame_head_image: 'First-frame image', frame_tail_image: 'Last-frame image', frame_key_image: 'Key-frame image',
-    frame_head_prompt: 'First-frame prompt', frame_tail_prompt: 'Last-frame prompt', frame_key_prompt: 'Key-frame prompt',
-    video_prompt: 'Video prompt', storyboard_prompt: 'Storyboard', bgm: 'Music', sfx: 'Sound effects',
-    character_image_front: 'Character front', character_image_other: 'Character other', actor_image_front: 'Actor front', actor_image_other: 'Actor other',
-    prop_image_front: 'Prop front', prop_image_other: 'Prop other', scene_image_front: 'Scene front', scene_image_other: 'Scene other',
-    costume_image_front: 'Costume front', costume_image_other: 'Costume other', combined: 'Combined prompt',
-  }
-  const englishGroupTitles: Record<string, string> = { frame: 'First / last / key frame', video: 'Video / storyboard', audio: 'Music / SFX / character', chapter: 'Character', actor: 'Actor', scene: 'Scene', prop: 'Prop', costume: 'Costume', combined: 'Combined prompt', other: 'Other' }
-  const getCategoryLabel = (category: string) => l(categoryLabels[category] || category, englishCategoryLabels[category] || category)
-  const [templates, setTemplates] = useState<PromptTemplateRead[]>([])
-  const [selected, setSelected] = useState<PromptTemplateRead | null>(null)
+  const [messageApi, contextHolder] = message.useMessage()
+  const [templates, setTemplates] = useState<SystemPromptTemplateRead[]>([])
+  const [selected, setSelected] = useState<SystemPromptTemplateRead | null>(null)
   const [searchText, setSearchText] = useState('')
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
-  const [categoryLabels, setCategoryLabels] = useState<Record<string, string>>(fallbackCategoryLabels)
   const [page, setPage] = useState(1)
-  const [total, setTotal] = useState(0)
   const [formOpen, setFormOpen] = useState(false)
   const [modalMode, setModalMode] = useState<PromptModalMode>('create')
-  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null)
+  const [editingTemplateId, setEditingTemplateId] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const [categoryOptions, setCategoryOptions] = useState<Array<{ value: PromptCategory; label: string }>>(
-    defaultPromptCategories.map((value) => ({
-      value,
-      label: fallbackCategoryLabels[value] || value,
-    })),
-  )
   const [createForm] = Form.useForm<CreatePromptForm>()
-  const requestIdRef = useRef(0)
 
-  const loadTemplates = async (nextPage: number, nextQuery: string) => {
-    const requestId = ++requestIdRef.current
+  const filteredTemplates = useMemo(() => {
+    const keyword = query.trim().toLowerCase()
+    if (!keyword) return templates
+    return templates.filter((template) => {
+      const haystack = [
+        template.name,
+        template.preview,
+        template.category,
+        template.content,
+        ...getTemplateVariables(template),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+      return haystack.includes(keyword)
+    })
+  }, [query, templates])
+
+  const pagedTemplates = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE
+    return filteredTemplates.slice(start, start + PAGE_SIZE)
+  }, [filteredTemplates, page])
+
+  const selectedId = selected?.id ?? null
+
+  const loadTemplates = async (): Promise<SystemPromptTemplateRead[]> => {
     setLoading(true)
     try {
-      const res = await StudioPromptsService.listPromptTemplatesApiV1StudioPromptsGet({
-        q: nextQuery.trim() || null,
-        page: nextPage,
-        pageSize: PAGE_SIZE,
+      const nextTemplates = await SystemPromptTemplatesApi.findAll()
+      setTemplates(nextTemplates)
+      setSelected((current) => {
+        if (!current) return nextTemplates[0] ?? null
+        return nextTemplates.find((template) => compareTemplateId(template, current.id)) ?? nextTemplates[0] ?? null
       })
-      if (requestId !== requestIdRef.current) return
-
-      const items = res.data?.items ?? []
-      const totalCount = res.data?.pagination?.total ?? 0
-
-      // 空页时自动回退上一页，避免用户停留在无数据页。
-      if (nextPage > 1 && items.length === 0 && totalCount > 0) {
-        setPage(nextPage - 1)
-        return
-      }
-
-      setTemplates(items)
-      setTotal(totalCount)
-    } catch {
-      message.error(l('加载模板失败', 'Failed to load templates'))
+      return nextTemplates
+    } catch (error) {
+      void messageApi.error(error instanceof Error ? error.message : l('加载模板失败', 'Failed to load templates'))
+      return []
     } finally {
-      if (requestId === requestIdRef.current) {
-        setLoading(false)
-      }
-    }
-  }
-
-  const loadCategories = async () => {
-    try {
-      const res = await StudioPromptsService.listPromptCategoriesApiV1StudioPromptsCategoriesGet()
-      const options = res.data ?? []
-      if (!options.length) return
-
-      const nextLabels = { ...fallbackCategoryLabels }
-      options.forEach((option) => {
-        nextLabels[option.value] = option.label
-      })
-      setCategoryLabels(nextLabels)
-      setCategoryOptions(
-        options.map((option) => ({
-          value: option.value,
-          label: option.label,
-        })),
-      )
-    } catch {
-      // 类别接口失败时保留本地兜底映射。
+      setLoading(false)
     }
   }
 
   useEffect(() => {
-    void loadCategories()
+    void loadTemplates()
   }, [])
 
   useEffect(() => {
-    void loadTemplates(page, query)
-  }, [page, query])
+    const maxPage = Math.max(1, Math.ceil(filteredTemplates.length / PAGE_SIZE))
+    if (page > maxPage) {
+      setPage(maxPage)
+    }
+  }, [filteredTemplates.length, page])
 
-  const treeData: DataNode[] = useMemo(() => {
-    const grouped = new Map<(typeof groupOrder)[number], PromptTemplateRead[]>()
-    groupOrder.forEach((key) => grouped.set(key, []))
+  useEffect(() => {
+    if (pagedTemplates.length === 0) {
+      if (selectedId != null) setSelected(null)
+      return
+    }
 
-    templates.forEach((template) => {
-      const key = getGroupKey(template.category)
-      grouped.get(key)?.push(template)
-    })
-
-    return groupOrder.map((groupKey) => ({
-      title: l(groupTitles[groupKey], englishGroupTitles[groupKey]),
-      key: groupKey,
-      children: (grouped.get(groupKey) ?? []).map((t) => ({
-        title: t.name,
-        key: t.id,
-        isLeaf: true,
-      })),
-    }))
-  }, [l, templates])
+    if (selectedId == null || !pagedTemplates.some((template) => compareTemplateId(template, selectedId))) {
+      setSelected(pagedTemplates[0])
+    }
+  }, [pagedTemplates, selectedId])
 
   const handleSearch = (value: string) => {
     setSelected(null)
@@ -231,46 +131,41 @@ const PromptTemplateManager: FC = () => {
     setPage(nextPage)
   }
 
-  const onSelect = (_: Key[], info: { node: { key: Key } }) => {
-    const id = String(info.node.key)
-    const t = templates.find((x) => x.id === id)
-    setSelected(t || null)
-  }
-
   const openCreateModal = () => {
     createForm.resetFields()
     setModalMode('create')
     setEditingTemplateId(null)
     createForm.setFieldsValue({
-      category: categoryOptions[0]?.value,
-      is_default: false,
-      variables: [],
+      category: '',
+      system: false,
+      defaultTemplate: false,
     })
     setFormOpen(true)
   }
 
-  const openEditModal = (template: PromptTemplateRead) => {
+  const openEditModal = (template: SystemPromptTemplateRead) => {
     setModalMode('edit')
     setEditingTemplateId(template.id)
     createForm.resetFields()
     createForm.setFieldsValue({
       category: template.category,
       name: template.name,
-      preview: template.preview,
+      preview: template.preview ?? '',
       content: template.content,
-      variables: template.variables,
-      is_default: template.is_default,
+      system: Boolean(template.system),
+      defaultTemplate: Boolean(template.defaultTemplate),
     })
     setFormOpen(true)
   }
 
-  const buildPayload = (values: CreatePromptForm) => ({
-    category: values.category,
+  const buildPayload = (values: CreatePromptForm): SystemPromptTemplatePayload => ({
+    category: values.category.trim(),
     name: values.name.trim(),
+    preview: values.preview?.trim() ?? '',
     content: values.content.trim(),
-    preview: values.preview?.trim() || undefined,
-    variables: (values.variables ?? []).map((v) => v.trim()).filter(Boolean),
-    is_default: values.is_default ?? false,
+    variableDefinitions: [],
+    system: Boolean(values.system),
+    defaultTemplate: Boolean(values.defaultTemplate),
   })
 
   const handleFormSubmit = async () => {
@@ -280,167 +175,255 @@ const PromptTemplateManager: FC = () => {
       const payload = buildPayload(values)
 
       if (modalMode === 'create') {
-        const res = await StudioPromptsService.createPromptTemplateApiV1StudioPromptsPost({
-          requestBody: payload,
-        })
-        if (!res.data) {
-          message.error(l('添加提示词失败', 'Failed to add prompt'))
-          return
-        }
-
-        message.success(l('提示词已添加', 'Prompt added'))
+        await SystemPromptTemplatesApi.create(payload)
+        messageApi.success(l('提示词已添加', 'Prompt added'))
         setFormOpen(false)
         createForm.resetFields()
         setSelected(null)
         setSearchText('')
         setQuery('')
         setPage(1)
-        void loadTemplates(1, '')
+        await loadTemplates()
         return
       }
 
-      if (!editingTemplateId) {
-        message.error(l('编辑目标不存在', 'The prompt to edit does not exist'))
+      if (editingTemplateId == null) {
+        messageApi.error(l('编辑目标不存在', 'The prompt to edit does not exist'))
         return
       }
 
-      const res = await StudioPromptsService.updatePromptTemplateApiV1StudioPromptsTemplateIdPatch({
-        templateId: editingTemplateId,
-        requestBody: payload,
+      await SystemPromptTemplatesApi.update({
+        id: editingTemplateId,
+        ...payload,
       })
-      if (!res.data) {
-        message.error(l('更新提示词失败', 'Failed to update prompt'))
-        return
-      }
-      const updatedTemplate = res.data
-
-      message.success(l('提示词已更新', 'Prompt updated'))
+      messageApi.success(l('提示词已更新', 'Prompt updated'))
       setFormOpen(false)
-      setEditingTemplateId(null)
       createForm.resetFields()
-      setSelected((prev) => (prev?.id === updatedTemplate.id ? updatedTemplate : prev))
-      setTemplates((prev) => prev.map((item) => (item.id === updatedTemplate.id ? updatedTemplate : item)))
-      void loadTemplates(page, query)
+      const refreshedTemplates = await loadTemplates()
+      setSelected(refreshedTemplates.find((template) => compareTemplateId(template, editingTemplateId)) ?? null)
+      setEditingTemplateId(null)
     } catch (error) {
       if (error && typeof error === 'object' && 'errorFields' in error) return
-      message.error(modalMode === 'create' ? l('添加提示词失败', 'Failed to add prompt') : l('更新提示词失败', 'Failed to update prompt'))
+      void messageApi.error(
+        error instanceof Error
+          ? error.message
+          : modalMode === 'create'
+            ? l('添加提示词失败', 'Failed to add prompt')
+            : l('更新提示词失败', 'Failed to update prompt'),
+      )
     } finally {
       setSubmitting(false)
     }
   }
 
-  const handleDeleteTemplate = (template: PromptTemplateRead) => {
-    Modal.confirm({
-      title: l('删除提示词', 'Delete prompt'),
-      content: l(`确定删除「${template.name}」吗？`, `Delete “${template.name}”?`),
-      okText: l('删除', 'Delete'),
-      okType: 'danger',
-      cancelText: l('取消', 'Cancel'),
-      onOk: async () => {
-        try {
-          await StudioPromptsService.deletePromptTemplateApiV1StudioPromptsTemplateIdDelete({
-            templateId: template.id,
-          })
-          message.success(l('提示词已删除', 'Prompt deleted'))
-          if (selected?.id === template.id) {
-            setSelected(null)
-          }
+  const renderFlags = (template: SystemPromptTemplateRead) => (
+    <div className="prompt-template-management__flags">
+      {template.system ? (
+        <Tag className="prompt-template-management__tag prompt-template-management__tag--system">
+          {l('系统', 'System')}
+        </Tag>
+      ) : (
+        <Tag className="prompt-template-management__tag">
+          {l('自定义', 'Custom')}
+        </Tag>
+      )}
+      {template.defaultTemplate && (
+        <Tag className="prompt-template-management__tag prompt-template-management__tag--default">
+          {l('默认', 'Default')}
+        </Tag>
+      )}
+    </div>
+  )
 
-          if (templates.length === 1 && page > 1) {
-            setPage(page - 1)
-          } else {
-            void loadTemplates(page, query)
-          }
-        } catch {
-          message.error(l('删除提示词失败', 'Failed to delete prompt'))
-        }
-      },
-    })
-  }
+  const columns: ColumnsType<SystemPromptTemplateRead> = [
+    {
+      title: l('名称', 'Name'),
+      dataIndex: 'name',
+      width: 260,
+      render: (_, record) => (
+        <div className="prompt-template-management__table-name">
+          <strong>{record.name}</strong>
+          <small>{record.category}</small>
+        </div>
+      ),
+    },
+    {
+      title: l('类别', 'Category'),
+      dataIndex: 'category',
+      width: 170,
+      render: (category: string) => (
+        <span className="prompt-template-management__category">{formatCategory(category)}</span>
+      ),
+    },
+    {
+      title: l('预览', 'Preview'),
+      dataIndex: 'preview',
+      ellipsis: true,
+      render: (preview: string | null | undefined) => preview || '--',
+    },
+    {
+      title: l('属性', 'Flags'),
+      width: 128,
+      render: (_, record) => renderFlags(record),
+    },
+    {
+      title: l('操作', 'Actions'),
+      width: 92,
+      render: (_, record) => (
+        <Button
+          type="text"
+          size="small"
+          icon={<Pencil size={14} strokeWidth={1.8} />}
+          className="prompt-template-management__action"
+          onClick={(event) => {
+            event.stopPropagation()
+            openEditModal(record)
+          }}
+        >
+          {l('编辑', 'Edit')}
+        </Button>
+      ),
+    },
+  ]
 
   return (
-    <div className="space-y-4">
-      <Card
-        title={l('提示词模板管理', 'Prompt template management')}
-        loading={loading && templates.length === 0}
-        extra={<Button type="primary" onClick={openCreateModal}>{l('添加提示词', 'Add prompt')}</Button>}
-      >
-        <Input.Search
-          placeholder={l('搜索模板名称或预览', 'Search template name or preview')}
-          allowClear
-          className="mb-4 max-w-md"
-          value={searchText}
-          onSearch={handleSearch}
-          onChange={(e) => {
-            const value = e.target.value
-            setSearchText(value)
-            if (!value) {
-              handleSearch('')
-            }
-          }}
-        />
-        <Row gutter={16}>
-          <Col xs={24} md={10}>
-            <Tree
-              showLine
-              defaultExpandAll
-              blockNode
-              treeData={treeData}
-              onSelect={onSelect}
-              fieldNames={{ title: 'title', key: 'key', children: 'children' }}
+    <div className="prompt-template-management">
+      {contextHolder}
+      <div className="prompt-template-management__surface">
+        <header className="prompt-template-management__header">
+          <div>
+            <h2>{l('提示词模板管理', 'Prompt template management')}</h2>
+            <span>
+              {l(`共 ${filteredTemplates.length} 个模板`, `${filteredTemplates.length} templates`)}
+            </span>
+          </div>
+          <Button
+            type="primary"
+            icon={<Plus size={15} strokeWidth={1.8} />}
+            onClick={openCreateModal}
+          >
+            {l('添加提示词', 'Add prompt')}
+          </Button>
+        </header>
+
+        <div className="prompt-template-management__toolbar">
+          <Input.Search
+            placeholder={l('搜索模板名称、类别、预览或内容', 'Search template name, category, preview, or content')}
+            allowClear
+            value={searchText}
+            onSearch={handleSearch}
+            onChange={(event) => {
+              const value = event.target.value
+              setSearchText(value)
+              if (!value) {
+                handleSearch('')
+              }
+            }}
+          />
+        </div>
+
+        <div className="prompt-template-management__workspace">
+          <section className="prompt-template-management__list-panel">
+            <Table<SystemPromptTemplateRead>
+              rowKey="id"
+              size="small"
+              loading={loading}
+              columns={columns}
+              dataSource={pagedTemplates}
+              pagination={false}
+              className="prompt-template-management__table"
+              rowClassName={(record) =>
+                compareTemplateId(record, selectedId) ? 'prompt-template-management__row--selected' : ''
+              }
+              onRow={(record) => ({
+                onClick: () => setSelected(record),
+              })}
             />
-            <div className="mt-4 flex justify-end">
+            <div className="prompt-template-management__pagination">
               <Pagination
                 current={page}
                 pageSize={PAGE_SIZE}
-                total={total}
+                total={filteredTemplates.length}
                 showSizeChanger={false}
                 onChange={handlePageChange}
               />
             </div>
-          </Col>
-          <Col xs={24} md={14}>
+          </section>
+
+          <aside className="prompt-template-management__detail-panel">
             {selected ? (
-              <Card
-                title={selected.name}
-                size="small"
-                extra={(
-                  <div className="flex gap-2">
-                    <Button size="small" onClick={() => openEditModal(selected)}>{l('编辑', 'Edit')}</Button>
-                    <Button size="small" danger onClick={() => handleDeleteTemplate(selected)}>
-                      {l('删除', 'Delete')}
-                    </Button>
+              <>
+                <div className="prompt-template-management__detail-topbar">
+                  <div>
+                    <span>{l('详情', 'Details')}</span>
+                    <h3>{selected.name}</h3>
                   </div>
-                )}
-              >
-                <Tag>{getCategoryLabel(selected.category)}</Tag>
-                <p className="text-gray-600 text-sm mt-2">{selected.preview}</p>
-                <pre className="mt-3 p-3 bg-gray-50 rounded text-xs overflow-auto max-h-48">
-                  {selected.content}
-                </pre>
-                {selected.variables.length > 0 && (
-                  <div className="mt-2 text-xs text-gray-500">
-                    变量：{selected.variables.join(', ')}
-                  </div>
-                )}
-                <div className="mt-3 flex gap-2">
-                  {selected.is_system && <Tag color="gold">{l('系统预置', 'System preset')}</Tag>}
-                  {selected.is_default && <Tag color="blue">{l('默认提示词', 'Default prompt')}</Tag>}
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<Pencil size={14} strokeWidth={1.8} />}
+                    className="prompt-template-management__action"
+                    onClick={() => openEditModal(selected)}
+                  >
+                    {l('编辑', 'Edit')}
+                  </Button>
                 </div>
-              </Card>
+
+                <div className="prompt-template-management__meta-grid">
+                  <div>
+                    <span>{l('类别', 'Category')}</span>
+                    <strong>{formatCategory(selected.category)}</strong>
+                  </div>
+                  <div>
+                    <span>{l('更新时间', 'Updated at')}</span>
+                    <strong>{formatDateTime(selected.updatedAt)}</strong>
+                  </div>
+                  <div>
+                    <span>{l('变量数量', 'Variables')}</span>
+                    <strong>{getTemplateVariables(selected).length}</strong>
+                  </div>
+                  <div>
+                    <span>{l('属性', 'Flags')}</span>
+                    {renderFlags(selected)}
+                  </div>
+                </div>
+
+                <div className="prompt-template-management__preview">
+                  <span>{l('预览', 'Preview')}</span>
+                  <p>{selected.preview || l('暂无预览', 'No preview')}</p>
+                </div>
+
+                <div className="prompt-template-management__content-block">
+                  <div className="prompt-template-management__section-title">
+                    {l('模板内容', 'Template content')}
+                  </div>
+                  <pre>{selected.content}</pre>
+                </div>
+
+                {getTemplateVariables(selected).length > 0 && (
+                  <div className="prompt-template-management__variables">
+                    <div className="prompt-template-management__section-title">
+                      {l('变量', 'Variables')}
+                    </div>
+                    <div>
+                      {getTemplateVariables(selected).map((variable) => (
+                        <span key={variable}>{variable}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             ) : (
-              <Card>
-                <div className="text-gray-500 text-center py-8">
-                  {l('左侧选择模板查看详情', 'Select a template on the left to view details')}
-                </div>
-              </Card>
+              <div className="prompt-template-management__empty">
+                {loading ? l('加载中...', 'Loading...') : l('暂无提示词模板', 'No prompt templates')}
+              </div>
             )}
-          </Col>
-        </Row>
-      </Card>
+          </aside>
+        </div>
+      </div>
 
       <Modal
-        title={modalMode === 'create' ? l('添加提示词', 'Add prompt') : l('编辑提示词', 'Edit prompt')}
+        title={null}
         open={formOpen}
         onCancel={() => {
           setFormOpen(false)
@@ -450,45 +433,88 @@ const PromptTemplateManager: FC = () => {
         okText={l('保存', 'Save')}
         cancelText={l('取消', 'Cancel')}
         confirmLoading={submitting}
-        destroyOnClose
+        destroyOnHidden
+        width="min(860px, calc(100vw - 48px))"
+        className="menu-editor-modal prompt-template-editor-modal"
       >
-        <Form layout="vertical" form={createForm}>
-          <Form.Item
-            label={l('模板类别', 'Template category')}
-            name="category"
-            rules={[{ required: true, message: l('请选择模板类别', 'Select a template category') }]}
-          >
-            <Select options={categoryOptions.map((option) => ({ ...option, label: getCategoryLabel(option.value) }))} placeholder={l('请选择类别', 'Select a category')} />
-          </Form.Item>
-          <Form.Item
-            label={l('模板名称', 'Template name')}
-            name="name"
-            rules={[{ required: true, message: l('请输入模板名称', 'Enter a template name') }]}
-          >
-            <Input maxLength={255} placeholder={l('例如：分镜基础提示词', 'Example: Basic storyboard prompt')} />
-          </Form.Item>
-          <Form.Item label={l('预览文案', 'Preview text')} name="preview">
-            <Input.TextArea rows={2} maxLength={500} placeholder={l('用于列表预览的简短说明', 'A short description for list previews')} />
-          </Form.Item>
-          <Form.Item
-            label={l('模板内容', 'Template content')}
-            name="content"
-            rules={[{ required: true, message: l('请输入模板内容', 'Enter template content') }]}
-          >
-            <Input.TextArea rows={6} placeholder={l('请输入提示词模板内容', 'Enter prompt template content')} />
-          </Form.Item>
-          <Form.Item label={l('变量（回车添加）', 'Variables (press Enter to add)')} name="variables">
-            <Select
-              mode="tags"
-              tokenSeparators={[',', '，']}
-              open={false}
-              placeholder={l('例如：subject, style, lighting', 'For example: subject, style, lighting')}
-            />
-          </Form.Item>
-          <Form.Item label={l('设为默认提示词', 'Set as default prompt')} name="is_default" valuePropName="checked">
-            <Switch />
-          </Form.Item>
-        </Form>
+        <div className="menu-editor">
+          <div className="menu-editor__header">
+            <div>
+              <div className="menu-editor__eyebrow">{l('提示词模板管理', 'Prompt Template Management')}</div>
+              <div className="menu-editor__title-row">
+                <Typography.Title level={4} className="menu-editor__title">
+                  {modalMode === 'create' ? l('添加提示词', 'Add prompt') : l('编辑提示词', 'Edit prompt')}
+                </Typography.Title>
+                <Tag className="menu-editor__mode">
+                  {modalMode === 'create' ? l('新增', 'Creating') : l('编辑', 'Editing')}
+                </Tag>
+              </div>
+            </div>
+          </div>
+
+          <Form layout="vertical" form={createForm} className="menu-editor__form">
+            <div className="menu-editor__section">
+              <div className="menu-editor__section-title">{l('基础信息', 'Basic information')}</div>
+              <div className="menu-editor__grid">
+                <Form.Item
+                  label={l('模板类别', 'Template category')}
+                  name="category"
+                  rules={[{ required: true, whitespace: true, message: l('请输入模板类别', 'Enter a template category') }]}
+                >
+                  <Input maxLength={100} placeholder="character_sheet_zh" />
+                </Form.Item>
+                <Form.Item
+                  label={l('模板名称', 'Template name')}
+                  name="name"
+                  rules={[{ required: true, whitespace: true, message: l('请输入模板名称', 'Enter a template name') }]}
+                >
+                  <Input maxLength={255} placeholder={l('例如：角色设定图中文模板', 'Example: Character sheet template')} />
+                </Form.Item>
+                <Form.Item label={l('预览文案', 'Preview text')} name="preview" className="menu-editor__wide">
+                  <Input.TextArea
+                    rows={3}
+                    maxLength={500}
+                    placeholder={l('用于列表预览的简短说明', 'A short description for list previews')}
+                  />
+                </Form.Item>
+              </div>
+            </div>
+
+            <div className="menu-editor__section">
+              <div className="menu-editor__section-title">{l('模板配置', 'Template configuration')}</div>
+              <Form.Item
+                label={l('模板内容', 'Template content')}
+                name="content"
+                className="menu-editor__wide"
+                rules={[{ required: true, whitespace: true, message: l('请输入模板内容', 'Enter template content') }]}
+              >
+                <Input.TextArea
+                  rows={12}
+                  className="prompt-template-editor-modal__content-input"
+                  placeholder={l('请输入提示词模板内容', 'Enter prompt template content')}
+                />
+              </Form.Item>
+              <div className="prompt-template-editor-modal__switch-grid">
+                <Form.Item label={l('系统模板', 'System template')} className="menu-editor__switch-item">
+                  <div className="menu-editor__switch-row">
+                    <Form.Item name="system" valuePropName="checked" noStyle>
+                      <Switch />
+                    </Form.Item>
+                    <span>{l('系统内置模板标记', 'Mark as a system template')}</span>
+                  </div>
+                </Form.Item>
+                <Form.Item label={l('默认提示词', 'Default prompt')} className="menu-editor__switch-item">
+                  <div className="menu-editor__switch-row">
+                    <Form.Item name="defaultTemplate" valuePropName="checked" noStyle>
+                      <Switch />
+                    </Form.Item>
+                    <span>{l('作为该类别默认提示词', 'Use as the default prompt for this category')}</span>
+                  </div>
+                </Form.Item>
+              </div>
+            </div>
+          </Form>
+        </div>
       </Modal>
     </div>
   )

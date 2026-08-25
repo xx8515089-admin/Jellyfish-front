@@ -454,6 +454,31 @@ code {
   color: var(--jf-muted) !important;
 }
 
+.menu-editor-modal .ant-switch {
+  background: #4f4f4f !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
+}
+
+.menu-editor-modal .ant-switch:hover:not(.ant-switch-disabled) {
+  background: #5b5b5b !important;
+}
+
+.menu-editor-modal .ant-switch.ant-switch-checked {
+  background: linear-gradient(135deg, #6678ff 0%, #9b7cff 100%) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.28),
+    0 0 0 2px rgba(114, 92, 255, 0.18) !important;
+}
+
+.menu-editor-modal .ant-switch.ant-switch-checked:hover:not(.ant-switch-disabled) {
+  background: linear-gradient(135deg, #7486ff 0%, #a98dff 100%) !important;
+}
+
+.menu-editor-modal .ant-switch .ant-switch-handle::before {
+  background: #f4f4f4 !important;
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.4) !important;
+}
+
 .menu-editor__title.ant-typography,
 .menu-editor__section-title,
 .role-management__table .ant-table-thead > tr > th {
