@@ -297,7 +297,8 @@ const GlobalAiChat = () => {
     }, 1400)
   }, [])
 
-  const shouldHide = location.pathname === '/login'
+  const isCanvasStudioPage = location.pathname === '/canvas' || location.pathname.startsWith('/canvas/')
+  const shouldHide = location.pathname === '/login' || isCanvasStudioPage
   if (shouldHide) return null
 
   return (

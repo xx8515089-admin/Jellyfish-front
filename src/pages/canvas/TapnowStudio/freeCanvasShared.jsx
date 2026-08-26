@@ -4281,11 +4281,11 @@ const ImageCompareView = React.memo(({ img1, img2, theme = 'dark', language }) =
                 <LazyBase64Image src={displayImg2} loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-contain" draggable={false} />
             </div>
             <div
-                className="absolute top-0 bottom-0 w-0.5 bg-white/80 shadow-[0_0_10px_rgba(0,0,0,0.5)] pointer-events-none"
+                className="absolute top-0 bottom-0 w-px -translate-x-1/2 bg-white/85 shadow-[0_0_10px_rgba(255,255,255,0.45)] pointer-events-none"
                 style={{ left: `${pos}%` }}
             >
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 bg-white rounded-full shadow-lg flex items-center justify-center text-black">
-                    <Split size={12} className="rotate-90" />
+                <div className="absolute top-1/2 left-1/2 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/70 bg-zinc-950/80 text-white shadow-[0_8px_22px_rgba(0,0,0,0.45)] backdrop-blur-sm">
+                    <Split size={14} strokeWidth={2.4} className="rotate-90" />
                 </div>
             </div>
             <div className={`absolute bottom-2 left-2 bg-black/70 text-white text-[10px] font-medium px-2 py-0.5 rounded border border-white/10 transition-opacity duration-200 pointer-events-none ${isHovering ? 'opacity-100' : 'opacity-60'}`}>

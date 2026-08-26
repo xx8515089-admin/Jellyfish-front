@@ -234,6 +234,46 @@
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.16), 0 16px 34px rgba(0, 0, 0, 0.2);
 }
 
+.project-lobby-card-menu .ant-dropdown-menu {
+  padding: 6px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 8px !important;
+  background: rgba(8, 8, 9, 0.96) !important;
+  box-shadow:
+    0 16px 38px rgba(0, 0, 0, 0.46),
+    inset 0 1px 0 rgba(255, 255, 255, 0.055) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.project-lobby-card-menu .ant-dropdown-menu-item {
+  min-height: 34px;
+  margin: 0 !important;
+  padding: 7px 10px !important;
+  border-radius: 6px !important;
+  color: #e7e9ee !important;
+  font-size: 13px;
+}
+
+.project-lobby-card-menu .ant-dropdown-menu-item:hover,
+.project-lobby-card-menu .ant-dropdown-menu-item-active {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.project-lobby-card-menu .ant-dropdown-menu-item-danger {
+  color: #ff5f5f !important;
+}
+
+.project-lobby-card-menu .ant-dropdown-menu-item-danger:hover,
+.project-lobby-card-menu .ant-dropdown-menu-item-danger.ant-dropdown-menu-item-active {
+  background: rgba(255, 95, 95, 0.12) !important;
+  color: #ff7373 !important;
+}
+
+.project-lobby-card-menu .ant-dropdown-menu-item-icon {
+  color: currentColor !important;
+}
+
 .project-lobby-delete-confirm-root .ant-modal-mask {
   background: rgba(0, 0, 0, 0.58) !important;
   backdrop-filter: blur(8px);
@@ -249,23 +289,27 @@
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.11) !important;
   border-radius: 20px;
-  background:
-    radial-gradient(circle at 18% 0%, rgba(255, 111, 111, 0.08), transparent 34%),
-    linear-gradient(180deg, rgba(18, 18, 20, 0.96), rgba(11, 11, 12, 0.94)) !important;
+  background: rgba(8, 8, 9, 0.96) !important;
   box-shadow:
     0 30px 96px rgba(0, 0, 0, 0.66),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(20px) saturate(135%);
-  -webkit-backdrop-filter: blur(20px) saturate(135%);
+    inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
 .project-lobby-delete-confirm .ant-modal-confirm-body-wrapper {
-  padding: 28px 30px 26px;
+  padding: 30px 34px 28px;
 }
 
 .project-lobby-delete-confirm .ant-modal-confirm-body {
-  align-items: flex-start;
-  gap: 14px;
+  display: block;
+  justify-content: center;
+  text-align: center;
+}
+
+.project-lobby-delete-confirm .ant-modal-confirm-body > .anticon,
+.project-lobby-delete-confirm .ant-modal-confirm-body > .project-lobby-delete-confirm__icon {
+  display: none !important;
 }
 
 .project-lobby-delete-confirm__icon {
@@ -275,36 +319,41 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255, 121, 121, 0.26);
+  border: 1px solid rgba(255, 255, 255, 0.13);
   border-radius: 14px;
-  background: linear-gradient(180deg, rgba(255, 121, 121, 0.15), rgba(255, 121, 121, 0.07));
-  color: #ffb2b2;
+  background: rgba(255, 255, 255, 0.055);
+  color: #d8dbe2;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .project-lobby-delete-confirm .ant-modal-confirm-paragraph {
   max-width: none;
+  width: 100%;
 }
 
 .project-lobby-delete-confirm .ant-modal-confirm-title {
   color: #f7f7f8 !important;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 700;
-  line-height: 24px;
+  line-height: 26px;
   letter-spacing: 0;
+  text-align: center;
 }
 
 .project-lobby-delete-confirm .ant-modal-confirm-content {
   margin-top: 8px;
+  max-width: 310px;
+  margin-inline: auto;
   color: #a7aab3 !important;
   font-size: 13px;
   line-height: 22px;
+  text-align: center;
 }
 
 .project-lobby-delete-confirm .ant-modal-confirm-btns {
-  margin-top: 26px;
+  margin-top: 24px;
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   gap: 10px;
 }
 
@@ -312,7 +361,7 @@
   min-width: 72px;
   height: 36px;
   margin-inline-start: 0;
-  border-radius: 10px;
+  border-radius: 8px;
   font-size: 13px;
   font-weight: 600;
   box-shadow: none;
@@ -335,16 +384,24 @@
 .project-lobby-delete-confirm__delete-button.ant-btn-dangerous.ant-btn-primary:focus,
 .project-lobby-delete-confirm__delete-button.ant-btn-dangerous.ant-btn-primary:focus-visible,
 .project-lobby-delete-confirm__delete-button.ant-btn-dangerous.ant-btn-primary:active {
-  border-color: rgba(255, 111, 111, 0.34) !important;
-  background: linear-gradient(180deg, rgba(255, 111, 111, 0.24), rgba(173, 50, 50, 0.22)) !important;
-  color: #ffe5e5 !important;
+  min-width: 72px;
+  border-color: #f05252 !important;
+  background: #ef4444 !important;
+  color: #ffffff !important;
   outline: none !important;
-  box-shadow: none !important;
+  box-shadow:
+    0 8px 18px rgba(239, 68, 68, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16) !important;
+}
+
+.project-lobby-delete-confirm__delete-button.ant-btn-dangerous.ant-btn-primary .ant-btn-icon {
+  display: inline-flex;
+  align-items: center;
 }
 
 .project-lobby-delete-confirm__delete-button.ant-btn-dangerous.ant-btn-primary:hover {
-  border-color: rgba(255, 132, 132, 0.5) !important;
-  background: linear-gradient(180deg, rgba(255, 132, 132, 0.32), rgba(188, 60, 60, 0.3)) !important;
+  border-color: #ff6b6b !important;
+  background: #f35b5b !important;
   color: #ffffff !important;
 }
 
@@ -401,11 +458,17 @@
   bottom: 10px;
   left: 10px;
   padding: 11px 12px;
-  border-radius: 5px;
-  background: rgba(13, 13, 13, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(8, 8, 9, 0.96);
   color: var(--project-text);
   font-size: 12px;
   line-height: 24px;
+  box-shadow:
+    0 16px 38px rgba(0, 0, 0, 0.46),
+    inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   opacity: 0;
   pointer-events: none;
   transform: translateY(8px);
@@ -424,8 +487,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 10px;
-  opacity: 0;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 18px;
+  letter-spacing: 0;
+  opacity: 0.88;
   transform: translateY(-2px);
   transition: opacity 160ms ease, transform 160ms ease;
 }
@@ -433,36 +499,33 @@
 .project-lobby-card__status {
   top: 10px;
   left: 10px;
-  padding: 2px 7px;
-  border: 1px solid rgba(255, 255, 255, 0.075);
-  border-radius: 5px;
-  background: rgba(22, 22, 22, 0.54);
-  color: #a8a8a8;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #edf0f6;
   box-shadow: none;
-  backdrop-filter: blur(6px);
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.86),
+    0 0 10px rgba(0, 0, 0, 0.44);
+  backdrop-filter: none;
 }
 
 .project-lobby-card__status--completed {
-  background: rgba(42, 42, 42, 0.42);
-  border-color: rgba(160, 160, 160, 0.16);
-  color: #b0b0b0;
+  color: #edf0f6;
 }
 
 .project-lobby-card__status--inProgress {
-  background: rgba(46, 46, 46, 0.36);
-  border-color: rgba(156, 156, 156, 0.14);
-  color: #b0b0b0;
+  color: #edf0f6;
 }
 
 .project-lobby-card__status--draft {
-  background: rgba(40, 40, 40, 0.42);
-  border-color: rgba(144, 144, 144, 0.14);
-  color: #9f9f9f;
+  color: #edf0f6;
 }
 
 .project-lobby-card:hover .project-lobby-card__status,
 .project-lobby-card:focus-within .project-lobby-card__status {
-  opacity: 0.76;
+  opacity: 1;
   transform: translateY(0);
 }
 
@@ -616,16 +679,25 @@
 }
 
 .project-lobby-create__icon {
-  width: 44px;
-  height: 44px;
+  position: relative;
+  width: 40px;
+  height: 40px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 8px;
-  background: #d7d9df;
-  color: #111111;
-  box-shadow: none;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: radial-gradient(circle at 35% 35%, #ffffff, #d7d9df 34%, #6e727b 72%, #252525);
+  color: #101010;
+  box-shadow: 0 0 22px rgba(215, 217, 223, 0.16);
+  transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
+}
+
+.project-lobby-create:hover .project-lobby-create__icon,
+.project-lobby-create:focus-visible .project-lobby-create__icon {
+  transform: translateY(-1px) scale(1.04);
+  filter: brightness(1.05);
+  box-shadow: 0 0 26px rgba(215, 217, 223, 0.22);
 }
 
 .project-lobby__loading {

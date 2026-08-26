@@ -586,18 +586,34 @@
 
 .project-create-page__style-tile-preview.is-custom {
   position: relative;
-  background-color: #244b48;
-  background-image: url('/assets/images/custom.png');
-  background-position: center;
-  background-size: cover;
+  isolation: isolate;
+  background-color: #17191d;
+  background-image: none;
 }
 
 .project-create-page__style-tile-preview.is-custom.is-tone-custom {
-  background-color: #3f4858;
+  background-color: #17191d;
+}
+
+.project-create-page__style-tile-preview.is-custom::before {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  z-index: 0;
+  border-radius: 12px;
+  background-image: url('/assets/images/custom.png');
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+.project-create-page__style-tile-preview.is-custom.is-tone-custom::before {
   background-image: url('/assets/images/custom-2.png');
 }
 
 .project-create-page__style-tile-preview.is-custom .anticon {
+  position: relative;
+  z-index: 1;
   width: 34px;
   height: 34px;
   display: inline-flex;

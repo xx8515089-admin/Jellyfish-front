@@ -1,11 +1,11 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { createPortal, flushSync } from 'react-dom';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 // V3.5.20-1: Direct icon imports for better performance (eliminates wrapper overhead)
 import {
     Plus, Image as ImageIcon, Video, X, Play, Layers, MousePointer2, Wand2, Loader2,
-    Link as LinkIcon, History, ImagePlus, Trash2, Edit2, CheckCircle2, Square, Circle, Unlink, CopyPlus,
+    Link as LinkIcon, History, ImagePlus, Trash2, Edit2, CheckCircle2, Square, Circle, CopyPlus,
     ArrowRightSquare, MessageSquare, Send, Paperclip, FileText, FileAudio, FileVideo, FileImage,
     ChevronRight, ChevronLeft, MoreHorizontal, Bot, User, Users, GripVertical, Forward, RefreshCw,
     Split, ChevronsUp, ChevronsDown, Maximize2, FileSearch,
@@ -19,9 +19,12 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { downloadSelectedHistory } from './downloadSelectedHistory_stub';
 import { CanvasEmptyHint, CanvasTopBar } from './components/CanvasChrome';
+import CanvasNodeRenderBoundary from './components/CanvasNodeRenderBoundary';
+import ConnectionLayer, { getConnectionGeometry } from './components/ConnectionLayer';
 import HistoryToolsPanel from './components/HistoryToolsPanel';
 import GenerationNodeContent from './components/GenerationNodeContent';
 import StoryboardNodeContent from './components/StoryboardNodeContent';
+import { useRafNodeUpdates } from './hooks/useRafNodeUpdates';
 import i18n, { normalizeCanvasLanguage, toReelmaxLanguage } from './i18n';
 import {
     activeCanvasStorage,
@@ -3918,6 +3921,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
     const lastMousePos = useRef({ x: 0, y: 0 });
     const chatEndRef = useRef(null);
     const chatInputRef = useRef(null);
+    const connectionLayerRef = useRef(null);
     const nodesRef = useRef(nodes);
     const selectedNodeIdRef = useRef(selectedNodeId);
     const selectedNodeIdsRef = useRef(selectedNodeIds); // 存储多选节点ID的ref
@@ -3927,7 +3931,11 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
     const isPanningRef = useRef(false); // 使用ref跟踪画布拖动状态，避免状态丢失
     const panRafRef = useRef(null); // 画布拖动的 requestAnimationFrame
     const pendingPanUpdate = useRef(null); // 待处理的画布拖动更新
+    const nodeDragSessionRef = useRef(null);
+    const nodeDragRafRef = useRef(null);
+    const pendingNodeDragProjectionRef = useRef(null);
     const multiNodeDragStartPos = useRef(null); // 多节点拖动起始位置，用于防止累积误差
+    const singleNodeDragStartPos = useRef(null); // 单节点拖动起始位置，避免 RAF 合并时丢失 movement 增量
     const lastZoomRef = useRef(null); // 跟踪上次的 zoom 值，用于检测缩放切换
 
     useEffect(() => {
@@ -5861,7 +5869,9 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                 const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
                 let newZoom = Math.min(Math.max(prev.zoom * zoomFactor, 0.2), 3);
                 const scale = newZoom / prev.zoom;
-                return { zoom: newZoom, x: mouseX - (mouseX - prev.x) * scale, y: mouseY - (mouseY - prev.y) * scale };
+                const nextView = { zoom: newZoom, x: mouseX - (mouseX - prev.x) * scale, y: mouseY - (mouseY - prev.y) * scale };
+                viewRef.current = nextView;
+                return nextView;
             });
         };
 
@@ -5871,7 +5881,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         return () => {
             canvasElement.removeEventListener('wheel', wheelHandler);
         };
-    }, [view]);
+    }, []);
 
     useEffect(() => {
         if (isResizingChat) {
@@ -5891,8 +5901,10 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         const rect = canvasRef.current?.getBoundingClientRect();
         const localX = rect ? sx - rect.left : sx;
         const localY = rect ? sy - rect.top : sy;
-        return { x: (localX - view.x) / view.zoom, y: (localY - view.y) / view.zoom };
-    }, [view]);
+        const currentView = viewRef.current || DEFAULT_VIEW;
+        const zoom = Number.isFinite(currentView.zoom) && currentView.zoom > 0 ? currentView.zoom : DEFAULT_VIEW.zoom;
+        return { x: (localX - currentView.x) / zoom, y: (localY - currentView.y) / zoom };
+    }, []);
 
     const handleWheel = (e) => {
         // 如果按下了 Ctrl 键，直接阻止默认行为并不执行任何操作；使用 try-catch 避免控制台报错
@@ -5982,7 +5994,9 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
             const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
             let newZoom = Math.min(Math.max(prev.zoom * zoomFactor, 0.2), 3);
             const scale = newZoom / prev.zoom;
-            return { zoom: newZoom, x: mouseX - (mouseX - prev.x) * scale, y: mouseY - (mouseY - prev.y) * scale };
+            const nextView = { zoom: newZoom, x: mouseX - (mouseX - prev.x) * scale, y: mouseY - (mouseY - prev.y) * scale };
+            viewRef.current = nextView;
+            return nextView;
         });
     };
 
@@ -6034,131 +6048,21 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         }
     };
 
-    const nodeUpdateRef = useRef(null);
-    const nodeUpdateRaf = useRef(null);
-    const multiNodeUpdateRef = useRef(null); // 多节点更新ref
-
-    const flushNodeUpdate = useCallback(() => {
-        // 优先处理多节点更新
-        if (multiNodeUpdateRef.current) {
-            const updates = multiNodeUpdateRef.current;
-            // 处理大量节点时的性能优化：使用 Map 优化查找（O(1) 而不是 O(n)）
-            const nodeIdMap = new Map(updates.map(({ nodeId }) => [nodeId, true]));
-
-            setNodes((prev) => {
-                // 对于大量节点（50+），使用更高效的更新策略
-                if (prev.length > 50 && updates.length > 10) {
-                    // 创建节点索引映射，避免重复查找
-                    const nodeIndexMap = new Map();
-                    prev.forEach((node, idx) => {
-                        if (nodeIdMap.has(node.id)) {
-                            nodeIndexMap.set(node.id, idx);
-                        }
-                    });
-
-                    // 批量更新，减少数组操作
-                    const next = [...prev];
-                    let hasChanges = false;
-                    updates.forEach(({ nodeId, updater }) => {
-                        const idx = nodeIndexMap.get(nodeId);
-                        if (idx !== undefined) {
-                            const updatedNode = updater(next[idx]);
-                            if (updatedNode !== next[idx]) {
-                                next[idx] = updatedNode;
-                                hasChanges = true;
-                            }
-                        }
-                    });
-                    return hasChanges ? next : prev;
-                } else {
-                    // 少量节点时使用原有逻辑
-                    const next = [...prev];
-                    let hasChanges = false;
-                    updates.forEach(({ nodeId, updater }) => {
-                        const idx = next.findIndex((n) => n.id === nodeId);
-                        if (idx !== -1) {
-                            const updatedNode = updater(next[idx]);
-                            if (updatedNode !== next[idx]) {
-                                next[idx] = updatedNode;
-                                hasChanges = true;
-                            }
-                        }
-                    });
-                    return hasChanges ? next : prev;
-                }
-            });
-            multiNodeUpdateRef.current = null;
-            nodeUpdateRaf.current = null;
-            return;
-        }
-
-        if (!nodeUpdateRef.current) {
-            nodeUpdateRaf.current = null;
-            return;
-        }
-        const { nodeId, updater } = nodeUpdateRef.current;
-        setNodes((prev) => {
-            const idx = prev.findIndex((n) => n.id === nodeId);
-            if (idx === -1) return prev;
-            // 使用函数式更新，避免创建新数组的开销
-            const updatedNode = updater(prev[idx]);
-            // 如果节点没有变化，直接返回原数组（引用相等检查）
-            if (updatedNode === prev[idx]) return prev;
-            const next = [...prev];
-            next[idx] = updatedNode;
-            return next;
-        });
-        nodeUpdateRef.current = null;
-        nodeUpdateRaf.current = null;
-    }, []);
-
-    const scheduleNodeUpdate = useCallback((nodeId, updater) => {
-        nodeUpdateRef.current = { nodeId, updater };
-        if (!nodeUpdateRaf.current) {
-            nodeUpdateRaf.current = requestAnimationFrame(flushNodeUpdate);
-        }
-    }, [flushNodeUpdate]);
-
-    const scheduleMultiNodeUpdate = useCallback((updates) => {
-        // 处理竞态条件：如果已有待处理的更新，合并而不是覆盖
-        // 这样可以确保快速连续操作时不会丢失更新
-        if (multiNodeUpdateRef.current && nodeUpdateRaf.current) {
-            // 合并更新：对于相同的 nodeId，使用最新的 updater
-            const existingUpdates = multiNodeUpdateRef.current;
-            const updateMap = new Map();
-
-            // 先添加现有更新
-            existingUpdates.forEach(({ nodeId, updater }) => {
-                updateMap.set(nodeId, updater);
-            });
-
-            // 然后添加新更新（会覆盖相同 nodeId 的旧更新）
-            updates.forEach(({ nodeId, updater }) => {
-                updateMap.set(nodeId, updater);
-            });
-
-            // 转换回数组格式
-            multiNodeUpdateRef.current = Array.from(updateMap.entries()).map(([nodeId, updater]) => ({
-                nodeId,
-                updater
-            }));
-        } else {
-            // 没有待处理的更新，直接设置
-            multiNodeUpdateRef.current = updates;
-        }
-
-        if (!nodeUpdateRaf.current) {
-            nodeUpdateRaf.current = requestAnimationFrame(flushNodeUpdate);
-        }
-    }, [flushNodeUpdate]);
+    const {
+        nodeUpdateRef,
+        nodeUpdateRaf,
+        multiNodeUpdateRef,
+        flushNodeUpdate,
+        scheduleNodeUpdate
+    } = useRafNodeUpdates(setNodes);
 
     useEffect(() => {
         return () => {
-            if (nodeUpdateRaf.current) {
-                cancelAnimationFrame(nodeUpdateRaf.current);
-            }
             if (panRafRef.current) {
                 cancelAnimationFrame(panRafRef.current);
+            }
+            if (nodeDragRafRef.current) {
+                cancelAnimationFrame(nodeDragRafRef.current);
             }
         };
     }, []);
@@ -6167,10 +6071,248 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
     const selectionRafRef = useRef(null);
     const pendingSelectionUpdate = useRef(null);
 
+    const getCurrentDragZoom = useCallback(() => {
+        const zoom = viewRef.current?.zoom;
+        return Number.isFinite(zoom) && zoom > 0
+            ? Math.max(0.2, Math.min(3, zoom))
+            : 1;
+    }, []);
+
+    const getDataAttrSelector = useCallback((attr, value) => {
+        const rawValue = String(value ?? '');
+        const escapeValue = globalThis.CSS?.escape;
+        const safeValue = typeof escapeValue === 'function'
+            ? escapeValue(rawValue)
+            : rawValue.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        return `[${attr}="${safeValue}"]`;
+    }, []);
+
+    const getCanvasNodeElement = useCallback((nodeId) => {
+        return canvasRef.current?.querySelector(getDataAttrSelector('data-node-id', nodeId)) || null;
+    }, [getDataAttrSelector]);
+
+    const getProjectedDragNode = useCallback((session, nodeId, deltaX, deltaY) => {
+        const node = nodesMap.get(nodeId);
+        const startPosition = session?.startPositions?.get(nodeId);
+        if (!node || !startPosition) return node;
+        return {
+            ...node,
+            x: startPosition.x + deltaX,
+            y: startPosition.y + deltaY
+        };
+    }, [nodesMap]);
+
+    const collectDragConnectionElements = useCallback((nodeIds) => {
+        const layer = connectionLayerRef.current;
+        const affectedConnections = new Map();
+
+        nodeIds.forEach((nodeId) => {
+            (connectionsByNode.from.get(nodeId) || []).forEach((conn) => affectedConnections.set(conn.id, conn));
+            (connectionsByNode.to.get(nodeId) || []).forEach((conn) => affectedConnections.set(conn.id, conn));
+        });
+
+        return Array.from(affectedConnections.values()).map((conn) => ({
+            conn,
+            group: layer?.querySelector(getDataAttrSelector('data-connection-id', conn.id)) || null
+        }));
+    }, [connectionsByNode, getDataAttrSelector]);
+
+    const applyConnectionDragProjection = useCallback((session, deltaX, deltaY) => {
+        if (!session?.nodeIds?.length) return;
+
+        const connectionElements = session.connectionElements || collectDragConnectionElements(session.nodeIds);
+        connectionElements.forEach(({ conn, group }) => {
+            const fromNode = getProjectedDragNode(session, conn.from, deltaX, deltaY);
+            const toNode = getProjectedDragNode(session, conn.to, deltaX, deltaY);
+            const geometry = getConnectionGeometry({
+                conn,
+                fromNode,
+                toNode,
+                connectionsByNode,
+                getApiConfigByKey
+            });
+            if (!geometry) return;
+
+            if (!group) return;
+
+            group.querySelectorAll('[data-conn-path]').forEach((path) => {
+                path.setAttribute('d', geometry.pathD);
+            });
+
+            const movePoint = (pointName, x, y) => {
+                const point = group.querySelector(getDataAttrSelector('data-conn-point', pointName));
+                if (!point) return;
+                point.setAttribute('cx', String(x));
+                point.setAttribute('cy', String(y));
+            };
+
+            movePoint('start', geometry.startX, geometry.startY);
+            movePoint('end', geometry.endX, geometry.endY);
+            movePoint('delete-hot', geometry.midX, geometry.midY);
+            movePoint('delete-outer', geometry.midX, geometry.midY);
+            movePoint('delete-inner', geometry.midX, geometry.midY);
+
+            const deleteIcon = group.querySelector('[data-conn-icon="delete"]');
+            if (deleteIcon) {
+                deleteIcon.setAttribute('x', String(geometry.midX - 5));
+                deleteIcon.setAttribute('y', String(geometry.midY - 5));
+            }
+        });
+    }, [collectDragConnectionElements, connectionsByNode, getApiConfigByKey, getDataAttrSelector, getProjectedDragNode]);
+
+    const applyNodeDragProjection = useCallback((session, deltaX, deltaY) => {
+        if (!session?.nodeIds?.length) return;
+
+        session.nodeIds.forEach((nodeId) => {
+            const nodeElement = getCanvasNodeElement(nodeId);
+            if (!nodeElement) return;
+            nodeElement.style.transform = `translate3d(${deltaX}px, ${deltaY}px, 0)`;
+        });
+
+        applyConnectionDragProjection(session, deltaX, deltaY);
+    }, [applyConnectionDragProjection, getCanvasNodeElement]);
+
+    const clearNodeDragProjection = useCallback((session) => {
+        if (!session?.nodeIds?.length) return;
+        session.nodeIds.forEach((nodeId) => {
+            const nodeElement = getCanvasNodeElement(nodeId);
+            if (!nodeElement) return;
+            nodeElement.style.transform = 'translateZ(0)';
+            nodeElement.style.willChange = '';
+        });
+    }, [getCanvasNodeElement]);
+
+    const beginNodeDragSession = useCallback((primaryNodeId, nodeIds, clientX, clientY) => {
+        const orderedNodeIds = Array.from(new Set((nodeIds?.length ? nodeIds : [primaryNodeId]).filter(Boolean)));
+        const nodeMap = new Map(nodesRef.current.map((node) => [node.id, node]));
+        const startPositions = new Map();
+
+        orderedNodeIds.forEach((nodeId) => {
+            const node = nodeMap.get(nodeId);
+            if (!node) return;
+            startPositions.set(nodeId, { x: node.x, y: node.y });
+
+            const nodeElement = getCanvasNodeElement(nodeId);
+            if (nodeElement) {
+                nodeElement.style.willChange = 'transform';
+            }
+        });
+
+        if (!startPositions.has(primaryNodeId)) return;
+
+        if (nodeDragRafRef.current) {
+            cancelAnimationFrame(nodeDragRafRef.current);
+            nodeDragRafRef.current = null;
+        }
+
+        nodeDragSessionRef.current = {
+            primaryNodeId,
+            nodeIds: Array.from(startPositions.keys()),
+            startClientX: clientX,
+            startClientY: clientY,
+            zoom: getCurrentDragZoom(),
+            startPositions,
+            connectionElements: collectDragConnectionElements(Array.from(startPositions.keys())),
+            deltaX: 0,
+            deltaY: 0,
+            moved: false
+        };
+        pendingNodeDragProjectionRef.current = null;
+    }, [collectDragConnectionElements, getCanvasNodeElement, getCurrentDragZoom]);
+
+    const updateNodeDragProjection = useCallback((clientX, clientY) => {
+        const session = nodeDragSessionRef.current;
+        if (!session) return false;
+
+        const deltaX = (clientX - session.startClientX) / session.zoom;
+        const deltaY = (clientY - session.startClientY) / session.zoom;
+        if (Math.abs(deltaX - session.deltaX) < 0.01 && Math.abs(deltaY - session.deltaY) < 0.01) {
+            return true;
+        }
+
+        pendingNodeDragProjectionRef.current = { deltaX, deltaY };
+
+        if (!nodeDragRafRef.current) {
+            nodeDragRafRef.current = requestAnimationFrame(() => {
+                const currentSession = nodeDragSessionRef.current;
+                const pendingProjection = pendingNodeDragProjectionRef.current;
+                nodeDragRafRef.current = null;
+                pendingNodeDragProjectionRef.current = null;
+                if (!currentSession || !pendingProjection) return;
+
+                currentSession.deltaX = pendingProjection.deltaX;
+                currentSession.deltaY = pendingProjection.deltaY;
+                currentSession.moved = currentSession.moved ||
+                    Math.abs(pendingProjection.deltaX) > 0.01 ||
+                    Math.abs(pendingProjection.deltaY) > 0.01;
+                applyNodeDragProjection(currentSession, pendingProjection.deltaX, pendingProjection.deltaY);
+            });
+        }
+
+        return true;
+    }, [applyNodeDragProjection]);
+
+    const commitNodeDragSession = useCallback(() => {
+        const session = nodeDragSessionRef.current;
+        if (!session) return;
+
+        if (nodeDragRafRef.current) {
+            cancelAnimationFrame(nodeDragRafRef.current);
+            nodeDragRafRef.current = null;
+        }
+
+        if (pendingNodeDragProjectionRef.current) {
+            const { deltaX, deltaY } = pendingNodeDragProjectionRef.current;
+            session.deltaX = deltaX;
+            session.deltaY = deltaY;
+            session.moved = session.moved || Math.abs(deltaX) > 0.01 || Math.abs(deltaY) > 0.01;
+            applyNodeDragProjection(session, deltaX, deltaY);
+            pendingNodeDragProjectionRef.current = null;
+        }
+
+        if (session.moved) {
+            const finalDeltaX = session.deltaX;
+            const finalDeltaY = session.deltaY;
+            flushSync(() => {
+                setNodes((prev) => {
+                    let hasChanges = false;
+                    const next = prev.map((node) => {
+                        const startPosition = session.startPositions.get(node.id);
+                        if (!startPosition) return node;
+
+                        const nextX = startPosition.x + finalDeltaX;
+                        const nextY = startPosition.y + finalDeltaY;
+                        if (Math.abs(node.x - nextX) < 0.01 && Math.abs(node.y - nextY) < 0.01) {
+                            return node;
+                        }
+
+                        hasChanges = true;
+                        return {
+                            ...node,
+                            x: nextX,
+                            y: nextY
+                        };
+                    });
+                    return hasChanges ? next : prev;
+                });
+            });
+            clearNodeDragProjection(session);
+        } else {
+            clearNodeDragProjection(session);
+            applyConnectionDragProjection(session, 0, 0);
+        }
+
+        nodeDragSessionRef.current = null;
+        pendingNodeDragProjectionRef.current = null;
+    }, [applyConnectionDragProjection, applyNodeDragProjection, clearNodeDragProjection, setNodes]);
+
     const handleMouseMove = useCallback((e) => {
         const { clientX, clientY } = e;
-        const worldPos = screenToWorld(clientX, clientY);
-        setMousePos(worldPos);
+        const shouldTrackMousePos = !!connectingSource || !!connectingTarget;
+        const worldPos = (shouldTrackMousePos || !!resizingNodeId) ? screenToWorld(clientX, clientY) : null;
+        if (shouldTrackMousePos && worldPos) {
+            setMousePos(worldPos);
+        }
 
         // 框选模式 - 使用 requestAnimationFrame 节流
         // 使用ref检查，确保即使Ctrl松开也能继续框选
@@ -6275,12 +6417,14 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                         const safeZoom = Math.max(0.2, Math.min(3.0, prev.zoom));
                         // 在极端缩放下使用更高精度的舍入
                         const precision = safeZoom < 0.5 || safeZoom > 2.5 ? 1000 : 100;
-                        return {
+                        const nextView = {
                             ...prev,
                             zoom: safeZoom,
                             x: Math.round((prev.x + dx) * precision) / precision,
                             y: Math.round((prev.y + dy) * precision) / precision
                         };
+                        viewRef.current = nextView;
+                        return nextView;
                     });
 
                     pendingPanUpdate.current = null;
@@ -6292,73 +6436,16 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
             return;
         }
 
-        if (resizingNodeId) {
+        if (resizingNodeId && worldPos) {
             scheduleNodeUpdate(resizingNodeId, (node) => ({
                 ...node,
                 width: Math.max(250, worldPos.x - node.x),
                 height: Math.max(250, worldPos.y - node.y)
             }));
-        } else if (dragNodeId) {
-            // 确保 zoom 在有效范围内（0.2-3.0），防止极端缩放下的计算错误
-            const safeZoom = Math.max(0.2, Math.min(3.0, view.zoom));
-            // 使用 movementX/Y 更流畅，避免频繁计算
-            const deltaX = e.movementX / safeZoom;
-            const deltaY = e.movementY / safeZoom;
-            // 添加阈值，避免微小移动触发更新（提高到1px，减少不必要的更新）
-            // 在极端缩放下使用更小的阈值
-            const threshold = safeZoom < 0.5 || safeZoom > 2.5 ? 0.5 : 1;
-            if (Math.abs(deltaX) < threshold && Math.abs(deltaY) < threshold) {
-                return;
-            }
-
-            // 使用 ref 获取最新的多选节点集合，避免闭包问题
-            const currentSelectedNodeIds = selectedNodeIdsRef.current;
-            // 如果有多选节点（大于1个）且被拖动的节点在选中集合中，同时拖动所有选中的节点
-            if (currentSelectedNodeIds && currentSelectedNodeIds.size > 1 && currentSelectedNodeIds.has(dragNodeId)) {
-                // 拖动多个节点时，使用批量更新
-                // 使用累积的起始位置计算，防止累积误差
-                const currentNodes = nodesRef.current;
-                // 确保 zoom 在有效范围内（0.2-3.0），防止极端缩放下的计算错误
-                const currentZoom = Math.max(0.2, Math.min(3.0, view.zoom));
-                // 检测缩放切换：如果 zoom 发生变化，重新初始化起始位置，防止状态不一致
-                if (!multiNodeDragStartPos.current || (lastZoomRef.current !== null && Math.abs(lastZoomRef.current - currentZoom) > 0.01)) {
-                    // 初始化或重新初始化起始位置（缩放切换时）
-                    multiNodeDragStartPos.current = {
-                        mouseX: clientX,
-                        mouseY: clientY,
-                        nodes: new Map(Array.from(currentSelectedNodeIds).map(nodeId => {
-                            const node = currentNodes.find(n => n.id === nodeId);
-                            return node ? [nodeId, { x: node.x, y: node.y }] : null;
-                        }).filter(Boolean))
-                    };
-                }
-                lastZoomRef.current = currentZoom;
-
-                // 计算从起始位置到当前位置的总偏移量（世界坐标）
-                const totalDeltaX = (clientX - multiNodeDragStartPos.current.mouseX) / currentZoom;
-                const totalDeltaY = (clientY - multiNodeDragStartPos.current.mouseY) / currentZoom;
-
-                // 使用起始位置 + 总偏移量，避免累积误差
-                const updates = Array.from(multiNodeDragStartPos.current.nodes.entries()).map(([nodeId, startPos]) => ({
-                    nodeId,
-                    updater: (node) => ({
-                        ...node,
-                        x: startPos.x + totalDeltaX,
-                        y: startPos.y + totalDeltaY
-                    })
-                }));
-                scheduleMultiNodeUpdate(updates);
-            } else {
-                // 单节点拖动，重置多节点拖动状态
-                multiNodeDragStartPos.current = null;
-                scheduleNodeUpdate(dragNodeId, (node) => ({
-                    ...node,
-                    x: node.x + deltaX,
-                    y: node.y + deltaY
-                }));
-            }
+        } else if (dragNodeId || nodeDragSessionRef.current) {
+            updateNodeDragProjection(clientX, clientY);
         }
-    }, [isPanning, isSelecting, selectionBox, dragNodeId, resizingNodeId, screenToWorld, view.zoom, scheduleNodeUpdate, scheduleMultiNodeUpdate]);
+    }, [isPanning, isSelecting, selectionBox, dragNodeId, resizingNodeId, connectingSource, connectingTarget, screenToWorld, scheduleNodeUpdate, updateNodeDragProjection]);
 
     const handleMouseUp = () => {
         const releasedDragNodeIds = Array.isArray(dragPriorityNodeIdsRef.current)
@@ -6385,18 +6472,22 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                 const safeZoom = Math.max(0.2, Math.min(3.0, prev.zoom));
                 // 在极端缩放下使用更高精度的舍入
                 const precision = safeZoom < 0.5 || safeZoom > 2.5 ? 1000 : 100;
-                return {
+                const nextView = {
                     ...prev,
                     zoom: safeZoom,
                     x: Math.round((prev.x + dx) * precision) / precision,
                     y: Math.round((prev.y + dy) * precision) / precision
                 };
+                viewRef.current = nextView;
+                return nextView;
             });
             pendingPanUpdate.current = null;
         }
 
-        // 确保多节点更新被刷新（处理待处理的更新）
-        if (multiNodeUpdateRef.current && nodeUpdateRaf.current) {
+        commitNodeDragSession();
+
+        // 确保节点更新被刷新（处理待处理的单节点/多节点更新）
+        if ((nodeUpdateRef.current || multiNodeUpdateRef.current) && nodeUpdateRaf.current) {
             // 取消当前的 RAF，立即执行更新
             cancelAnimationFrame(nodeUpdateRaf.current);
             flushNodeUpdate();
@@ -6420,6 +6511,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
             isPanningRef.current = false;
             // 清理多节点拖动状态
             multiNodeDragStartPos.current = null;
+            singleNodeDragStartPos.current = null;
             // 清理 zoom 跟踪，防止缩放切换导致的状态不一致
             lastZoomRef.current = null;
             commitDragPriority();
@@ -6443,6 +6535,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
             setResizingNodeId(null);
             // 清理多节点拖动状态
             multiNodeDragStartPos.current = null;
+            singleNodeDragStartPos.current = null;
             // 清理 zoom 跟踪
             lastZoomRef.current = null;
         }
@@ -6468,13 +6561,12 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
             // 确保在任何交互状态下都更新鼠标位置
             // pointer 事件和 mouse 事件在大多数属性上是兼容的，直接传递即可
             // 如果 movementX/Y 不存在，则使用 0（不影响功能，因为画布拖动使用 clientX/Y 差值）
-            if (e.movementX === undefined) {
-                e.movementX = 0;
-            }
-            if (e.movementY === undefined) {
-                e.movementY = 0;
-            }
-            handleMouseMove(e);
+            handleMouseMove({
+                clientX: e.clientX,
+                clientY: e.clientY,
+                movementX: e.movementX ?? 0,
+                movementY: e.movementY ?? 0
+            });
         };
 
         const handleGlobalMouseMove = (e) => {
@@ -6503,6 +6595,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
 
     const handleNodeMouseUp = useCallback((targetId, e, inputType = 'default') => {
         e.stopPropagation();
+        commitNodeDragSession();
         const releasedDragNodeIds = Array.isArray(dragPriorityNodeIdsRef.current)
             ? dragPriorityNodeIdsRef.current.filter(Boolean)
             : [];
@@ -6565,7 +6658,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         setIsPanning(false);
         setDragNodeId(null);
         setResizingNodeId(null);
-    }, [connectingSource, connectingTarget, connectingInputType, connections, touchNodeSelectionPriorityBatch]);
+    }, [connectingSource, connectingTarget, connectingInputType, connections, touchNodeSelectionPriorityBatch, commitNodeDragSession]);
 
     const handleBackgroundClick = (e) => {
         if (connectingSource) {
@@ -21281,363 +21374,6 @@ ${inputText.substring(0, 15000)} ... (截断)
         closeInputImageContextMenu();
     };
 
-    // ... (rest of render logic unchanged) ...
-    // ConnectionLayer 组件：提取连接线渲染逻辑，使用 React.memo 优化
-    const ConnectionLayer = memo(({
-        connections,
-        nodesMap,
-        connectionsByNode,
-        connectingSource,
-        connectingTarget,
-        connectingInputType,
-        mousePos,
-        apiConfigsMap,
-        selectedNodeId,
-        onDisconnectConnection,
-        visibleNodes
-    }) => {
-        // 连接线虚拟化：只渲染可见节点的连接线
-        const visibleNodeIds = useMemo(() => {
-            return new Set(visibleNodes.map(n => n.id));
-        }, [visibleNodes]);
-
-        const visibleConnections = useMemo(() => {
-            return connections.filter(conn =>
-                visibleNodeIds.has(conn.from) || visibleNodeIds.has(conn.to)
-            );
-        }, [connections, visibleNodeIds]);
-
-        return (
-            <div className="absolute inset-0 pointer-events-none overflow-visible w-full h-full">
-                <svg className="absolute inset-0 overflow-visible w-full h-full pointer-events-none">
-                    {visibleConnections.map((conn) => {
-                        // 使用 nodesMap 快速查找，O(1) 复杂度
-                        const fromNode = nodesMap.get(conn.from);
-                        const toNode = nodesMap.get(conn.to);
-                        if (!fromNode || !toNode) return null;
-
-                        // 检查连接线是否与选中节点相关
-                        const isRelatedToSelected = selectedNodeId && (
-                            fromNode.id === selectedNodeId ||
-                            toNode.id === selectedNodeId
-                        );
-                        // 设置透明度：选中节点相关为100%，其他为35%
-                        const opacity = isRelatedToSelected ? 1 : 0.35;
-
-                        const startX = fromNode.x + fromNode.width - 4;
-                        const startY = fromNode.y + fromNode.height / 2;
-
-                        const endX = toNode.x + 4;
-                        let endY = toNode.y + toNode.height / 2;
-
-                        // 处理image-compare节点的多个输入点
-                        if (toNode.type === 'image-compare') {
-                            // 使用缓存的 connectionsByNode，避免重复 filter
-                            const relevantConns = connectionsByNode.to.get(toNode.id) || [];
-                            const idx = relevantConns.findIndex(c => c.id === conn.id);
-                            if (idx === 0) endY = toNode.y + toNode.height * 0.33;
-                            else if (idx >= 1) endY = toNode.y + toNode.height * 0.66;
-                        }
-
-                        // 处理Midjourney节点的oref和sref输入点
-                        // 检查inputType是否为oref或sref（注意：default连接时inputType可能是undefined）
-                        if (toNode.type === 'gen-image' && (conn.inputType === 'oref' || conn.inputType === 'sref')) {
-                            const currentModel = getApiConfigByKey(toNode.settings?.model);
-                            const isMidjourney = currentModel && (currentModel.id.includes('mj') || currentModel.provider.toLowerCase().includes('midjourney'));
-
-                            if (isMidjourney) {
-                                // 使用基于节点世界坐标的计算，考虑实际DOM结构
-                                // 节点结构：p-3(12px) + 计时器(如果有，约28px + mb-2=8px) + 标题(约16px + mb-2=8px) + 引用状态区域(如果有，约60px + mb-2=8px) + 提示词区域(约100px + mb-2=8px) + 指令区域
-                                // 指令区域：gap-1.5(6px) + oref项(约16px) + gap-1.5(6px) + ow项(约16px + input高度) + gap-1.5(6px) + sref项(约16px)
-                                const paddingTop = 12; // 节点顶部padding (p-3 = 12px)
-                                const timerHeight = 28; // 计时器区域高度（px-2 py-1 + text-[10px] ≈ 28px）
-                                const timerMarginBottom = 8; // 计时器下方margin (mb-2 = 8px)
-                                const titleHeight = 16; // 标题高度 (text-xs ≈ 12px + line-height ≈ 16px，flex items-center)
-                                const titleMarginBottom = 8; // 标题下方margin (mb-2 = 8px)
-                                const refAreaHeight = 60; // 引用状态区域高度（p-2 + 内容，约60px）
-                                const refAreaMarginBottom = 8; // 引用区域下方margin (mb-2 = 8px)
-                                const promptAreaHeight = 100; // 提示词区域高度（p-3 + textarea，约100px）
-                                const promptAreaMarginBottom = 8; // 提示词区域下方margin (mb-2 = 8px)
-                                const instructionGap = 6; // 指令项之间的gap (gap-1.5 = 6px)
-                                const instructionItemHeight = 16; // 每个指令项的实际高度（text-[10px] + flex items-center ≈ 16px）
-                                const owInputHeight = 28; // ow输入框高度（px-2 py-1 + text-[10px] ≈ 28px）
-
-                                // 检查是否有计时器（正在生成或已完成）
-                                const hasTimer = false; // 计时器是动态的，这里简化处理，实际应该从节点状态判断
-
-                                // 使用缓存的 connectionsByNode，避免重复 some 计算
-                                const toNodeConns = connectionsByNode.to.get(toNode.id) || [];
-                                const hasRefArea = toNodeConns.some(c => !c.inputType || c.inputType === 'default');
-
-                                // 计算基础偏移（到指令区域开始的位置）
-                                let baseOffset = paddingTop;
-                                if (hasTimer) {
-                                    baseOffset += timerHeight + timerMarginBottom;
-                                }
-                                baseOffset += titleHeight + titleMarginBottom;
-                                if (hasRefArea) {
-                                    baseOffset += refAreaHeight + refAreaMarginBottom;
-                                }
-                                baseOffset += promptAreaHeight + promptAreaMarginBottom;
-
-                                if (conn.inputType === 'oref') {
-                                    // oref在第一个指令位置（第一个指令项的中心）
-                                    // 指令区域开始 + 第一个指令项的中心
-                                    endY = toNode.y + baseOffset + instructionItemHeight * 0.5;
-                                } else if (conn.inputType === 'sref') {
-                                    // sref在第三个指令位置
-                                    // 指令区域开始 + oref项(16px) + gap(6px) + ow项(owInputHeight ≈ 28px) + gap(6px) + sref项的中心(8px)
-                                    endY = toNode.y + baseOffset + instructionItemHeight + instructionGap + owInputHeight + instructionGap + instructionItemHeight * 0.5;
-                                }
-                            }
-                        }
-
-                        // 处理首尾帧输入点
-                        if (toNode.type === 'gen-video' && (conn.inputType === 'veo_start' || conn.inputType === 'veo_end')) {
-                            const paddingTop = 12; // 节点顶部 padding
-                            const timerHeight = 28;
-                            const timerMarginBottom = 8;
-                            const titleHeight = 16;
-                            const titleMarginBottom = 8;
-                            const refAreaHeight = 60;
-                            const refAreaMarginBottom = 8;
-                            const promptAreaHeight = Math.max(110, Math.min(180, toNode.height * 0.4));
-                            const promptAreaMarginBottom = 8;
-                            const panelPaddingTop = 12;
-                            const panelTitleHeight = 14;
-                            const panelDescHeight = 12;
-                            const panelGap = 8;
-                            const panelRowHeight = 18;
-                            const panelRowGap = 8;
-
-                            const hasTimer = false;
-                            const toNodeConns = connectionsByNode.to.get(toNode.id) || [];
-                            const hasRefArea = toNodeConns.some(c => !c.inputType || c.inputType === 'default');
-
-                            let baseOffset = paddingTop;
-                            if (hasTimer) {
-                                baseOffset += timerHeight + timerMarginBottom;
-                            }
-                            baseOffset += titleHeight + titleMarginBottom;
-                            if (hasRefArea) {
-                                baseOffset += refAreaHeight + refAreaMarginBottom;
-                            }
-                            baseOffset += promptAreaHeight + promptAreaMarginBottom;
-
-                            const panelTop = baseOffset;
-                            const firstRowCenter = panelTop + panelPaddingTop + panelTitleHeight + panelGap + panelDescHeight + panelGap + panelRowHeight * 0.5;
-                            const secondRowCenter = firstRowCenter + panelRowHeight + panelRowGap;
-
-                            endY = toNode.y + (conn.inputType === 'veo_start' ? firstRowCenter : secondRowCenter);
-                        }
-
-                        const dist = Math.abs(endX - startX);
-                        const cp1X = startX + dist * 0.5;
-                        const cp2X = endX - dist * 0.5;
-                        const midX = (startX + endX) / 2;
-                        const midY = (startY + endY) / 2;
-
-                        return (
-                            <g key={conn.id} className="connection-group" style={{ opacity }}>
-                                {/* 透明路径用于点击检测连接线 */}
-                                <path
-                                    d={`M ${startX} ${startY} C ${cp1X} ${startY}, ${cp2X} ${endY}, ${endX} ${endY}`}
-                                    stroke="transparent"
-                                    strokeWidth="20"
-                                    fill="none"
-                                    style={{ pointerEvents: 'stroke' }}
-                                />
-                                <path d={`M ${startX} ${startY} C ${cp1X} ${startY}, ${cp2X} ${endY}, ${endX} ${endY}`} stroke="#18181b" strokeWidth="4" fill="none" />
-                                <path d={`M ${startX} ${startY} C ${cp1X} ${startY}, ${cp2X} ${endY}, ${endX} ${endY}`} stroke="#71717a" strokeWidth="2" fill="none" />
-                                <circle cx={startX} cy={startY} r="2" fill="#71717a" />
-                                <circle cx={endX} cy={endY} r="2" fill="#71717a" />
-                                {/* 删除按钮：使用更大的透明热区确保可点击，必须在最后渲染以覆盖透明 path */}
-                                <g
-                                    className="connection-delete cursor-pointer"
-                                    style={{
-                                        opacity: isRelatedToSelected ? 1 : 0.35,
-                                        pointerEvents: 'auto',
-                                        cursor: 'pointer'
-                                    }}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        e.preventDefault();
-                                        onDisconnectConnection(conn.id);
-                                    }}
-                                    onMouseDown={(e) => {
-                                        // 阻止事件冒泡，防止触发画布拖动
-                                        e.stopPropagation();
-                                        e.preventDefault();
-                                        // 立即执行断开连接，不等待 onClick（修复点击无法断开的问题）
-                                        onDisconnectConnection(conn.id);
-                                    }}
-                                >
-                                    {/* 大的透明点击热区（半径25），确保完全覆盖透明 path 的 stroke（宽度20） */}
-                                    <circle
-                                        cx={midX}
-                                        cy={midY}
-                                        r="25"
-                                        fill="transparent"
-                                        style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            e.preventDefault();
-                                            onDisconnectConnection(conn.id);
-                                        }}
-                                        onMouseDown={(e) => {
-                                            // 阻止事件冒泡，防止触发画布拖动
-                                            e.stopPropagation();
-                                            e.preventDefault();
-                                            // 立即执行断开连接，不等待 onClick（修复点击无法断开的问题）
-                                            onDisconnectConnection(conn.id);
-                                        }}
-                                    />
-                                    {/* 视觉元素 */}
-                                    <circle cx={midX} cy={midY} r="12" fill="#ef4444" opacity="0.8" style={{ pointerEvents: 'none' }} />
-                                    <circle cx={midX} cy={midY} r="8" fill="#ef4444" style={{ pointerEvents: 'none' }} />
-                                    <Unlink size={10} className="text-white" x={midX - 5} y={midY - 5} style={{ pointerEvents: 'none' }} />
-                                </g>
-                            </g>
-                        );
-                    })}
-                    {connectingSource && (() => {
-                        // 使用 nodesMap 快速查找
-                        const node = nodesMap.get(connectingSource);
-                        if (!node) return null;
-                        return <path d={`M ${node.x + node.width - 4} ${node.y + node.height / 2} C ${node.x + node.width + 100} ${node.y + node.height / 2}, ${mousePos.x - 100} ${mousePos.y}, ${mousePos.x} ${mousePos.y}`} stroke="#60a5fa" strokeWidth="2" fill="none" strokeDasharray="4,4" />;
-                    })()}
-                    {connectingTarget && (() => {
-                        // 使用 nodesMap 快速查找
-                        const node = nodesMap.get(connectingTarget);
-                        if (!node) return null;
-                        // 从输入端口向左拖拽，连接线从左侧开始
-                        const startX = node.x + 4;
-                        let startY = node.y + node.height / 2;
-
-                        // 处理Midjourney节点的oref和sref输入点
-                        if (node.type === 'gen-image' && connectingInputType) {
-                            const currentModel = getApiConfigByKey(node.settings?.model);
-                            const isMidjourney = currentModel && (currentModel.id.includes('mj') || currentModel.provider.toLowerCase().includes('midjourney'));
-
-                            if (isMidjourney) {
-                                // 使用与连接线渲染相同的计算逻辑
-                                const paddingTop = 12;
-                                const timerHeight = 28;
-                                const timerMarginBottom = 8;
-                                const titleHeight = 16; // 标题高度 (text-xs ≈ 12px + line-height ≈ 16px)
-                                const titleMarginBottom = 8;
-                                const refAreaHeight = 60;
-                                const refAreaMarginBottom = 8;
-                                const promptAreaHeight = 100;
-                                const promptAreaMarginBottom = 8;
-                                const instructionGap = 6;
-                                const instructionItemHeight = 16; // 每个指令项的实际高度（text-[10px] + flex items-center ≈ 16px）
-                                const owInputHeight = 28; // ow输入框高度（px-2 py-1 + text-[10px] ≈ 28px）
-
-                                const hasTimer = false; // 计时器是动态的，这里简化处理
-                                // 使用缓存的 connectionsByNode，避免重复 some 计算
-                                const toNodeConns = connectionsByNode.to.get(node.id) || [];
-                                const hasRefArea = toNodeConns.some(c => !c.inputType || c.inputType === 'default');
-
-                                let baseOffset = paddingTop;
-                                if (hasTimer) {
-                                    baseOffset += timerHeight + timerMarginBottom;
-                                }
-                                baseOffset += titleHeight + titleMarginBottom;
-                                if (hasRefArea) {
-                                    baseOffset += refAreaHeight + refAreaMarginBottom;
-                                }
-                                baseOffset += promptAreaHeight + promptAreaMarginBottom;
-
-                                if (connectingInputType === 'oref') {
-                                    startY = node.y + baseOffset + instructionItemHeight * 0.5;
-                                } else if (connectingInputType === 'sref') {
-                                    // sref在第三个指令位置：oref项(16px) + gap(6px) + ow项(owInputHeight ≈ 28px) + gap(6px) + sref项的中心(8px)
-                                    startY = node.y + baseOffset + instructionItemHeight + instructionGap + owInputHeight + instructionGap + instructionItemHeight * 0.5;
-                                }
-                            }
-                        }
-                        else if (node.type === 'gen-video' && (connectingInputType === 'veo_start' || connectingInputType === 'veo_end')) {
-                            const paddingTop = 12;
-                            const timerHeight = 28;
-                            const timerMarginBottom = 8;
-                            const titleHeight = 16;
-                            const titleMarginBottom = 8;
-                            const refAreaHeight = 60;
-                            const refAreaMarginBottom = 8;
-                            const promptAreaHeight = Math.max(110, Math.min(180, node.height * 0.4));
-                            const promptAreaMarginBottom = 8;
-                            const panelPaddingTop = 12;
-                            const panelTitleHeight = 14;
-                            const panelDescHeight = 12;
-                            const panelGap = 8;
-                            const panelRowHeight = 18;
-                            const panelRowGap = 8;
-
-                            const hasTimer = false;
-                            const toNodeConns = connectionsByNode.to.get(node.id) || [];
-                            const hasRefArea = toNodeConns.some(c => !c.inputType || c.inputType === 'default');
-
-                            let baseOffset = paddingTop;
-                            if (hasTimer) {
-                                baseOffset += timerHeight + timerMarginBottom;
-                            }
-                            baseOffset += titleHeight + titleMarginBottom;
-                            if (hasRefArea) {
-                                baseOffset += refAreaHeight + refAreaMarginBottom;
-                            }
-                            baseOffset += promptAreaHeight + promptAreaMarginBottom;
-
-                            const panelTop = baseOffset;
-                            const firstRowCenter = panelTop + panelPaddingTop + panelTitleHeight + panelGap + panelDescHeight + panelGap + panelRowHeight * 0.5;
-                            const secondRowCenter = firstRowCenter + panelRowHeight + panelRowGap;
-
-                            startY = node.y + (connectingInputType === 'veo_start' ? firstRowCenter : secondRowCenter);
-                        }
-                        // 处理image-compare节点的多个输入点
-                        else if (node.type === 'image-compare') {
-                            // 这里可以根据鼠标位置判断是哪个输入点，暂时使用中间位置
-                            startY = node.y + node.height / 2;
-                        }
-
-                        return <path d={`M ${startX} ${startY} C ${startX - 100} ${startY}, ${mousePos.x + 100} ${mousePos.y}, ${mousePos.x} ${mousePos.y}`} stroke="#60a5fa" strokeWidth="2" fill="none" strokeDasharray="4,4" />;
-                    })()}
-                </svg>
-            </div>
-        );
-    }, (prevProps, nextProps) => {
-        // 自定义对比函数：仅当 connections 数组、可见节点或相关选中状态变化时才重渲染
-        return (
-            prevProps.connections === nextProps.connections &&
-            prevProps.visibleNodes === nextProps.visibleNodes &&
-            prevProps.selectedNodeId === nextProps.selectedNodeId &&
-            prevProps.connectingSource === nextProps.connectingSource &&
-            prevProps.connectingTarget === nextProps.connectingTarget &&
-            prevProps.connectingInputType === nextProps.connectingInputType &&
-            prevProps.mousePos.x === nextProps.mousePos.x &&
-            prevProps.mousePos.y === nextProps.mousePos.y
-        );
-    });
-
-    // 使用 useMemo 优化连接线渲染函数，避免重复查找和计算
-    const renderConnections = useCallback(() => {
-        return (
-            <ConnectionLayer
-                connections={connections}
-                nodesMap={nodesMap}
-                connectionsByNode={connectionsByNode}
-                connectingSource={connectingSource}
-                connectingTarget={connectingTarget}
-                connectingInputType={connectingInputType}
-                mousePos={mousePos}
-                apiConfigsMap={apiConfigsMap}
-                selectedNodeId={selectedNodeId}
-                onDisconnectConnection={disconnectConnection}
-                visibleNodes={visibleNodes}
-            />
-        );
-    }, [connections, nodesMap, connectionsByNode, connectingSource, connectingTarget, connectingInputType, mousePos, apiConfigsMap, selectedNodeId, disconnectConnection, visibleNodes]);
-
     // 使用 useMemo 缓存节点的连接状态，避免每次渲染时重复计算
     const nodeConnectedStatus = useMemo(() => {
         const status = new Map(); // nodeId -> boolean
@@ -21817,6 +21553,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                                 node.id
                             ];
                             dragPriorityNodeIdsRef.current = orderedDragNodeIds;
+                            beginNodeDragSession(node.id, orderedDragNodeIds, e.clientX, e.clientY);
                             setDragNodeId(node.id);
                         }
                     }}
@@ -22097,6 +21834,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                             node.id
                         ];
                         dragPriorityNodeIdsRef.current = orderedDragNodeIds;
+                        beginNodeDragSession(node.id, orderedDragNodeIds, e.clientX, e.clientY);
                         setDragNodeId(node.id);
                         setActiveDropdown(null);
                     }
@@ -25143,12 +24881,20 @@ ${inputText.substring(0, 15000)} ... (截断)
                 </div>
             </div >
         );
-    }, [selectedNodeId, selectedNodeIds, hoverTargetId, nodeConnectedStatus, adjacentNodesCache, apiConfigsMap, getConnectedInputImages, theme, view, dragNodeId, connectingSource, connectingTarget, connectingInputType, deleteNode, handleNodeMouseUp, screenToWorld, setDragNodeId, setSelectedNodeId, setSelectedNodeIds, setActiveDropdown, setHoverTargetId, setConnectingSource, setConnectingTarget, setConnectingInputType, setResizingNodeId, setLightboxItem, isVideoUrl, updateNodeSettings, getConnectedTextNodes, startGeneration, getDefaultDurationForModel, getDefaultDurationsForModel, getConnectedGenNodes, getConnectedVideoInputNode, getConnectedVideoAnalyzeNode, handleCanvasDragOver, handleGenNodeDrop, importStoryboardMarkdownTable, importStoryboardTableFromFile, mutateStoryboardTable, normalizeStoryboardTableData, openStoryboardTableCellEditor, runStoryboardTablePromptMerge, markInteraction, resolveNodeRenderZIndex, touchNodeSelectionPriority]);
+    }, [selectedNodeId, selectedNodeIds, hoverTargetId, nodeConnectedStatus, adjacentNodesCache, apiConfigsMap, getConnectedInputImages, theme, view, dragNodeId, connectingSource, connectingTarget, connectingInputType, deleteNode, handleNodeMouseUp, screenToWorld, setDragNodeId, setSelectedNodeId, setSelectedNodeIds, setActiveDropdown, setHoverTargetId, setConnectingSource, setConnectingTarget, setConnectingInputType, setResizingNodeId, setLightboxItem, isVideoUrl, updateNodeSettings, getConnectedTextNodes, startGeneration, getDefaultDurationForModel, getDefaultDurationsForModel, getConnectedGenNodes, getConnectedVideoInputNode, getConnectedVideoAnalyzeNode, handleCanvasDragOver, handleGenNodeDrop, importStoryboardMarkdownTable, importStoryboardTableFromFile, mutateStoryboardTable, normalizeStoryboardTableData, openStoryboardTableCellEditor, runStoryboardTablePromptMerge, markInteraction, resolveNodeRenderZIndex, touchNodeSelectionPriority, beginNodeDragSession]);
 
     // 高性能模式：当节点数量超过 50 或手动开启时启用
     const isPerfMode = nodes.length > 50 || globalPerformanceMode !== 'off';
-    // 交互模式：正在拖拽或缩放时启用
-    const isInteracting = isDragging || isPanning;
+    const selectedNodeIdForAdjacency = useMemo(() => {
+        if (selectedNodeId) return selectedNodeId;
+        if (selectedNodeIds.size === 1) return selectedNodeIds.values().next().value;
+        return null;
+    }, [selectedNodeId, selectedNodeIds]);
+    const selectedAdjacentSet = selectedNodeIdForAdjacency ? adjacentNodesCache.get(selectedNodeIdForAdjacency) : null;
+
+    // 交互模式：拖拽、平移、缩放、框选、连线时启用节点渲染边界
+    const isInteracting = !!(isDragging || isPanning || dragNodeId || resizingNodeId || isSelecting || connectingSource || connectingTarget);
+    const isLowDetail = view.zoom < 0.4;
 
     return (
         <>
@@ -26223,6 +25969,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                                 imageRendering: view.zoom >= 1 ? 'auto' : 'crisp-edges'
                             }}>
                                 <ConnectionLayer
+                                    layerRef={connectionLayerRef}
                                     connections={connections}
                                     nodesMap={nodesMap}
                                     connectionsByNode={connectionsByNode}
@@ -26230,12 +25977,37 @@ ${inputText.substring(0, 15000)} ... (截断)
                                     connectingTarget={connectingTarget}
                                     connectingInputType={connectingInputType}
                                     mousePos={mousePos}
-                                    apiConfigsMap={apiConfigsMap}
+                                    getApiConfigByKey={getApiConfigByKey}
                                     selectedNodeId={selectedNodeId}
                                     onDisconnectConnection={disconnectConnection}
                                     visibleNodes={visibleNodes}
                                 />
-                                {visibleNodes.map((node) => renderNode(node))}
+                                {visibleNodes.map((node) => {
+                                    const isNodeSelected = selectedNodeId === node.id || selectedNodeIds.has(node.id);
+                                    const isNodeDragging = !!(dragNodeId === node.id || (dragNodeId && selectedNodeIds.has(node.id)));
+                                    const isNodeAdjacent = !!(
+                                        selectedNodeIdForAdjacency &&
+                                        selectedNodeIdForAdjacency !== node.id &&
+                                        selectedAdjacentSet &&
+                                        selectedAdjacentSet.has(node.id)
+                                    );
+
+                                    return (
+                                        <CanvasNodeRenderBoundary
+                                            key={node.id}
+                                            node={node}
+                                            renderNode={renderNode}
+                                            theme={theme}
+                                            isInteracting={isInteracting}
+                                            isLowDetail={isLowDetail}
+                                            isSelected={isNodeSelected}
+                                            isDragging={isNodeDragging}
+                                            isHoverTarget={hoverTargetId === node.id}
+                                            isAdjacent={isNodeAdjacent}
+                                            isConnected={nodeConnectedStatus.get(node.id) || false}
+                                        />
+                                    );
+                                })}
                             </div>
 
                             {nodes.length === 0 && <CanvasEmptyHint theme={theme} />}

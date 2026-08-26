@@ -14,14 +14,13 @@ import {
 import { EditOutlined } from '@ant-design/icons'
 import type { InputRef } from 'antd'
 import {
-  AlertTriangle,
   FileText,
   FolderOpen,
   Image as ImageIcon,
   Info,
   MoreHorizontal,
-  Plus,
   Search,
+  Sparkles,
   Trash2,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -360,6 +359,7 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
             <Dropdown
               trigger={['click']}
               placement="bottomRight"
+              overlayClassName="project-lobby-card-menu"
               open={openProjectMenuId === p.id}
               onOpenChange={(open) => {
                 if (suppressProjectMenuOpenRef.current) {
@@ -395,11 +395,7 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
                       rootClassName: 'project-lobby-delete-confirm-root',
                       className: 'project-lobby-delete-confirm',
                       centered: true,
-                      icon: (
-                        <span className="project-lobby-delete-confirm__icon" aria-hidden="true">
-                          <AlertTriangle size={18} strokeWidth={2} />
-                        </span>
-                      ),
+                      icon: null,
                       title: isCanvasView
                         ? l('删除这个画布？', 'Delete this canvas?')
                         : l('确定删除该项目？', 'Delete this project?'),
@@ -408,7 +404,10 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
                         : l('删除后无法恢复，相关章节与素材将不再关联。', 'This cannot be undone. Related chapters and assets will no longer be linked.'),
                       okText: l('删除', 'Delete'),
                       cancelText: l('取消', 'Cancel'),
-                      okButtonProps: { danger: true, className: 'project-lobby-delete-confirm__delete-button' },
+                      okButtonProps: {
+                        danger: true,
+                        className: 'project-lobby-delete-confirm__delete-button',
+                      },
                       cancelButtonProps: { className: 'project-lobby-delete-confirm__cancel-button' },
                       onOk: () => handleDelete(p.id),
                     })
@@ -515,7 +514,9 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
             <div className="project-lobby__content">
               <div className="project-lobby__grid">
                 <button type="button" className="project-lobby-create" onClick={handleOpenCreate}>
-                  <span className="project-lobby-create__icon"><Plus size={20} strokeWidth={1.75} /></span>
+                  <span className="project-lobby-create__icon" aria-hidden="true">
+                    <Sparkles size={24} strokeWidth={1.6} />
+                  </span>
                   <span>{workspaceView === 'canvas' ? l('新建画布', 'Create canvas') : l('点击创作', 'Create project')}</span>
                 </button>
                 {filteredSorted.map(renderCard)}
