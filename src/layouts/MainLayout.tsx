@@ -202,6 +202,7 @@ const MainLayout: React.FC = () => {
       users: language === 'en-US' ? 'User Management' : '用户管理',
       roles: language === 'en-US' ? 'Role Management' : '角色管理',
       menus: language === 'en-US' ? 'Menu Management' : '菜单管理',
+      voices: language === 'en-US' ? 'Voice Management' : '音色管理',
       admin: language === 'en-US' ? 'Administration' : '管理',
       chapters: t('breadcrumb.chapters'),
       studio: t('breadcrumb.studio'),

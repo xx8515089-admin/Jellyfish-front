@@ -23,6 +23,7 @@ const VideoEditor = lazy(() => import('./pages/aiStudio/editor/VideoEditor'))
 const AgentManagement = lazy(() => import('./pages/aiStudio/agents/AgentManagement'))
 const AgentEdit = lazy(() => import('./pages/aiStudio/agents/AgentEdit'))
 const ModelManagement = lazy(() => import('./pages/aiStudio/models/ModelManagement'))
+const VoiceManagement = lazy(() => import('./pages/aiStudio/voices/VoiceManagement'))
 const ChapterShotsPage = lazy(() =>
   import('./pages/aiStudio/shots/ChapterShotsPage').then((module) => ({
     default: module.ChapterShotsPage,
@@ -82,6 +83,7 @@ const App = () => {
             <Route path="system/users" element={<AdminUsers />} />
             <Route path="system/roles" element={<RoleManagement />} />
             <Route path="system/menus" element={<MenuManagement />} />
+            <Route path="system/voices" element={<VoiceManagement />} />
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
