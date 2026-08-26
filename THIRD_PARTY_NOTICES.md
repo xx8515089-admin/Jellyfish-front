@@ -13,3 +13,16 @@ source as a lazy React component. Its original license is preserved at
 `third_party/Tapnow-Studio-PP/LICENSE` and `public/canvas-studio/LICENSE.txt`.
 Local integration code adds workspace-scoped browser storage and the Jellyfish
 host route without removing upstream copyright or license terms.
+
+## 3D Director Desk
+
+- Updated source: https://github.com/xiaozangao/3d-director-desk
+- Original source: https://github.com/jiguang132/storyai-3d-director-desk
+- License: MIT
+- Integrated runtime: `src/pages/directorDesk/runtime/`
+- Preserved license: `src/pages/directorDesk/UPSTREAM_LICENSE.txt`
+
+The 3D Director Desk is compiled as an isolated, lazy-loaded React application.
+Its styles and overlays run inside a dedicated Shadow DOM instead of an iframe,
+so the original editor remains independent without leaking global styles into
+the surrounding Reelmax application.

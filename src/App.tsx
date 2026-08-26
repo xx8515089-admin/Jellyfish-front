@@ -33,7 +33,7 @@ const ChapterShotEditPage = lazy(() =>
     default: module.ChapterShotEditPage,
   })),
 )
-const DirectorStagePage = lazy(() => import('./pages/aiStudio/director/DirectorStagePage'))
+const DirectorDeskStandalonePage = lazy(() => import('./pages/directorDesk/DirectorDeskStandalonePage'))
 const Login = lazy(() => import('./pages/Login'))
 const AdminUsers = lazy(() => import('./pages/AdminUsers'))
 const CanvasLobby = lazy(() => import('./pages/canvas/CanvasLobby'))
@@ -52,16 +52,18 @@ const App = () => {
           <Route path="/login" element={<Login />} />
           <Route path="/projects/create" element={<RequireAuth><ProjectCreatePage /></RequireAuth>} />
           <Route path="/canvas/:canvasId" element={<RequireAuth><CanvasStudioPage /></RequireAuth>} />
+          <Route path="/director-desk/workspace/:deskId" element={<RequireAuth><DirectorDeskStandalonePage /></RequireAuth>} />
+          <Route path="/projects/:projectId/chapters/:chapterId/director-stage" element={<RequireAuth><DirectorDeskStandalonePage /></RequireAuth>} />
           <Route path="/efficiency-overview" element={<RequireAuth><EfficiencyOverview /></RequireAuth>} />
           <Route path="/" element={<RequireAuth><MainLayout /></RequireAuth>}>
             <Route index element={<Navigate to="/projects" replace />} />
             <Route path="projects" element={<ProjectLobby />} />
             <Route path="canvases" element={<CanvasLobby />} />
+            <Route path="director-desk" element={<DirectorDeskStandalonePage embeddedHome />} />
             <Route path="projects/:projectId" element={<ProjectWorkbench />} />
             <Route path="projects/:projectId/roles/:characterId/edit" element={<RoleDetailPage />} />
             <Route path="projects/:projectId/chapters/:chapterId/prep/*" element={<Navigate to="../shots" replace />} />
             <Route path="projects/:projectId/chapters/:chapterId/studio" element={<ChapterStudio />} />
-            <Route path="projects/:projectId/chapters/:chapterId/director-stage" element={<DirectorStagePage />} />
             <Route path="projects/:projectId/chapters/:chapterId/shots/:shotId/edit" element={<ChapterShotEditPage />} />
             <Route path="projects/:projectId/chapters/:chapterId/shots" element={<ChapterShotsPage />} />
             <Route path="projects/:projectId/chapters/:chapterId/prep-drafts" element={<Navigate to="../shots" replace />} />

@@ -2,6 +2,8 @@
 
 Reelmax 是面向 AI 短剧、分镜、资产生成和视频成片流程的前端工作台。本仓库为前端项目 `Jellyfish-front`，主要负责登录鉴权、项目工作台、自由画布、资产管理、提示词模板、文件管理、Agent、模型供应商、系统权限等页面能力。
 
+新用户请先阅读 [3D 导演台用户手册](docs/3d-director-desk-user-manual.md)，其中包含从创建场景到导出 MP4 参考视频的完整操作流程、快捷键和故障排查。
+
 ## 功能总览
 
 - 项目制创作：从剧本导入、项目创建、章节拆分、分镜提取、镜头准备、关键帧生成到视频生成和后期剪辑。
@@ -127,12 +129,15 @@ Reelmax 是面向 AI 短剧、分镜、资产生成和视频成片流程的前�
 
 #### 3D 导演台
 
-路由：`/projects/:projectId/chapters/:chapterId/director-stage`
+路由：`/director-desk`、`/director-desk/workspace/:deskId`、`/projects/:projectId/chapters/:chapterId/director-stage`
 
-- 内嵌 `director-stage.html`，用于站位、机位、遮挡关系和画幅参考。
-- 支持选择目标分镜和帧类型：首帧、关键帧、尾帧。
-- 支持向导演台请求截图，接收截图后上传为项目文件。
-- 支持将截图写回对应分镜帧槽位，作为后续生成参考。
+- 提供独立导演台首页，可创建和打开本地导演台工作区。
+- 以懒加载 React 运行时集成 3D Director Desk，并通过独立样式作用域隔离编辑器样式。
+- 支持角色、道具、场景预设和本地模型导入，用于快速搭建 3D 调度场景。
+- 支持摄影机、构图画幅、视口灵敏度、运镜预设和路线编辑。
+- 支持掌镜预览、路线预览、干净截图、参考视频导出和项目 JSON 导入导出。
+- 从项目章节进入时可作为分镜导演台使用，保留原 `/projects/:projectId/chapters/:chapterId/director-stage` 入口。
+- 操作文档见 [3D 导演台用户手册](docs/3d-director-desk-user-manual.md)。
 
 #### 后期剪辑
 

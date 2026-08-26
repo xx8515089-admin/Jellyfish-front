@@ -1,12 +1,12 @@
 :root {
   color-scheme: dark;
-  --jf-bg: #111111;
-  --jf-bg-soft: #171717;
-  --jf-panel: #242424;
-  --jf-panel-2: #2e2e2e;
-  --jf-panel-3: #383838;
-  --jf-border: #3d3d3d;
-  --jf-border-soft: #2d2d2d;
+  --jf-bg: #0c0c0d;
+  --jf-bg-soft: #101011;
+  --jf-panel: #171718;
+  --jf-panel-2: #202023;
+  --jf-panel-3: #29292d;
+  --jf-border: #323237;
+  --jf-border-soft: #252529;
   --jf-text: #f2f2f2;
   --jf-text-soft: #c9c9c9;
   --jf-muted: #909090;
@@ -31,7 +31,7 @@ body,
 }
 
 body {
-  background: linear-gradient(180deg, #171717 0%, #111111 58%, #0d0d0d 100%);
+  background: var(--jf-bg);
   background-attachment: fixed;
 }
 
@@ -41,7 +41,7 @@ body {
 }
 
 code {
-  background-color: #2e2e2e;
+  background-color: var(--jf-panel-2);
   color: #e5e5e5;
 }
 
@@ -54,7 +54,7 @@ code {
 
 .ant-layout-sider,
 .ant-layout-header {
-  background: rgba(17, 17, 17, 0.96) !important;
+  background: rgb(12 12 13 / 96%) !important;
   border-color: var(--jf-border-soft) !important;
 }
 
@@ -146,7 +146,7 @@ code {
 }
 
 .ant-modal-header {
-  background: #171717 !important;
+  background: var(--jf-panel) !important;
   border-color: var(--jf-border-soft) !important;
 }
 
@@ -209,7 +209,7 @@ code {
 }
 
 .ant-btn-primary:active {
-  background: #333333 !important;
+  background: var(--jf-panel-3) !important;
   border-color: #4d4d4d !important;
 }
 
@@ -243,7 +243,7 @@ code {
 }
 
 .task-center-trigger.ant-btn-primary {
-  background: #171717 !important;
+  background: var(--jf-panel) !important;
   border-color: rgba(255, 255, 255, 0.14) !important;
   color: #c8c8c8 !important;
 }
@@ -421,7 +421,7 @@ code {
 }
 
 .menu-editor__header {
-  background: linear-gradient(180deg, rgba(29, 29, 29, 0.98), rgba(23, 23, 23, 0.96)) !important;
+  background: var(--jf-panel) !important;
   border-color: var(--jf-border-soft) !important;
 }
 
@@ -500,7 +500,7 @@ code {
   --voice-library-primary: var(--jf-primary);
   --space-import-primary: var(--jf-primary);
   --cs-primary: var(--jf-primary);
-  background: linear-gradient(180deg, #171717 0%, #111111 66%, #0d0d0d 100%) !important;
+  background: var(--jf-bg) !important;
   color: var(--jf-text) !important;
 }
 
@@ -589,7 +589,7 @@ code {
 
 /* Project creation is a full-screen route outside MainLayout, so it needs its own dark surface pass. */
 .project-create-page {
-  background: linear-gradient(180deg, #171717 0%, #111111 60%, #0d0d0d 100%) !important;
+  background: var(--jf-bg) !important;
   color: var(--jf-text) !important;
 }
 
@@ -1084,5 +1084,5 @@ code {
 }
 
 * {
-  scrollbar-color: #3d3d3d transparent;
+  scrollbar-color: var(--jf-border) transparent;
 }

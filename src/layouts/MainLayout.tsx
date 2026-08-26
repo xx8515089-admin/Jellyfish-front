@@ -192,6 +192,7 @@ const MainLayout: React.FC = () => {
     const pathLabels: Record<string, string> = {
       projects: t('menu.projects'),
       canvases: t('menu.canvas'),
+      'director-desk': language === 'en-US' ? '3D Director Desk' : '3D 导演台',
       assets: t('menu.assets'),
       prompts: t('menu.prompts'),
       files: t('menu.files'),

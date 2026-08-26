@@ -568,7 +568,7 @@
   align-items: center;
   gap: 1px;
   padding: 2px;
-  border: 1px solid #3d3d3d;
+  border: 1px solid var(--project-border);
   border-radius: 6px;
   background: rgba(17, 17, 17, 0.96);
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.24);
@@ -596,7 +596,7 @@
 }
 
 .project-lobby-card.is-info-visible .project-lobby-card__info-button {
-  background: #2e2e2e;
+  background: var(--project-surface-muted);
   color: #e5e5e5;
 }
 
@@ -830,7 +830,7 @@
 
 .project-rename-modal .ant-input-disabled {
   color: var(--project-muted);
-  background: #171717;
+  background: var(--jf-panel, #171718);
 }
 
 .project-rename-modal__actions {
