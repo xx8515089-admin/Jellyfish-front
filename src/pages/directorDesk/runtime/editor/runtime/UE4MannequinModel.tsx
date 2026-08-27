@@ -13,9 +13,9 @@ import {
 } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
-import type { CharacterRigState, DirectorObject } from "../schema/directorProject";
+import type { CharacterRigState } from "../schema/directorProject";
 import { sampleCharacterActionControls } from "../presets/characterActionPresets";
-import { getObjectMotionActionSample, getObjectMotionSpeed } from "../schema/objectMotion";
+import { getObjectMotionSpeed } from "../schema/objectMotion";
 import { getRuntimePlaybackProgress } from "./playbackRuntime";
 import { VIEWPORT_OBJECT_LABEL_VERTICAL_GAP } from "../schema/viewportLabels";
 import type { CharacterBodyType } from "./mannequin/bodyTypes";
@@ -24,13 +24,14 @@ import {
   getUE4ModelScale,
 } from "./ue4Mannequin/ue4MannequinRig";
 import { applyUE4RestPoseAndRig, captureUE4RestPose } from "./ue4Mannequin/ue4MannequinPoseApplication";
+import { getCharacterRuntimeActionSample, type CharacterRuntimeMotion } from "./characterRuntimeMotion";
 
 interface UE4MannequinModelProps {
   bodyType?: CharacterBodyType;
   color?: string;
   onLabelAnchorYChange?: (anchorY: number) => void;
   rigState?: CharacterRigState;
-  runtimeMotion?: { duration: number; object: DirectorObject };
+  runtimeMotion?: CharacterRuntimeMotion;
 }
 
 interface LoadedGLTF {
@@ -162,9 +163,10 @@ export function UE4MannequinModel({
   useFrame(() => {
     if (!runtimeMotion) return;
     const progress = getRuntimePlaybackProgress();
-    const actionSample = getObjectMotionActionSample(runtimeMotion.object, progress, runtimeMotion.duration);
+    const actionSample = getCharacterRuntimeActionSample(runtimeMotion, progress);
     const routeAction = actionSample.actionPresetId;
-    const isMoving = getObjectMotionSpeed(runtimeMotion.object, progress, runtimeMotion.duration) > 0.05;
+    const isMoving = !actionSample.previewing
+      && getObjectMotionSpeed(runtimeMotion.object, progress, runtimeMotion.duration) > 0.05;
     const actionPresetId = routeAction ?? (isMoving ? "walk-cycle" : runtimeMotion.object.characterRig?.actionPresetId);
     const controls = actionPresetId
       ? sampleCharacterActionControls(actionPresetId, actionSample.animationTimeSeconds, rigState?.controls ?? {})

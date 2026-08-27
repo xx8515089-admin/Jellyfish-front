@@ -212,22 +212,22 @@ const MainLayout: React.FC = () => {
       edit: t('breadcrumb.edit'),
     }
     path.forEach((segment, i) => {
-      // 鐗规畩锛?projects/:projectId/chapters/:chapterId/* 涓殑 chapterId 娈典笉灞曠ず锛堥伩鍏嶅嚭鐜扳€滅珷鑺傗€濊繖涓€灞傦級
+      // 特殊处理：不展示章节详情路由中的 chapterId 段，避免出现多余的章节层级。
       if (path[0] === 'projects' && path[2] === 'chapters' && i === 3) {
         return
       }
 
-      // 榛樿锛氭寜鍘熷璺緞閫愭鎷兼帴
+      // 默认按原始路径逐段拼接。
       let href = path.slice(0, i + 1).join('/')
       href = `/${href}`
 
-      // 鐗规畩锛氱珷鑺傜浉鍏崇殑涓棿璺緞娈靛湪璺敱閲屼笉瀛樺湪锛岄渶鏄犲皠鍒版湁鏁堝湴鍧€
+      // 特殊处理：章节相关的中间路径在路由中不存在，需要映射到有效地址。
       // /projects/:projectId/chapters/:chapterId/*
       if (path[0] === 'projects' && path[2] === 'chapters') {
         const projectId = path[1]
         const chapterId = path[3]
         if (segment === 'chapters' && i === 2) {
-          // 鈥滅珷鑺傜鐞嗏€濆疄闄呭湪椤圭洰宸ヤ綔鍙伴〉
+          // “章节管理”实际位于项目工作台页面。
           href = `/projects/${projectId}?tab=chapters`
         } else if (i === 3) {
           href = `/projects/${projectId}/chapters/${chapterId}/shots`

@@ -1,4 +1,4 @@
-/* App-specific styles */
+/* 应用专用样式 */
 .app-header {
   background: #171718;
   color: #f2f2f2;
@@ -29,7 +29,7 @@
   transform: translateY(-2px);
 }
 
-/* Tailwind and Ant Design compatibility */
+/* Tailwind 与 Ant Design 兼容样式 */
 .ant-card {
   border: 1px solid #323237;
 }
@@ -44,7 +44,7 @@
   border-color: #6c6c6c;
 }
 
-/* Project workbench: tab 选中态主色下划线 */
+/* 项目工作台：标签页选中态使用主色下划线 */
 .project-workbench-tabs.ant-tabs .ant-tabs-ink-bar {
   background: #d7d9df;
   height: 3px;

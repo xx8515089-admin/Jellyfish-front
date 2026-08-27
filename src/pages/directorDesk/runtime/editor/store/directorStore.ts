@@ -229,7 +229,7 @@ function writePersistedLocalModelAssets(assets: DirectorAssetRef[]) {
   try {
     storage.setItem(LOCAL_MODEL_LIBRARY_STORAGE_KEY, JSON.stringify(assets.filter(isLocalModelLibraryAsset)));
   } catch {
-    // Local model files can exceed browser storage limits; keep the current scene usable if persistence fails.
+    // 本地模型文件可能超出浏览器存储限制；持久化失败时仍要保证当前场景可用。
   }
 }
 
@@ -359,7 +359,7 @@ function writePersistedDirectorState(state: DirectorState) {
   try {
     storage.setItem(getDirectorSceneStorageKey(), JSON.stringify(state));
   } catch {
-    // Keep the editor usable if the browser storage quota is exceeded.
+    // 即使超出浏览器存储配额，也要保证编辑器可用。
   }
 }
 
@@ -2886,13 +2886,20 @@ export const useDirectorStore = create<DirectorStore>((set, get) => {
     setCameraMotionPlaying: (playing) =>
       set((state) => {
         const runtimeProgress = getRuntimePlaybackProgress();
+        const restoredProgress = !playing
+          ? state.characterActionPreview?.restoreProgress
+          : undefined;
+        if (restoredProgress !== undefined) setRuntimePlaybackProgress(restoredProgress);
         return {
           ...(state as DirectorRuntimeState),
           cameraMotionPlaying: playing,
-          cameraMotionProgress: playing ? state.cameraMotionProgress : runtimeProgress,
+          cameraMotionProgress: playing
+            ? state.cameraMotionProgress
+            : restoredProgress ?? runtimeProgress,
+          characterActionPreview: null,
         };
       }),
-    restartCameraMotionPlayback: () =>
+    restartCameraMotionPlayback: (characterActionPreview = null) =>
       set((state) => {
         setRuntimePlaybackProgress(0);
         return {
@@ -2900,6 +2907,13 @@ export const useDirectorStore = create<DirectorStore>((set, get) => {
           cameraMotionProgress: 0,
           cameraMotionPlaying: true,
           cameraMotionPlaybackRevision: state.cameraMotionPlaybackRevision + 1,
+          characterActionPreview: characterActionPreview
+            ? {
+                ...characterActionPreview,
+                restoreProgress: state.characterActionPreview?.restoreProgress
+                  ?? state.cameraMotionProgress,
+              }
+            : null,
         };
       }),
     setCharacterActionPreview: (preview) =>

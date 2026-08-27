@@ -590,7 +590,7 @@
   }
 }
 
-/* Compact floating transport used by the editor chrome refresh. */
+/* 编辑器外框改版使用的紧凑型悬浮播放控制条。 */
 .app-shell .object-motion-transport {
   --object-motion-accent-rgb: 110 181 245;
   bottom: 16px;

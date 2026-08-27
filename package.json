@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
+    "audit:director-actions": "node ./scripts/audit-director-character-actions.mjs",
     "preview": "vite preview",
     "openapi:fetch": "node ./scripts/fetch-openapi.mjs",
     "openapi:gen": "pnpm exec -- openapi --input ./openapi.json --output ./src/services/generated --client fetch --useOptions --useUnionTypes",

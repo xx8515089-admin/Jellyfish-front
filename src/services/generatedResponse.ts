@@ -4,7 +4,7 @@ type ApiEnvelope<T> = {
   data?: T | null
 }
 
-/** Extracts the data payload from the backend ApiResponse envelope used by generated services. */
+/** 从生成服务使用的后端 ApiResponse 包装结构中提取 data 数据。 */
 export function unwrapApiData<T>(response: ApiEnvelope<unknown>, fallback: string): T {
   if ((response.code ?? 200) >= 400 || response.data == null) {
     throw new Error(response.message || fallback)

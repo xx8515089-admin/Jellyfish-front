@@ -73,7 +73,7 @@ type ProjectView = {
   scriptImportId?: StudioScriptImportId
 }
 
-const WORKFLOW_PAGE_SIZE = 20
+const WORKFLOW_PAGE_SIZE = 10
 const CANVAS_PAGE_SIZE = 10
 
 const toUIImportProject = (item: StudioScriptImportListItem): ProjectView => ({

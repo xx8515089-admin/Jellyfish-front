@@ -266,7 +266,7 @@ function StoryboardNodeContent({ node, context }) {
                 onMouseEnter={() => setIsMouseOverStoryboard(true)}
                 onMouseLeave={() => setIsMouseOverStoryboard(false)}
             >
-                {/* Header */}
+                {/* 头部 */}
                 <div className={`px-4 py-3 border-b flex items-center shrink-0 flex-nowrap overflow-x-auto no-scrollbar ${theme === 'dark'
                     ? 'bg-zinc-900 border-zinc-800'
                     : theme === 'solarized'
@@ -421,7 +421,7 @@ function StoryboardNodeContent({ node, context }) {
                         </div>
                     </div>
                     <div className="flex items-center gap-2 ml-auto relative z-10 shrink-0">
-                        {/* V3.5.26: Clear Button Moved Here */}
+                        {/* V3.5.26：清空按钮移至此处 */}
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -441,7 +441,7 @@ function StoryboardNodeContent({ node, context }) {
                                 if (connectedTexts.length > 0) {
                                     // 有上游文本节点，直接拆分导入
                                     const text = connectedTexts.join('\n');
-                                    // V3.5.36: Updated regex to match enhanced pattern
+                                    // V3.5.36：更新正则表达式以匹配增强格式
                                     const combinedPattern = /#\s*(\d+)\s*([^#【]*)|【\s*(\d+)\s*】\s*([^#【]*)/g;
                                     const matches = [];
                                     let m;
@@ -451,7 +451,7 @@ function StoryboardNodeContent({ node, context }) {
                                         if (content) matches.push({ num, text: content });
                                     }
 
-                                    // Fallback for 1. 2.
+                                    // 回退匹配 1.、2. 这类编号
                                     if (matches.length === 0) {
                                         const lines = text.split('\n').filter(l => l.trim());
                                         lines.forEach((line, i) => {
@@ -540,12 +540,12 @@ function StoryboardNodeContent({ node, context }) {
                                         }));
                                         saveToUndoStack();
 
-                                        // V3.7.6: Fix file:// URLs AND IndexedDB IDs (img_*) using LocalImageManager
+                                        // V3.7.6：使用 LocalImageManager 兼容 file:// URL 和 IndexedDB ID（img_*）
                                         if (LocalImageManager) {
                                             for (let s of mergedShots) {
                                                 const needsResolve = s.image_url && (s.image_url.startsWith('file://') || s.image_url.startsWith('img_'));
                                                 if (needsResolve) {
-                                                    // For img_* IDs, use the ID directly; for file://, use imgId or filename
+                                                    // img_* ID 直接使用原 ID；file:// 地址则使用 imgId 或文件名
                                                     const idOrFilename = s.image_url.startsWith('img_')
                                                         ? s.image_url
                                                         : (s.imgId || s.image_filename);
@@ -605,7 +605,7 @@ function StoryboardNodeContent({ node, context }) {
                                             customParams: sourceSettings.customParams || shot.customParams
                                         }));
                                         updateNodeSettings(node.id, { shots: syncedShots });
-                                        // V3.7.29: 显示同步参数 Toast
+                                        // V3.7.29：显示同步参数通知
                                         showToast(`✓ 已同步 ${syncedShots.length} 个镜头参数 | ${sourceSettings.model || '?'} / ${sourceSettings.ratio || '?'}`, 'success', 5000);
                                     }}
                                     className={`text-xs px-2 py-1 rounded transition-colors flex items-center gap-1 ${storyboardPrimaryButtonClass}`}
@@ -617,7 +617,7 @@ function StoryboardNodeContent({ node, context }) {
                                 </button>
                             );
                         })()}
-                        {/* V3.5.24: Batch Generate */}
+                        {/* V3.5.24：批量生成 */}
                         <div className={`flex items-center gap-1 border-l pl-2 ml-1 ${theme === 'dark' ? 'border-zinc-700' : 'border-zinc-300'}`}>
                             <input
                                 type="number"
@@ -666,15 +666,15 @@ function StoryboardNodeContent({ node, context }) {
                                         // choice === '2' 或其他 = 跳过，保持 generating 状态（会被下方过滤器排除）
                                     }
 
-                                    // 1. First Pass: Find unfinished shots (not done)
+                                    // 1. 第一轮：查找尚未完成的镜头
                                     // V3.7.29: 这里 stuckGenerating 如果被重置为 pending，就会被包含进来
                                     // V3.8: 也要跳过已锁定的镜头 (outputEnabled=true)
                                     let targetShots = allShots.filter(s => s.status !== 'done' && s.status !== 'generating' && !s.outputEnabled);
                                     let isReroll = false;
 
-                                    // 2. Second Pass: If all finished, check for Re-roll (unlocked items)
+                                    // 2. 第二轮：若已全部完成，则检查需要重新生成的未锁定镜头
                                     if (targetShots.length === 0) {
-                                        // Filter: Not locked (outputEnabled == false) AND status is done
+                                        // 筛选条件：未锁定（outputEnabled == false）且状态为 done
                                         targetShots = allShots.filter(s => !s.outputEnabled && s.status === 'done');
 
                                         if (targetShots.length === 0) {
@@ -692,7 +692,7 @@ function StoryboardNodeContent({ node, context }) {
                                         isReroll = true;
                                     }
 
-                                    // Confirm before re-roll
+                                    // 重新生成前请求确认
                                     if (isReroll) {
                                         const confirmMsg = `所有镜头已生成完毕。\n\n即将对 ${targetShots.length} 个未锁定（灰框未勾选）的镜头进行重新生成。\n\n● 继续批量生成会覆盖原有输出但是资产在左侧可以查看\n● 已锁定（灰框勾选）的镜头将保持不变\n\n是否继续？`;
                                         if (!confirm(confirmMsg)) return;
@@ -1069,7 +1069,7 @@ function StoryboardNodeContent({ node, context }) {
                     </div>
                 </div>
 
-                {/* V3.5.17: Script Splitter Manual Input (Banner removed in V3.5.24) */}
+                {/* V3.5.17：剧本拆分器的手动输入区，V3.5.24 已移除横幅 */}
                 {
                     node.settings?.scriptExpanded && (
                         <div className={`border-b shrink-0 p-3 space-y-2 ${theme === 'dark'
@@ -1096,7 +1096,7 @@ function StoryboardNodeContent({ node, context }) {
                             <div className="flex gap-2 flex-wrap">
                                 <button
                                     onClick={() => {
-                                        // V3.5.17 fix: Use getConnectedTextNodes helper
+                                        // V3.5.17 修复：使用 getConnectedTextNodes 辅助函数
                                         const connectedTexts = getConnectedTextNodes(node.id);
                                         const connectedText = connectedTexts.join('\n');
                                         const internalText = node.settings?.scriptText || '';
@@ -1111,7 +1111,7 @@ function StoryboardNodeContent({ node, context }) {
                                         const defaultCustomParams = getDefaultCustomParamsForModel(defaultModel, null, { preserveByName: false });
 
                                         const matches = [];
-                                        // Enhanced split pattern: #1, 【1】, or 1.
+                                        // 增强拆分格式：#1、【1】或 1.
                                         const combinedPattern = /#\s*(\d+)\s*([^#【]*)|【\s*(\d+)\s*】\s*([^#【]*)/g;
                                         let m;
                                         while ((m = combinedPattern.exec(text)) !== null) {
@@ -1122,7 +1122,7 @@ function StoryboardNodeContent({ node, context }) {
                                             }
                                         }
 
-                                        // If still empty, try numeric prefix 1. 2.
+                                        // 若结果仍为空，则尝试匹配 1.、2. 这类数字前缀
                                         if (matches.length === 0) {
                                             const lines = text.split('\n').filter(l => l.trim());
                                             lines.forEach((line, i) => {
@@ -1140,23 +1140,23 @@ function StoryboardNodeContent({ node, context }) {
                                             return;
                                         }
 
-                                        // Sort by number and create shots
+                                        // 按编号排序并创建镜头
                                         matches.sort((a, b) => a.num - b.num);
 
-                                        // V3.5.19: Smart Merge Logic (Update existing shots if possible)
+                                        // V3.5.19：智能合并逻辑，尽可能更新现有镜头
                                         const existingShots = node.settings?.shots || [];
                                         const mergedShots = [...existingShots];
 
                                         matches.forEach((m, i) => {
                                             if (i < existingShots.length) {
-                                                // Update existing shot (Text only)
+                                                // 仅更新现有镜头的文本
                                                 mergedShots[i] = {
                                                     ...mergedShots[i],
                                                     prompt: m.text,
                                                     description: m.text
                                                 };
                                             } else {
-                                                // Create new shot
+                                                // 创建新镜头
                                                 mergedShots.push({
                                                     id: Date.now() + Math.random() + i,
                                                     prompt: m.text,
@@ -1175,7 +1175,7 @@ function StoryboardNodeContent({ node, context }) {
 
                                         updateNodeSettings(node.id, {
                                             shots: mergedShots,
-                                            scriptExpanded: false // Collapse after split
+                                            scriptExpanded: false // 拆分后折叠
                                         });
                                     }}
                                     className={`px-3 py-1.5 text-xs rounded transition-colors ${node.settings?.showLlmPromptEditor
@@ -1426,7 +1426,7 @@ function StoryboardNodeContent({ node, context }) {
 
 
 
-                {/* List */}
+                {/* 列表 */}
                 <div
                     className={`flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3 min-h-0 bg-opacity-50 ${theme === 'solarized' ? 'bg-[#fdf6e3]' : ''}`}
                     onWheel={(e) => {
@@ -1719,7 +1719,7 @@ function StoryboardNodeContent({ node, context }) {
                             const isActiveShot = activeShot?.nodeId === node.id && activeShot?.shotId === shot.id;
                             return (
                                 <Fragment key={shot.id}>
-                                    {/* V3.5.20: Insert Shot Zone (T-junction) */}
+                                    {/* V3.5.20：镜头插入区域（T 形连接点） */}
                                     <div
                                         className="relative h-2 -mt-1 -mb-1 z-10 group/insert flex items-center justify-center cursor-pointer hover:h-6 transition-all"
                                         onClick={(e) => {
@@ -1757,7 +1757,7 @@ function StoryboardNodeContent({ node, context }) {
 
                                     <div className="flex items-stretch gap-2 w-full">
                                         <div
-                                            // key={shot.id} // moved to Fragment
+                                            // key={shot.id} 已移至 Fragment
                                             data-storyboard-shot-key={makeStoryboardShotFocusKey(node.id, shot.id)}
                                             tabIndex={0} // 允许聚焦以响应键盘事件
                                             onClick={(e) => {
@@ -1802,11 +1802,11 @@ function StoryboardNodeContent({ node, context }) {
                                                         : 'bg-white border-zinc-200 hover:border-blue-300 hover:shadow-md'
                                                 }`}
                                         >
-                                            {/* Index */}
+                                            {/* 序号 */}
                                             <div className={`font-mono text-sm w-6 shrink-0 flex items-start pt-1 font-bold ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>{shot.scene_index || (idx + 1)}</div>
 
-                                            {/* V3.7.4: Input Preview (Horizontal Video Split, Import Fix) */}
-                                            {/* V3.7.5: Container width increased to support horizontal layout better */}
+                                            {/* V3.7.4：输入预览，视频横向拆分并修复导入 */}
+                                            {/* V3.7.5：增加容器宽度，以更好地支持横向布局 */}
                                             <div
                                                 className="flex flex-col gap-2 shrink-0 mr-2 h-full min-h-[14rem] w-52"
                                                 onDragOver={(e) => {
@@ -1820,7 +1820,7 @@ function StoryboardNodeContent({ node, context }) {
                                                     const supportsFirstLastFrame = !!getApiConfigByKey(shot.model)?.supportsFirstLastFrame;
                                                     const showLastFrame = supportsFirstLastFrame && shot.useFirstLastFrame;
                                                     const activeInput = shot.activeInput || 'first';
-                                                    const showMultiRef = shot.useMultiRef; // Toggle State
+                                                    const showMultiRef = shot.useMultiRef; // 切换状态
 
                                                     const borderColor = theme === 'dark'
                                                         ? 'border-zinc-800'
@@ -1846,13 +1846,13 @@ function StoryboardNodeContent({ node, context }) {
                                                         e.target.value = '';
                                                     };
 
-                                                    // VIDEO MODE RENDER (Horizontal Split)
+                                                    // 视频模式渲染（横向拆分）
                                                     if (isVideo) {
                                                         const renderVideoCard = (type, isMain) => {
                                                             const field = type === 'first' ? 'image_url' : 'lastFrame';
                                                             const imgUrl = shot[field];
                                                             const label = type === 'first' ? t('首帧') : t('尾帧');
-                                                            // V3.7.5: H-Split Logic: Main = flex-1 (wider), Sub = w-14 (narrower)
+                                                            // V3.7.5：横向拆分逻辑，主区域使用 flex-1，次区域使用 w-14
                                                             const sizeClass = isMain ? 'flex-1 h-full' : 'w-14 h-full shrink-0';
 
                                                             return (
@@ -1860,7 +1860,7 @@ function StoryboardNodeContent({ node, context }) {
                                                                     {imgUrl ? <LazyBase64Image src={imgUrl} className={`w-full h-full object-cover ${!isMain ? 'opacity-60 hover:opacity-100' : ''}`} /> : <div className="flex flex-col items-center gap-1 text-zinc-500"><FolderOpen size={isMain ? 20 : 14} />{isMain && <span className="text-[10px]">选择{label}</span>}</div>}
                                                                     <div className="absolute top-0 left-0 bg-black/60 text-white text-[9px] px-1.5 py-0.5 rounded-br z-20 backdrop-blur-md pointer-events-none">{label}</div>
 
-                                                                    {/* V3.7.5: Restore Preview (Maximize) Button */}
+                                                                    {/* V3.7.5：恢复预览（最大化）按钮 */}
                                                                     {imgUrl && (
                                                                         <button
                                                                             onClick={(e) => { e.stopPropagation(); setLightboxItem({ url: imgUrl, type: 'image' }); }}
@@ -1878,7 +1878,7 @@ function StoryboardNodeContent({ node, context }) {
                                                                                 <input type="file" className="hidden" accept="image/*" onChange={(e) => handleUpload(e, field)} />
                                                                                 <div className="p-2 rounded-full bg-black/50 text-white"><FolderOpen size={16} /></div>
                                                                             </label>
-                                                                            {/* Split mode toggle - V3.7.13: 放到右下角 */}
+                                                                            {/* V3.7.13：拆分模式开关放到右下角 */}
                                                                             {supportsFirstLastFrame && (
                                                                                 <div className="absolute bottom-1 right-1 p-1 rounded bg-black/40 hover:bg-blue-500 text-white transition-colors cursor-pointer z-30" onClick={(e) => { e.stopPropagation(); updateShot(node.id, shot.id, { useFirstLastFrame: !showLastFrame, activeInput: !showLastFrame ? 'last' : 'first' }); }} title="切换首尾帧模式">
                                                                                     <Split size={12} />
@@ -1898,7 +1898,7 @@ function StoryboardNodeContent({ node, context }) {
 
                                                         if (!showLastFrame) return renderVideoCard('first', true);
 
-                                                        // Stable Horizontal Layout: First (Left) | Last (Right)
+                                                        // 稳定的横向布局：首帧在左，尾帧在右
                                                         return (
                                                             <div className="flex flex-row gap-2 h-full w-full">
                                                                 {renderVideoCard('first', activeInput === 'first')}
@@ -1907,7 +1907,7 @@ function StoryboardNodeContent({ node, context }) {
                                                         );
 
                                                     } else {
-                                                        // V3.7.11: IMAGE MODE - 左侧只显示输入图片！
+                                                        // V3.7.11：图像模式下左侧只显示输入图片
                                                         // 输入图片: referenceImages 或 image_url
                                                         // 输出图片(output_images)只在右侧预览面板显示
                                                         const inputImages = shot.referenceImages && shot.referenceImages.length > 0
@@ -2063,11 +2063,11 @@ function StoryboardNodeContent({ node, context }) {
                                                 })()}
                                             </div>
 
-                                            {/* Content */}
+                                            {/* 内容 */}
                                             <div className="flex-1 min-w-0 flex flex-col gap-2">
-                                                {/* Control Bar: Model, Ratio, Duration */}
+                                                {/* 控制栏：模型、比例、时长 */}
                                                 <div className="flex gap-2 items-center flex-wrap">
-                                                    {/* Video Model Select - V3.4.11: 双层 Provider -> Model 选择器 */}
+                                                    {/* V3.4.11：视频模型使用供应商 -> 模型双层选择器 */}
                                                     <div className="relative">
                                                         <button
                                                             onClick={(e) => {
@@ -2096,7 +2096,7 @@ function StoryboardNodeContent({ node, context }) {
                                                                 onMouseDown={(e) => e.stopPropagation()}
                                                                 onMouseLeave={() => setHoveredProvider(null)}
                                                             >
-                                                                {/* Provider 列表 */}
+                                                                {/* 供应商列表 */}
                                                                 <div className={`w-24 border-r pr-1 max-h-80 overflow-y-auto custom-scrollbar ${theme === 'dark' ? 'border-zinc-700' : 'border-zinc-200'}`}>
                                                                     {(() => {
                                                                         const mode = normalizeStoryboardMode(node.settings?.mode);
@@ -2117,7 +2117,7 @@ function StoryboardNodeContent({ node, context }) {
                                                                             ));
                                                                     })()}
                                                                 </div>
-                                                                {/* Model 列表 */}
+                                                                {/* 模型列表 */}
                                                                 <div className="flex-1 pl-1 max-h-80 overflow-y-auto custom-scrollbar">
                                                                     {(() => {
                                                                         const mode = normalizeStoryboardMode(node.settings?.mode);
@@ -2147,7 +2147,7 @@ function StoryboardNodeContent({ node, context }) {
                                                                                             // V3.6.0.fuckedup: 根据模式保存最后使用的模型
                                                                                             const lastModelKey = mode === 'image' ? 'tapnow_last_image_model' : 'tapnow_last_video_model';
                                                                                             localStorage.setItem(lastModelKey, modelKey);
-                                                                                            // 同步到 state
+                                                                                            // 同步到状态
                                                                                             if (mode === 'image') {
                                                                                                 setLastUsedImageModel(modelKey);
                                                                                             } else {
@@ -2177,7 +2177,7 @@ function StoryboardNodeContent({ node, context }) {
                                                         )}
                                                     </div>
 
-                                                    {/* Ratio Select - V3.6.1 动态适配模式 */}
+                                                    {/* V3.6.1：动态适配模式的比例选择器 */}
                                                     {(() => {
                                                         const mode = normalizeStoryboardMode(node.settings?.mode);
                                                         const ratioOptions = getRatiosForModel(shot.model);
@@ -2205,7 +2205,7 @@ function StoryboardNodeContent({ node, context }) {
                                                         );
                                                     })()}
 
-                                                    {/* Resolution Select - V3.6.1 视频模式显示720p/1080p，图片模式显示Auto/1K/2K/4K */}
+                                                    {/* V3.6.1：分辨率选择器，视频模式显示 720p/1080p，图片模式显示自动/1K/2K/4K */}
                                                     {(() => {
                                                         const mode = normalizeStoryboardMode(node.settings?.mode);
                                                         if (mode === 'video') {
@@ -2238,7 +2238,7 @@ function StoryboardNodeContent({ node, context }) {
                                                                 </select>
                                                             );
                                                         } else {
-                                                            // 图片模式：显示Auto/1K/2K/4K
+                                                            // 图片模式：显示自动/1K/2K/4K
                                                             const resOptions = getResolutionsForModel(shot.model);
                                                             const resConfig = getApiConfigByKey(shot.model);
                                                             const currentRes = normalizeImageResolution(shot.resolution || '2K');
@@ -2269,7 +2269,7 @@ function StoryboardNodeContent({ node, context }) {
                                                         }
                                                     })()}
 
-                                                    {/* Duration Select - V3.7.18: 只在视频模式显示 */}
+                                                    {/* V3.7.18：时长选择器仅在视频模式下显示 */}
                                                     {(normalizeStoryboardMode(node.settings?.mode)) === 'video' && (() => {
                                                         const currentModel = shot.model || (apiConfigs.find(c => c.type === 'Video' && c.id === 'sora-2')?.id || apiConfigs.find(c => c.type === 'Video')?.id || '');
                                                         const config = getApiConfigByKey(currentModel);
@@ -2371,7 +2371,7 @@ function StoryboardNodeContent({ node, context }) {
                                                         }`}
                                                     value={shot.description || ''}
                                                     placeholder={t('画面描述...')}
-                                                    title={shot.description || ''} /* V3.5.20: Tooltip */
+                                                    title={shot.description || ''} /* V3.5.20：工具提示 */
                                                     onChange={(e) => updateShot(node.id, shot.id, { description: e.target.value })}
                                                     onClick={(e) => {
                                                         e.stopPropagation();
@@ -2587,7 +2587,7 @@ function StoryboardNodeContent({ node, context }) {
                                                 </div>
                                             </div>
 
-                                            {/* Actions */}
+                                            {/* 操作 */}
                                             <div className={`flex flex-col items-center gap-3 justify-between border-l pl-6 pr-2 shrink-0 w-16 ${theme === 'dark' ? 'border-zinc-800' : 'border-zinc-200'
                                                 }`}>
                                                 <div className="flex flex-col items-center gap-2">
@@ -2631,7 +2631,7 @@ function StoryboardNodeContent({ node, context }) {
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 if (shot.status === 'generating') {
-                                                                    // V3.5.20: Stop/Cancel Generation
+                                                                    // V3.5.20：停止或取消生成
                                                                     updateShot(node.id, shot.id, { status: 'draft', errorMsg: null });
                                                                 } else {
                                                                     // V3.6.1: 根据模式调用不同的生成函数
@@ -2666,7 +2666,7 @@ function StoryboardNodeContent({ node, context }) {
                                                         </button>
                                                     );
                                                 })()}
-                                                {/* V3.5.17: Move up/down buttons for manual reordering */}
+                                                {/* V3.5.17：用于手动排序的上移和下移按钮 */}
                                                 <div className="flex flex-col items-center gap-1.5">
                                                     <button
                                                         onClick={() => {
@@ -2723,7 +2723,7 @@ function StoryboardNodeContent({ node, context }) {
                                                     } ${shot.outputEnabled ? (theme === 'dark' ? 'bg-blue-900/20 border-blue-800' : 'bg-blue-50 border-blue-300') : ''}`}
                                                 style={{ width: previewPanelWidth }}
                                             >
-                                                {/* Header: Checkbox + Status */}
+                                                {/* 头部：复选框与状态 */}
                                                 <div className="flex items-center justify-between">
                                                     <div
                                                         className={`w-4 h-4 rounded border cursor-pointer flex items-center justify-center transition-colors ${shot.outputEnabled
@@ -2809,7 +2809,7 @@ function StoryboardNodeContent({ node, context }) {
                                                         );
                                                     })()}
                                                 </div>
-                                                {/* 4-Image Grid or Single Thumbnail */}
+                                                {/* 四宫格图像或单张缩略图 */}
                                                 {(() => {
                                                     const outputHistoryEntries = Array.isArray(shot.outputHistory) ? shot.outputHistory.filter(Boolean) : [];
                                                     const outputHistoryCount = outputHistoryEntries.length;
@@ -3183,7 +3183,7 @@ function StoryboardNodeContent({ node, context }) {
                                             </div>
                                         )}
 
-                                    </div>{/* Close Outer Wrapper */}
+                                    </div>{/* 外层容器结束 */}
                                 </Fragment>
                             );
                         })
@@ -3203,7 +3203,7 @@ function StoryboardNodeContent({ node, context }) {
                     )}
                 </div>
 
-                {/* Footer */}
+                {/* 底部 */}
                 <div className={`p-3 border-t shrink-0 ${theme === 'dark'
                     ? 'bg-zinc-900 border-zinc-800'
                     : theme === 'solarized'

@@ -3,14 +3,16 @@ import type { PosePresetId } from "../schema/poseSchema";
 export interface PosePresetDefinition {
   id: PosePresetId;
   label: string;
+  labelEn: string;
   controls: Record<string, number>;
 }
 
 export const MANNEQUIN_POSE_PRESETS: PosePresetDefinition[] = [
-  { id: "stand", label: "站立", controls: {} },
+  { id: "stand", label: "站立", labelEn: "Stand", controls: {} },
   {
     id: "t-pose",
     label: "T型",
+    labelEn: "T-pose",
     controls: {
       "leftShoulder.spread": -70,
       "rightShoulder.spread": 70,
@@ -23,6 +25,7 @@ export const MANNEQUIN_POSE_PRESETS: PosePresetDefinition[] = [
   {
     id: "walk",
     label: "行走",
+    labelEn: "Walk",
     controls: {
       "leftShoulder.pitch": 20,
       "rightShoulder.pitch": -20,
@@ -35,6 +38,7 @@ export const MANNEQUIN_POSE_PRESETS: PosePresetDefinition[] = [
   {
     id: "run",
     label: "跑步",
+    labelEn: "Run",
     controls: {
       "leftShoulder.pitch": 42,
       "rightShoulder.pitch": -42,
@@ -47,6 +51,7 @@ export const MANNEQUIN_POSE_PRESETS: PosePresetDefinition[] = [
   {
     id: "sit",
     label: "坐姿",
+    labelEn: "Sit",
     controls: {
       "torso.pitch": -10,
       "leftHip.pitch": 80,
@@ -58,6 +63,7 @@ export const MANNEQUIN_POSE_PRESETS: PosePresetDefinition[] = [
   {
     id: "crouch",
     label: "蹲下",
+    labelEn: "Crouch",
     controls: {
       "body.offsetY": -0.43,
       "body.pitch": -26,
@@ -78,6 +84,7 @@ export const MANNEQUIN_POSE_PRESETS: PosePresetDefinition[] = [
   {
     id: "kneel-one",
     label: "单膝跪",
+    labelEn: "Kneel",
     controls: {
       "body.offsetY": -0.42,
       "body.pitch": -16,
@@ -101,6 +108,7 @@ export const MANNEQUIN_POSE_PRESETS: PosePresetDefinition[] = [
   {
     id: "kneel-two",
     label: "双膝跪",
+    labelEn: "Kneel on both knees",
     controls: {
       "body.offsetY": -0.4,
       "body.pitch": 2,
@@ -123,6 +131,7 @@ export const MANNEQUIN_POSE_PRESETS: PosePresetDefinition[] = [
   {
     id: "hands-on-hips",
     label: "叉腰",
+    labelEn: "Hands on hips",
     controls: {
       "leftShoulder.pitch": -36,
       "rightShoulder.pitch": -36,
@@ -139,6 +148,7 @@ export const MANNEQUIN_POSE_PRESETS: PosePresetDefinition[] = [
   {
     id: "lean",
     label: "倚靠",
+    labelEn: "Lean",
     controls: {
       "body.roll": -10,
       "leftHip.spread": -8,
@@ -149,6 +159,7 @@ export const MANNEQUIN_POSE_PRESETS: PosePresetDefinition[] = [
   {
     id: "bow",
     label: "鞠躬",
+    labelEn: "Bow",
     controls: {
       "body.pitch": -46,
       "torso.pitch": -10,
@@ -166,6 +177,7 @@ export const MANNEQUIN_POSE_PRESETS: PosePresetDefinition[] = [
   {
     id: "think",
     label: "思考",
+    labelEn: "Think",
     controls: {
       "rightShoulder.pitch": 8,
       "rightShoulder.spread": 0,
@@ -183,6 +195,7 @@ export const MANNEQUIN_POSE_PRESETS: PosePresetDefinition[] = [
   {
     id: "fight",
     label: "格斗",
+    labelEn: "Fight stance",
     controls: {
       "body.yaw": -10,
       "body.pitch": 5,
@@ -207,6 +220,7 @@ export const MANNEQUIN_POSE_PRESETS: PosePresetDefinition[] = [
   {
     id: "kick",
     label: "踢球",
+    labelEn: "Kick",
     controls: {
       "leftHip.pitch": -8,
       "rightHip.pitch": 58,
@@ -218,6 +232,7 @@ export const MANNEQUIN_POSE_PRESETS: PosePresetDefinition[] = [
   {
     id: "throw",
     label: "投掷",
+    labelEn: "Throw",
     controls: {
       "body.offsetY": -0.12,
       "body.pitch": 5,
@@ -248,6 +263,7 @@ export const MANNEQUIN_POSE_PRESETS: PosePresetDefinition[] = [
   {
     id: "push",
     label: "推进",
+    labelEn: "Push",
     controls: {
       "body.offsetY": -0.16,
       "body.pitch": 5,
@@ -277,6 +293,7 @@ export const MANNEQUIN_POSE_PRESETS: PosePresetDefinition[] = [
   {
     id: "wave",
     label: "招手",
+    labelEn: "Wave",
     controls: {
       "rightShoulder.pitch": 60,
       "rightShoulder.spread": 0,
@@ -294,6 +311,7 @@ export const MANNEQUIN_POSE_PRESETS: PosePresetDefinition[] = [
   {
     id: "reach",
     label: "伸手",
+    labelEn: "Reach",
     controls: {
       "rightShoulder.pitch": 50,
       "rightElbow.bend": 12,
@@ -303,6 +321,7 @@ export const MANNEQUIN_POSE_PRESETS: PosePresetDefinition[] = [
   {
     id: "cross-arms",
     label: "抱臂",
+    labelEn: "Cross arms",
     controls: {
       "leftShoulder.pitch": 50,
       "leftShoulder.spread": -55,
@@ -321,6 +340,7 @@ export const MANNEQUIN_POSE_PRESETS: PosePresetDefinition[] = [
   {
     id: "phone",
     label: "看手机",
+    labelEn: "Check phone",
     controls: {
       "head.pitch": 18,
       "rightShoulder.pitch": 20,

@@ -74,7 +74,7 @@ type DisplayedStyle = {
   id?: StudioScriptImportId
 }
 
-/** Maps one backend style record and its online cover to the project tile model. */
+/** 将一条后端风格记录及其在线封面映射为项目磁贴模型。 */
 const toDisplayedStyle = (item: StudioStyleOption): DisplayedStyle => ({
   key: `${item.styleType}:${item.id}`,
   value: item.name.trim(),
@@ -90,7 +90,7 @@ const isNoStyleOption = (item: StudioStyleOption) => {
   return normalizedName === '无风格' || normalizedName === 'no style'
 }
 
-/** Prepends the frontend-owned no-style tile while retaining its backend ID. */
+/** 在列表前添加前端维护的“无风格”磁贴，同时保留其后端 ID。 */
 const toDisplayedStyles = (
   items: StudioStyleOption[],
   category: StyleCategoryKey,
@@ -109,7 +109,7 @@ const toDisplayedStyles = (
   ]
 }
 
-/** Converts the cropped preview into the JPG or PNG file required by the cover API. */
+/** 将裁剪后的预览图转换为封面 API 所需的 JPG 或 PNG 文件。 */
 async function createCoverUploadFile(dataUrl: string): Promise<File> {
   const response = await fetch(dataUrl)
   const blob = await response.blob()
@@ -389,7 +389,7 @@ const ProjectCreatePage: React.FC = () => {
           message.warning(l('解析接口调用失败，已按本地文本导入', 'Parsing API failed; imported the local text instead'))
           return
         } catch {
-          // Fall through to the API error below.
+          // 继续交由下方的 API 错误处理逻辑处理。
         }
       }
       message.error(getApiErrorMessage(error, l('剧本解析失败', 'Script parsing failed')))

@@ -134,7 +134,7 @@ function VoiceManagement() {
         try {
           audio.currentTime = 0
         } catch {
-          // Metadata may not be available yet; pausing is sufficient in that case.
+          // 元数据可能尚未就绪，此时只需暂停播放。
         }
       }
     }
@@ -340,7 +340,7 @@ function VoiceManagement() {
       try {
         audio.currentTime = 0
       } catch {
-        // The audio will start at zero once metadata is ready.
+        // 元数据就绪后，音频会从零开始播放。
       }
     }
 

@@ -251,7 +251,7 @@ export function RolesTab() {
         setProjectVisualStyle(nextVisual)
         setProjectStyle(nextStyle)
       } catch {
-        // ignore: fallback to default
+        // 忽略该错误，并回退为默认值
       }
     })()
   }, [defaultVisualStyle, getDefaultStyle, projectId])

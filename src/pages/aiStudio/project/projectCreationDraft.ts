@@ -85,7 +85,7 @@ const writeFullDraft = async <T,>(key: string, draft: DraftEnvelope<T>) => {
       transaction.onabort = () => reject(transaction.error)
     })
   } catch {
-    // The compact localStorage draft still restores all non-image editing data.
+    // 精简的 localStorage 草稿仍可恢复所有非图片编辑数据。
   }
 }
 
@@ -101,7 +101,7 @@ const deleteFullDrafts = async (keys: readonly string[]) => {
       transaction.onabort = () => reject(transaction.error)
     })
   } catch {
-    // localStorage clearing is enough for the synchronous first render restore path.
+    // 对同步首屏恢复路径而言，清除 localStorage 已经足够。
   }
 }
 
@@ -124,11 +124,11 @@ const persistDraft = <T,>(key: string, serializedDraft: SerializedDraft) => {
     try {
       window.localStorage.setItem(key, JSON.stringify(compactDraft))
     } catch {
-      // IndexedDB can still retain the complete draft when localStorage is full.
+      // localStorage 已满时，IndexedDB 仍可保留完整草稿。
     }
     void writeFullDraft(key, fullDraft)
   } catch {
-    // Draft persistence must never block editing.
+    // 草稿持久化绝不能阻塞编辑操作。
   }
 }
 

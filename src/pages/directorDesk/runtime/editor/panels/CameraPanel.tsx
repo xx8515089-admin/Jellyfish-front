@@ -16,6 +16,7 @@ import { getDirectorObjectFocusTarget, isCameraFocusableObject } from "../schema
 import type { DirectorCameraCapture, DirectorCameraShot } from "../schema/directorProject";
 import { getCameraMotionPath, getCameraMotionTimingPlan } from "../schema/cameraMotion";
 import { useDirectorStore } from "../store/directorStore";
+import { useDirectorDeskText } from "../../useDirectorDeskText";
 
 const VIEWER_ZOOM_MIN = 0.25;
 const VIEWER_ZOOM_MAX = 5;
@@ -44,6 +45,7 @@ export function CameraPanel() {
 }
 
 function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
+  const text = useDirectorDeskText();
   const [activeTab, setActiveTab] = useState<"properties" | "motion" | "captures">("properties");
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [hoveredCaptureId, setHoveredCaptureId] = useState<string | null>(null);
@@ -205,7 +207,7 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
         addCameraCaptures(currentCamera.id, [preview.dataUrl]);
       }
     } catch (error) {
-      setCaptureError(error instanceof Error ? error.message : "机位截图失败");
+      setCaptureError(error instanceof Error ? error.message : text("机位截图失败", "Camera capture failed"));
     }
   }
 
@@ -368,7 +370,7 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
 
   function renderCaptureCards(captureList: DirectorCameraCapture[]) {
     return (
-      <div className="camera-capture-grid" aria-label="相机截图列表">
+      <div className="camera-capture-grid" aria-label={text("相机截图列表", "Camera capture list")}>
         {captureList.map((capture) => {
           const captureActive = hoveredCaptureId === capture.id;
 
@@ -380,14 +382,18 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
                 onMouseEnter={() => setHoveredCaptureId(capture.id)}
                 onMouseLeave={() => setHoveredCaptureId((current) => (current === capture.id ? null : current))}
               >
-                <img className="camera-capture-thumb" alt={`${capture.name} 缩略图`} src={capture.dataUrl} />
+                <img
+                  className="camera-capture-thumb"
+                  alt={text(`${capture.name} 缩略图`, `${capture.name} thumbnail`)}
+                  src={capture.dataUrl}
+                />
                 <div
-                  aria-label={`${capture.name} 缩略图操作`}
+                  aria-label={text(`${capture.name} 缩略图操作`, `${capture.name} thumbnail actions`)}
                   className={`camera-capture-actions${captureActive ? " is-visible" : ""}`}
                   role="group"
                 >
                   <button
-                    aria-label={`删除截图 ${capture.name}`}
+                    aria-label={text(`删除截图 ${capture.name}`, `Delete capture ${capture.name}`)}
                     className="camera-capture-action"
                     type="button"
                     onClick={(event) => {
@@ -398,7 +404,7 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
                     <Trash2 aria-hidden="true" size={14} strokeWidth={1.9} />
                   </button>
                   <button
-                    aria-label={`发送到画布 ${capture.name}`}
+                    aria-label={text(`发送到画布 ${capture.name}`, `Send ${capture.name} to canvas`)}
                     className="camera-capture-action"
                     type="button"
                     onClick={(event) => {
@@ -409,7 +415,7 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
                     <Send aria-hidden="true" size={14} strokeWidth={1.9} />
                   </button>
                   <button
-                    aria-label={`查看截图 ${capture.name}`}
+                    aria-label={text(`查看截图 ${capture.name}`, `View capture ${capture.name}`)}
                     className="camera-capture-action"
                     type="button"
                     onClick={(event) => {
@@ -431,7 +437,14 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
 
   function renderCurrentCameraCaptureGrid() {
     if (captures.length === 0) {
-      return <div className="capture-list-placeholder">当前还没有机位截图，可先从当前机位生成一张预览。</div>;
+      return (
+        <div className="capture-list-placeholder">
+          {text(
+            "当前还没有机位截图，可先从当前机位生成一张预览。",
+            "No captures for this camera yet. Create a preview from the current camera first.",
+          )}
+        </div>
+      );
     }
 
     return renderCaptureCards(captures);
@@ -439,11 +452,15 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
 
   function renderCaptureEmptyState() {
     return (
-      <div className="camera-capture-empty object-search-empty-state" role="status" aria-label="暂无摄像机截图">
+      <div
+        className="camera-capture-empty object-search-empty-state"
+        role="status"
+        aria-label={text("暂无摄像机截图", "No camera captures")}
+      >
         <span className="object-search-empty-icon" data-testid="camera-capture-empty-icon">
           <Images aria-hidden="true" size={16} strokeWidth={1.8} />
         </span>
-        <span>暂无摄像机截图</span>
+        <span>{text("暂无摄像机截图", "No camera captures")}</span>
       </div>
     );
   }
@@ -458,10 +475,10 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
               .map((group) => (
                 <section
                   key={group.camera.id}
-                  aria-label={`${group.camera.name}截图`}
+                  aria-label={text(`${group.camera.name}截图`, `${group.camera.name} captures`)}
                   className="camera-capture-group"
                 >
-                  <h3>{group.camera.name}截图</h3>
+                  <h3>{text(`${group.camera.name}截图`, `${group.camera.name} captures`)}</h3>
                   {renderCaptureCards(group.captures)}
                 </section>
               ))
@@ -482,7 +499,7 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
       <div className="camera-capture-overview-footer">
         <button className="camera-capture-clear-all" type="button" onClick={handleClearAllCaptures}>
           <Trash2 aria-hidden="true" data-testid="camera-capture-clear-icon" size={14} strokeWidth={1.9} />
-          <span>清空全部</span>
+          <span>{text("清空全部", "Clear all")}</span>
         </button>
         <button
           className="camera-capture-send-all viewport-toolbar-crowd-confirm"
@@ -490,7 +507,7 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
           onClick={sendAllCapturesToCanvas}
         >
           <Send aria-hidden="true" data-testid="camera-capture-send-icon" size={14} strokeWidth={1.9} />
-          <span>发送到画布</span>
+          <span>{text("发送到画布", "Send to canvas")}</span>
         </button>
       </div>
     );
@@ -511,20 +528,20 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
 
     return createPortal(
       <div
-        aria-label="相机截图查看器"
+        aria-label={text("相机截图查看器", "Camera capture viewer")}
         aria-modal="true"
         className="camera-capture-viewer"
         role="dialog"
         onClick={closeViewer}
       >
         <div
-          aria-label="相机截图查看器工具栏"
+          aria-label={text("相机截图查看器工具栏", "Camera capture viewer toolbar")}
           className="camera-capture-viewer-toolbar"
           role="toolbar"
           onClick={(event) => event.stopPropagation()}
         >
           <button
-            aria-label="放大图片"
+            aria-label={text("放大图片", "Zoom in")}
             className="camera-capture-viewer-tool"
             type="button"
             onClick={() => handleViewerZoom("in")}
@@ -532,7 +549,7 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
             <ZoomIn aria-hidden="true" size={18} strokeWidth={2} />
           </button>
           <button
-            aria-label="缩小图片"
+            aria-label={text("缩小图片", "Zoom out")}
             className="camera-capture-viewer-tool"
             type="button"
             onClick={() => handleViewerZoom("out")}
@@ -540,7 +557,7 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
             <ZoomOut aria-hidden="true" size={18} strokeWidth={2} />
           </button>
           <button
-            aria-label="下载图片"
+            aria-label={text("下载图片", "Download image")}
             className="camera-capture-viewer-tool"
             type="button"
             onClick={() => downloadDataUrl(viewerCapture.dataUrl, `${viewerCapture.name}.png`)}
@@ -548,7 +565,7 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
             <Download aria-hidden="true" size={18} strokeWidth={2} />
           </button>
           <button
-            aria-label="关闭相机截图查看器"
+            aria-label={text("关闭相机截图查看器", "Close camera capture viewer")}
             className="camera-capture-viewer-tool camera-capture-viewer-close"
             type="button"
             onClick={closeViewer}
@@ -559,7 +576,7 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
         <div className="camera-capture-viewer-stage">
           <img
             className={viewerImageClassName}
-            alt={`${viewerCapture.name} 查看大图`}
+            alt={text(`${viewerCapture.name} 查看大图`, `View ${viewerCapture.name}`)}
             src={viewerCapture.dataUrl}
             style={{ transform: `translate(${viewerOffset.x}px, ${viewerOffset.y}px) scale(${viewerScale})` }}
             onClick={(event) => event.stopPropagation()}
@@ -579,28 +596,34 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
         <div className="camera-motion-intro">
           <span className="camera-motion-intro-icon"><Route aria-hidden="true" size={18} /></span>
           <div>
-            <h3>自由摄影机轨迹</h3>
-            <p>先移动当前机位，再添加轨迹点；橙色轨迹点可直接在 3D 视口中拖动。</p>
+            <h3>{text("自由摄影机轨迹", "Free camera path")}</h3>
+            <p>{text(
+              "先移动当前机位，再添加轨迹点；橙色轨迹点可直接在 3D 视口中拖动。",
+              "Move the current camera, then add a path point. Orange points can be dragged directly in the 3D viewport.",
+            )}</p>
           </div>
         </div>
 
         <button className="camera-motion-add-button" type="button" onClick={handleAddMotionKeyframe}>
           <Plus aria-hidden="true" size={15} />
-          将当前机位添加为轨迹点
+          {text("将当前机位添加为轨迹点", "Add current camera as path point")}
         </button>
 
         {motionPath.keyframes.length === 0 ? (
           <div className="camera-motion-empty" role="status">
             <Waypoints aria-hidden="true" size={22} />
-            <strong>还没有摄影机轨迹</strong>
-            <span>添加两个或更多轨迹点后，即可预演任意推、拉、摇、移和环绕路线。</span>
+            <strong>{text("还没有摄影机轨迹", "No camera path yet")}</strong>
+            <span>{text(
+              "添加两个或更多轨迹点后，即可预演任意推、拉、摇、移和环绕路线。",
+              "Add two or more path points to preview dolly, pan, truck, and orbit movements.",
+            )}</span>
           </div>
         ) : (
           <>
             <InspectorRangeNumberField
-              label="镜头时长"
-              rangeAriaLabel="摄影机轨迹时长滑杆"
-              numberAriaLabel="摄影机轨迹时长"
+              label={text("镜头时长", "Shot duration")}
+              rangeAriaLabel={text("摄影机轨迹时长滑杆", "Camera path duration slider")}
+              numberAriaLabel={text("摄影机轨迹时长", "Camera path duration")}
               min="0.5"
               max="30"
               step="0.1"
@@ -611,13 +634,13 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
               onNumberChange={setMotionDurationDraft}
             />
             <InspectorSelectField
-              label="路径插值"
-              ariaLabel="摄影机路径插值"
+              label={text("路径插值", "Path interpolation")}
+              ariaLabel={text("摄影机路径插值", "Camera path interpolation")}
               value={motionPath.interpolation}
               onChange={(value) => updateCameraMotionPath(currentCamera.id, { interpolation: value === "linear" ? "linear" : "smooth" })}
             >
-              <option value="smooth">平滑曲线</option>
-              <option value="linear">直线分段</option>
+              <option value="smooth">{text("平滑曲线", "Smooth curve")}</option>
+              <option value="linear">{text("直线分段", "Linear segments")}</option>
             </InspectorSelectField>
 
             <div className="camera-motion-playback">
@@ -625,13 +648,15 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
                 className="camera-motion-play-button"
                 type="button"
                 disabled={motionPath.keyframes.length < 2}
-                aria-label={cameraMotionPlaying ? "暂停轨迹预演" : "播放轨迹预演"}
+                aria-label={cameraMotionPlaying
+                  ? text("暂停轨迹预演", "Pause path preview")
+                  : text("播放轨迹预演", "Play path preview")}
                 onClick={handleToggleMotionPlayback}
               >
                 {cameraMotionPlaying ? <Pause aria-hidden="true" size={15} /> : <Play aria-hidden="true" size={15} />}
               </button>
               <input
-                aria-label="摄影机轨迹播放位置"
+                aria-label={text("摄影机轨迹播放位置", "Camera path playback position")}
                 max="1"
                 min="0"
                 step="0.001"
@@ -652,16 +677,16 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
               aria-pressed={motionPath.loop}
               onClick={() => updateCameraMotionPath(currentCamera.id, { loop: !motionPath.loop })}
             >
-              循环播放
+              {text("循环播放", "Loop playback")}
             </button>
 
-            <div className="camera-motion-keyframes" role="list" aria-label="摄影机轨迹点">
+            <div className="camera-motion-keyframes" role="list" aria-label={text("摄影机轨迹点", "Camera path points")}>
               {motionPath.keyframes.map((keyframe, index) => (
                 <div key={keyframe.id} role="listitem">
                   <button
                     className={selectedMotionKeyframe?.id === keyframe.id ? "is-active" : ""}
                     type="button"
-                    aria-label={`选择轨迹点 K${index + 1}`}
+                    aria-label={text(`选择轨迹点 K${index + 1}`, `Select path point K${index + 1}`)}
                     aria-pressed={selectedMotionKeyframe?.id === keyframe.id}
                     onClick={() => handleSelectMotionKeyframe(
                       keyframe.id,
@@ -676,19 +701,25 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
             </div>
 
             {selectedMotionKeyframe ? (
-              <InspectorSection title={`轨迹点 K${motionPath.keyframes.indexOf(selectedMotionKeyframe) + 1}`} className="camera-motion-keyframe-editor">
+              <InspectorSection
+                title={text(
+                  `轨迹点 K${motionPath.keyframes.indexOf(selectedMotionKeyframe) + 1}`,
+                  `Path point K${motionPath.keyframes.indexOf(selectedMotionKeyframe) + 1}`,
+                )}
+                className="camera-motion-keyframe-editor"
+              >
                 <InspectorAxisGroup
-                  label="位置"
+                  label={text("位置", "Position")}
                   axes={[
-                    { axis: "X", ariaLabel: "轨迹点位置 X", value: selectedMotionKeyframe.position[0], onChange: (value) => updateSelectedMotionPosition(0, value) },
-                    { axis: "Y", ariaLabel: "轨迹点位置 Y", value: selectedMotionKeyframe.position[1], onChange: (value) => updateSelectedMotionPosition(1, value) },
-                    { axis: "Z", ariaLabel: "轨迹点位置 Z", value: selectedMotionKeyframe.position[2], onChange: (value) => updateSelectedMotionPosition(2, value) },
+                    { axis: "X", ariaLabel: text("轨迹点位置 X", "Path point position X"), value: selectedMotionKeyframe.position[0], onChange: (value) => updateSelectedMotionPosition(0, value) },
+                    { axis: "Y", ariaLabel: text("轨迹点位置 Y", "Path point position Y"), value: selectedMotionKeyframe.position[1], onChange: (value) => updateSelectedMotionPosition(1, value) },
+                    { axis: "Z", ariaLabel: text("轨迹点位置 Z", "Path point position Z"), value: selectedMotionKeyframe.position[2], onChange: (value) => updateSelectedMotionPosition(2, value) },
                   ]}
                 />
                 <InspectorRangeNumberField
-                  label="此点视野角度 (FOV)"
-                  rangeAriaLabel="轨迹点 FOV 滑杆"
-                  numberAriaLabel="轨迹点 FOV"
+                  label={text("此点视野角度 (FOV)", "Point field of view (FOV)")}
+                  rangeAriaLabel={text("轨迹点 FOV 滑杆", "Path point FOV slider")}
+                  numberAriaLabel={text("轨迹点 FOV", "Path point FOV")}
                   min="10"
                   max="120"
                   step="0.1"
@@ -703,7 +734,7 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
                   type="button"
                   onClick={() => deleteCameraMotionKeyframe(currentCamera.id, selectedMotionKeyframe.id)}
                 >
-                  <Trash2 aria-hidden="true" size={14} /> 删除当前轨迹点
+                  <Trash2 aria-hidden="true" size={14} /> {text("删除当前轨迹点", "Delete current path point")}
                 </button>
               </InspectorSection>
             ) : null}
@@ -715,27 +746,27 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
 
   return (
     <InspectorPanel
-      title="摄像机"
-      ariaLabel="摄像机右侧属性面板"
+      title={text("摄像机", "Camera")}
+      ariaLabel={text("摄像机右侧属性面板", "Camera properties panel")}
       className={activeTab === "captures" ? "camera-inspector-captures" : undefined}
       footer={renderCaptureOverviewFooter()}
       tabs={[
-        { label: "属性", active: activeTab === "properties", onClick: () => setActiveTab("properties") },
-        { label: "轨迹", active: activeTab === "motion", onClick: handleOpenMotionTab },
-        { label: "摄像机截图", active: activeTab === "captures", onClick: () => setActiveTab("captures") },
+        { label: text("属性", "Properties"), active: activeTab === "properties", onClick: () => setActiveTab("properties") },
+        { label: text("轨迹", "Path"), active: activeTab === "motion", onClick: handleOpenMotionTab },
+        { label: text("摄像机截图", "Captures"), active: activeTab === "captures", onClick: () => setActiveTab("captures") },
       ]}
     >
       {activeTab === "properties" ? (
         <>
           <InspectorTextField
-            label="名称"
-            ariaLabel="机位名称"
+            label={text("名称", "Name")}
+            ariaLabel={text("机位名称", "Camera name")}
             value={currentCamera.name}
             onChange={(value) => updateCamera(currentCamera.id, { name: value })}
           />
           <InspectorSelectField
-            label="切换机位"
-            ariaLabel="切换机位"
+            label={text("切换机位", "Switch camera")}
+            ariaLabel={text("切换机位", "Switch camera")}
             value={currentCamera.id}
             onChange={(value) => setActiveCamera(value)}
           >
@@ -746,11 +777,11 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
             ))}
           </InspectorSelectField>
           <InspectorAxisGroup
-            label="位置"
+            label={text("位置", "Position")}
             axes={[
               {
                 axis: "X",
-                ariaLabel: "机位位置 X",
+                ariaLabel: text("机位位置 X", "Camera position X"),
                 value: currentCamera.transform.position[0],
                 onChange: (value) =>
                   updateCamera(currentCamera.id, {
@@ -762,7 +793,7 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
               },
               {
                 axis: "Y",
-                ariaLabel: "机位位置 Y",
+                ariaLabel: text("机位位置 Y", "Camera position Y"),
                 value: currentCamera.transform.position[1],
                 onChange: (value) =>
                   updateCamera(currentCamera.id, {
@@ -774,7 +805,7 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
               },
               {
                 axis: "Z",
-                ariaLabel: "机位位置 Z",
+                ariaLabel: text("机位位置 Z", "Camera position Z"),
                 value: currentCamera.transform.position[2],
                 onChange: (value) =>
                   updateCamera(currentCamera.id, {
@@ -787,12 +818,12 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
             ]}
           />
           <InspectorSelectField
-            label="注视目标"
-            ariaLabel="注视目标模式"
+            label={text("注视目标", "Look-at target")}
+            ariaLabel={text("注视目标模式", "Look-at target mode")}
             value={targetSelectValue}
             onChange={handleTargetSelection}
           >
-            <option value="manual">手动坐标</option>
+            <option value="manual">{text("手动坐标", "Manual coordinates")}</option>
             {focusableObjects.map((item) => (
               <option key={item.id} value={`object:${item.id}`}>
                 {item.name}
@@ -800,46 +831,46 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
             ))}
           </InspectorSelectField>
           <InspectorAxisGroup
-            label="注视坐标"
+            label={text("注视坐标", "Look-at coordinates")}
             axes={[
               {
                 axis: "X",
-                ariaLabel: "注视坐标 X",
+                ariaLabel: text("注视坐标 X", "Look-at coordinate X"),
                 value: currentCamera.target[0],
                 onChange: (value) => updateManualTarget(0, value),
               },
               {
                 axis: "Y",
-                ariaLabel: "注视坐标 Y",
+                ariaLabel: text("注视坐标 Y", "Look-at coordinate Y"),
                 value: currentCamera.target[1],
                 onChange: (value) => updateManualTarget(1, value),
               },
               {
                 axis: "Z",
-                ariaLabel: "注视坐标 Z",
+                ariaLabel: text("注视坐标 Z", "Look-at coordinate Z"),
                 value: currentCamera.target[2],
                 onChange: (value) => updateManualTarget(2, value),
               },
             ]}
           />
           <InspectorRangeNumberField
-            label="视野角度 (FOV)"
-            rangeAriaLabel="机位 FOV 滑杆"
-            numberAriaLabel="机位 FOV"
+            label={text("视野角度 (FOV)", "Field of view (FOV)")}
+            rangeAriaLabel={text("机位 FOV 滑杆", "Camera FOV slider")}
+            numberAriaLabel={text("机位 FOV", "Camera FOV")}
             max="120"
             min="10"
             step="0.1"
             value={currentCamera.fov}
             onValueChange={(value) => updateCamera(currentCamera.id, { fov: Number(value) })}
           />
-          <InspectorSection title="相机截图" className="camera-capture-section">
+          <InspectorSection title={text("相机截图", "Camera captures")} className="camera-capture-section">
             <button
               className="camera-capture-current-button"
               type="button"
               onClick={() => void handleCameraCapture()}
             >
               <Camera aria-hidden="true" data-testid="camera-current-capture-icon" size={14} strokeWidth={1.9} />
-              <span>当前机位截图</span>
+              <span>{text("当前机位截图", "Capture current camera")}</span>
             </button>
             {captureError ? <p>{captureError}</p> : null}
             {renderCurrentCameraCaptureGrid()}

@@ -1,9 +1,10 @@
 import { useEffect, useRef } from "react";
 import type { Group } from "three";
 import { sampleCharacterActionControls } from "../../presets/characterActionPresets";
-import type { CharacterRigState, DirectorObject } from "../../schema/directorProject";
-import { getObjectMotionActionSample, getObjectMotionSpeed } from "../../schema/objectMotion";
+import type { CharacterRigState } from "../../schema/directorProject";
+import { getObjectMotionSpeed } from "../../schema/objectMotion";
 import { subscribeRuntimePlayback } from "../playbackRuntime";
+import { getCharacterRuntimeActionSample, type CharacterRuntimeMotion } from "../characterRuntimeMotion";
 import { getBodyPreset, type CharacterBodyType } from "./bodyTypes";
 import { degreesToRadians, getBodyTypePoseLimit, getRotationFromControls, getSingleAxisRotation } from "./mannequinPose";
 import { Foot, Hand, Head, Joint, Segment, Torso } from "./mannequinParts";
@@ -12,7 +13,7 @@ interface ProceduralMannequinProps {
   bodyType?: CharacterBodyType;
   color?: string;
   rigState?: CharacterRigState;
-  runtimeMotion?: { duration: number; object: DirectorObject };
+  runtimeMotion?: CharacterRuntimeMotion;
 }
 
 function clampDegrees(value: number, bodyType?: CharacterBodyType) {
@@ -80,9 +81,10 @@ export function ProceduralMannequin({ bodyType, color = "#4F8EF7", rigState, run
 
   useEffect(() => subscribeRuntimePlayback((progress) => {
     if (!runtimeMotion || !bodyRef.current) return;
-    const actionSample = getObjectMotionActionSample(runtimeMotion.object, progress, runtimeMotion.duration);
+    const actionSample = getCharacterRuntimeActionSample(runtimeMotion, progress);
     const routeAction = actionSample.actionPresetId;
-    const isMoving = getObjectMotionSpeed(runtimeMotion.object, progress, runtimeMotion.duration) > 0.05;
+    const isMoving = !actionSample.previewing
+      && getObjectMotionSpeed(runtimeMotion.object, progress, runtimeMotion.duration) > 0.05;
     const actionPresetId = routeAction ?? (isMoving ? "walk-cycle" : runtimeMotion.object.characterRig?.actionPresetId);
     const animatedControls = actionPresetId
       ? sampleCharacterActionControls(actionPresetId, actionSample.animationTimeSeconds, controls)

@@ -176,10 +176,10 @@ function GenerationNodeContent({ node, context }) {
                     // 检查当前节点或上游节点是否有蒙版
                     const hasMaskInCurrent = node?.maskContent;
 
-                    // 查找连接到当前节点的源节点（优先查找 default 输入，如果没有则查找所有输入）
+                    // 查找连接到当前节点的源节点，优先查找默认输入，否则查找所有输入
                     let incomingConn = connections.find(c => c.to === node.id && (!c.inputType || c.inputType === 'default'));
                     if (!incomingConn) {
-                        // 如果没有 default 连接，查找任何连接到该节点的连接
+                        // 若没有默认连接，则查找任意指向该节点的连接
                         incomingConn = connections.find(c => c.to === node.id);
                     }
 
@@ -417,7 +417,7 @@ function GenerationNodeContent({ node, context }) {
                 );
             })()}
 
-            {/* Midjourney指令UI: oref, ow, sref */}
+            {/* Midjourney 指令界面：oref、ow、sref */}
             {node.type === 'gen-image' && (() => {
                 const currentModel = getApiConfigByKey(node.settings?.model);
                 const isMidjourney = currentModel && (currentModel.id.includes('mj') || currentModel.provider.toLowerCase().includes('midjourney'));
@@ -427,7 +427,7 @@ function GenerationNodeContent({ node, context }) {
                 const srefConnected = getConnectedImageForInput(node.id, 'sref');
                 return (
                     <div className="flex flex-col gap-1.5 mb-2 relative" data-mj-instructions="true">
-                        {/* oref指令 */}
+                        {/* oref 指令 */}
                         <div className="relative flex items-center gap-1.5" data-mj-oref="true">
                             <div className={`input-point ${orefConnected ? 'connected' : ''} ${connectingTarget === node.id && connectingInputType === 'oref' ? 'active' : ''}`}
                                 title={t('oref输入')}
@@ -485,7 +485,7 @@ function GenerationNodeContent({ node, context }) {
                             />
                         </div>
 
-                        {/* sref指令 */}
+                        {/* sref 指令 */}
                         <div className="relative flex items-center gap-1.5" data-mj-sref="true">
                             <div className={`input-point ${srefConnected ? 'connected' : ''} ${connectingTarget === node.id && connectingInputType === 'sref' ? 'active' : ''}`}
                                 title={t('sref输入')}
@@ -644,7 +644,7 @@ function GenerationNodeContent({ node, context }) {
                             onMouseDown={(e) => e.stopPropagation()}
                             onMouseLeave={() => setHoveredProvider(null)}
                         >
-                            {/* V3.4.6: 左侧 Provider 列表 */}
+                            {/* V3.4.6：左侧供应商列表 */}
                             <div className={`w-36 border-r pr-1 max-h-64 overflow-y-auto custom-scrollbar flex flex-col justify-end ${theme === 'dark' ? 'border-zinc-700' : 'border-zinc-200'}`}>
                                 {Object.entries(groupedApiConfigs)
                                     .filter(([, group]) => group.models.some(m => (node.type === 'gen-image' ? isImageModelType(m.type) : m.type === 'Video')))
@@ -662,7 +662,7 @@ function GenerationNodeContent({ node, context }) {
                                         </button>
                                     ))}
                             </div>
-                            {/* V3.4.6: 右侧 Model 列表 */}
+                            {/* V3.4.6：右侧模型列表 */}
                             <div className="flex-1 pl-1 max-h-64 overflow-y-auto custom-scrollbar flex flex-col justify-end">
                                 {hoveredProvider && groupedApiConfigs[hoveredProvider]?.models
                                     .filter(m => (node.type === 'gen-image' ? isImageModelType(m.type) : m.type === 'Video'))
@@ -680,10 +680,10 @@ function GenerationNodeContent({ node, context }) {
                                                     // V3.4.8: 记住上次使用的模型
                                                     if (node.type === 'gen-image') {
                                                         setLastUsedImageModel(modelKey);
-                                                        try { localStorage.setItem('tapnow_last_image_model', modelKey); } catch { /* empty */ }
+                                                        try { localStorage.setItem('tapnow_last_image_model', modelKey); } catch { /* 无需处理 */ }
                                                     } else if (node.type === 'gen-video') {
                                                         setLastUsedVideoModel(modelKey);
-                                                        try { localStorage.setItem('tapnow_last_video_model', modelKey); } catch { /* empty */ }
+                                                        try { localStorage.setItem('tapnow_last_video_model', modelKey); } catch { /* 无需处理 */ }
                                                     }
                                                     setActiveDropdown(null);
                                                     setHoveredProvider(null);
@@ -708,7 +708,7 @@ function GenerationNodeContent({ node, context }) {
                     )}
                 </div>
 
-                {/* Midjourney版本选择器 */}
+                {/* Midjourney 版本选择器 */}
                 {node.type === 'gen-image' && (() => {
                     const currentModel = getApiConfigByKey(node.settings?.model);
                     return currentModel && (currentModel.id.includes('mj') || currentModel.provider.toLowerCase().includes('midjourney'));
@@ -797,7 +797,7 @@ function GenerationNodeContent({ node, context }) {
                                             onClick={() => {
                                                 updateNodeSettings(node.id, { ratio: r });
                                                 setLastUsedRatio(r);
-                                                try { localStorage.setItem('tapnow_last_ratio', r); } catch { /* empty */ }
+                                                try { localStorage.setItem('tapnow_last_ratio', r); } catch { /* 无需处理 */ }
                                                 setActiveDropdown(null);
                                             }}
                                             className={`w-full text-center py-1 text-[10px] rounded ${theme === 'dark'
@@ -860,7 +860,7 @@ function GenerationNodeContent({ node, context }) {
                                                     updateNodeSettings(node.id, { resolution: r });
                                                     if (r !== 'Auto') {
                                                         setLastUsedVideoResolution(r);
-                                                        try { localStorage.setItem('tapnow_last_video_res', r); } catch { /* empty */ }
+                                                        try { localStorage.setItem('tapnow_last_video_res', r); } catch { /* 无需处理 */ }
                                                     }
                                                     setActiveDropdown(null);
                                                 }}
@@ -945,7 +945,7 @@ function GenerationNodeContent({ node, context }) {
                                                 onClick={() => {
                                                     updateNodeSettings(node.id, { resolution: r });
                                                     setLastUsedImageResolution(r);
-                                                    try { localStorage.setItem('tapnow_last_image_res', r); } catch { /* empty */ }
+                                                    try { localStorage.setItem('tapnow_last_image_res', r); } catch { /* 无需处理 */ }
                                                     setActiveDropdown(null);
                                                 }}
                                                 className={`w-full text-center py-1 text-[10px] rounded ${theme === 'dark'

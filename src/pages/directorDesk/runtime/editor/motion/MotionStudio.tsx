@@ -50,6 +50,59 @@ import {
   type DirectorCameraTargetFollowMode,
 } from "../schema/semanticBody";
 import { RouteCustomEasingControl } from "./RouteCustomEasingControl";
+import { useDirectorDeskText } from "../../useDirectorDeskText";
+
+const CAMERA_PATH_TEMPLATE_ENGLISH: Record<
+  CameraPathTemplateId,
+  { label: string; description: string; suitableFor: string }
+> = {
+  "push-in": { label: "Push in", description: "Move closer to the subject", suitableFor: "Introductions and emotional emphasis" },
+  "pull-out": { label: "Pull out", description: "Move away from the subject", suitableFor: "Environment reveals and scene endings" },
+  "pan-left": { label: "Orbit left", description: "Orbit toward the subject's left side", suitableFor: "Spatial relationships and character observation" },
+  "pan-right": { label: "Orbit right", description: "Orbit toward the subject's right side", suitableFor: "Spatial relationships and character observation" },
+  "tilt-up": { label: "Tilt up", description: "Raise the view from a low angle", suitableFor: "Character entrances and emphasizing height" },
+  "tilt-down": { label: "Tilt down", description: "Lower the view from a high angle", suitableFor: "Establishing space and overhead views" },
+  "truck-left": { label: "Truck left", description: "Move sideways to create parallax", suitableFor: "Scene depth and lateral reveals" },
+  "truck-right": { label: "Truck right", description: "Move sideways to create parallax", suitableFor: "Scene depth and lateral reveals" },
+  "crane-orbit-up": { label: "Crane orbit up", description: "Rise while orbiting the subject", suitableFor: "Entrances, reveals and climactic shots" },
+  follow: { label: "Follow", description: "Follow a moving subject at a steady distance", suitableFor: "Walking, running and moving subjects" },
+  "parallel-follow": { label: "Parallel follow", description: "Move alongside the subject", suitableFor: "Walking characters and side views of vehicles" },
+  handheld: { label: "Handheld", description: "Add subtle irregular handheld motion", suitableFor: "Documentary, tension and subjective presence" },
+  "over-shoulder-reveal": { label: "Over-shoulder reveal", description: "Move from behind the subject to the front", suitableFor: "Dialogue, entrances and emotional turns" },
+  "orbit-close": { label: "Close half orbit", description: "Make a half orbit at close range", suitableFor: "Character close-ups and product details" },
+  "crane-orbit-down": { label: "Crane orbit down", description: "Lower the camera while orbiting", suitableFor: "Landing on a subject and entering a performance" },
+  "low-angle-follow": { label: "Low-angle follow", description: "Follow the subject close to the ground", suitableFor: "Running, vehicles and powerful movement" },
+  "overhead-follow": { label: "Overhead follow", description: "Follow the subject from above", suitableFor: "Routes, ensembles and action scenes" },
+  "foreground-reveal": { label: "Foreground reveal", description: "Move past the foreground to reveal the subject", suitableFor: "Suspense reveals and spatial transitions" },
+};
+
+const CAMERA_MOTION_PRESET_ENGLISH: Record<string, { label: string; description: string }> = {
+  "cinematic-push": { label: "Cinematic push", description: "8 seconds with gentle acceleration for emotion and close-ups" },
+  "character-follow": { label: "Steady follow", description: "6 seconds of smooth movement for walking shots" },
+  "fast-follow": { label: "Fast follow", description: "3 seconds with uniform response for action shots" },
+  "product-orbit": { label: "Product orbit", description: "10 seconds of smooth, uniform movement for orbit showcases" },
+  "steady-slide": { label: "Steady slide", description: "5 seconds of gentle linear movement for lateral reveals" },
+  "ambient-long-take": { label: "Ambient long take", description: "15 seconds of slow, smooth movement for establishing shots" },
+};
+
+const CAMERA_TARGET_BODY_PART_ENGLISH: Record<DirectorCameraTargetBodyPart, string> = {
+  center: "Center",
+  head: "Head",
+  chest: "Chest",
+  waist: "Waist",
+  leftUpperArm: "Left upper arm",
+  leftForearm: "Left forearm",
+  leftHand: "Left hand",
+  rightUpperArm: "Right upper arm",
+  rightForearm: "Right forearm",
+  rightHand: "Right hand",
+  leftThigh: "Left thigh",
+  leftCalf: "Left calf",
+  leftFoot: "Left foot",
+  rightThigh: "Right thigh",
+  rightCalf: "Right calf",
+  rightFoot: "Right foot",
+};
 
 export function getActiveCameraWaypointIndex(progress: number, times: number[]) {
   if (times.length === 0) return -1;
@@ -70,6 +123,7 @@ export function MotionStudio({
   onLoadCameraSnapshot?: (snapshot: CameraShotSnapshot) => void;
   onStartPilot?: (editKeyframeId?: string | null) => void;
 }) {
+  const text = useDirectorDeskText();
   const open = useDirectorStore((state) => state.motionStudioOpen);
   const viewMode = useDirectorStore((state) => state.viewMode);
   const cameraPilotMode = useDirectorStore((state) => state.cameraPilotMode);
@@ -392,125 +446,125 @@ export function MotionStudio({
   async function exportReferenceVideo() {
     if (motionPath.keyframes.length < 2 || exporting) return;
     setExporting(true);
-    setExportStatus("正在录制参考视频...");
+    setExportStatus(text("正在录制参考视频...", "Recording reference video..."));
     try {
       const result = await requestReferenceVideoExport({
-        fileName: `${activeCamera.name || "运镜"}-参考视频.mp4`,
+        fileName: `${activeCamera.name || text("运镜", "camera-motion")}-${text("参考视频", "reference-video")}.mp4`,
         fps: exportFps,
         quality: exportQuality,
       });
       downloadReferenceVideo(result);
-      setExportStatus("MP4 参考视频已下载");
+      setExportStatus(text("MP4 参考视频已下载", "MP4 reference video downloaded"));
     } catch (error) {
-      setExportStatus(error instanceof Error ? error.message : "参考视频导出失败");
+      setExportStatus(error instanceof Error ? error.message : text("参考视频导出失败", "Reference video export failed"));
     } finally {
       setExporting(false);
     }
   }
 
   return (
-    <section className={`motion-studio${cameraPilotMode !== "idle" ? " is-piloting" : ""}`} aria-label="运镜工作台">
+    <section className={`motion-studio${cameraPilotMode !== "idle" ? " is-piloting" : ""}`} aria-label={text("运镜工作台", "Camera motion studio")}>
       <header className="motion-studio-header">
         <div className="motion-studio-heading">
           <span className="motion-studio-icon"><Route aria-hidden="true" size={17} /></span>
           <div>
-            <h2>运镜工作台</h2>
-            <p>侧边栏不挡画面 · 无需摆放机位</p>
+            <h2>{text("运镜工作台", "Camera Motion Studio")}</h2>
+            <p>{text("侧边栏不挡画面 · 无需摆放机位", "Edit without blocking the view · No camera placement required")}</p>
           </div>
         </div>
         <div className="motion-studio-header-actions">
-          <button type="button" className="motion-studio-export" aria-label="导出运镜" aria-expanded={exportOpen} onClick={() => setExportOpen((current) => !current)}>
-            <Download aria-hidden="true" size={14} />导出
+          <button type="button" className="motion-studio-export" aria-label={text("导出运镜", "Export camera motion")} aria-expanded={exportOpen} onClick={() => setExportOpen((current) => !current)}>
+            <Download aria-hidden="true" size={14} />{text("导出", "Export")}
           </button>
-          <button type="button" className="motion-studio-close" aria-label="关闭运镜工作台" onClick={() => setMotionStudioOpen(false)}>
+          <button type="button" className="motion-studio-close" aria-label={text("关闭运镜工作台", "Close camera motion studio")} onClick={() => setMotionStudioOpen(false)}>
             <X aria-hidden="true" size={16} />
           </button>
         </div>
       </header>
 
       {exportOpen ? (
-        <section className="motion-export-panel" aria-label="导出运镜设置">
-          <div><strong>导出 MP4 参考视频</strong><small>导出干净的第一视角运镜，不包含轨迹线和操作界面</small></div>
-          <label><span>画质</span><select aria-label="参考视频画质" value={exportQuality} onChange={(event) => setExportQuality(event.currentTarget.value as ReferenceVideoExportQuality)}><option value="720p">720p</option><option value="1080p">1080p</option></select></label>
-          <label><span>帧率</span><select aria-label="参考视频帧率" value={exportFps} onChange={(event) => setExportFps(Number(event.currentTarget.value))}><option value="24">24 FPS</option><option value="30">30 FPS</option><option value="60">60 FPS</option></select></label>
-          <button type="button" className="motion-export-confirm" disabled={motionPath.keyframes.length < 2 || exporting} onClick={() => void exportReferenceVideo()}><Download aria-hidden="true" size={14} />{exporting ? "正在录制" : "导出 MP4"}</button>
+        <section className="motion-export-panel" aria-label={text("导出运镜设置", "Camera motion export settings")}>
+          <div><strong>{text("导出 MP4 参考视频", "Export MP4 reference video")}</strong><small>{text("导出干净的第一视角运镜，不包含轨迹线和操作界面", "Export a clean first-person camera move without paths or controls")}</small></div>
+          <label><span>{text("画质", "Quality")}</span><select aria-label={text("参考视频画质", "Reference video quality")} value={exportQuality} onChange={(event) => setExportQuality(event.currentTarget.value as ReferenceVideoExportQuality)}><option value="720p">720p</option><option value="1080p">1080p</option></select></label>
+          <label><span>{text("帧率", "Frame rate")}</span><select aria-label={text("参考视频帧率", "Reference video frame rate")} value={exportFps} onChange={(event) => setExportFps(Number(event.currentTarget.value))}><option value="24">24 FPS</option><option value="30">30 FPS</option><option value="60">60 FPS</option></select></label>
+          <button type="button" className="motion-export-confirm" disabled={motionPath.keyframes.length < 2 || exporting} onClick={() => void exportReferenceVideo()}><Download aria-hidden="true" size={14} />{exporting ? text("正在录制", "Recording") : text("导出 MP4", "Export MP4")}</button>
           {exportStatus ? <output className="motion-export-status" role="status">{exportStatus}</output> : null}
         </section>
       ) : null}
 
-      <section className="motion-preview-panel" aria-label="运镜预览方式">
+      <section className="motion-preview-panel" aria-label={text("运镜预览方式", "Camera motion preview mode")}>
         <div className="motion-block-heading">
-          <strong>你想怎么看？</strong>
-          <small>路线检查和最终镜头分开预览</small>
+          <strong>{text("你想怎么看？", "Choose a preview")}</strong>
+          <small>{text("路线检查和最终镜头分开预览", "Inspect the route or preview the final shot")}</small>
         </div>
         <div className="motion-preview-options">
           <button
             type="button"
             className={`motion-preview-option is-director${viewMode === "director" ? " is-active" : ""}`}
             disabled={!canPlay}
-            aria-label={cameraMotionPlaying && viewMode === "director" ? "暂停导演视角预演" : "播放导演视角预演"}
+            aria-label={cameraMotionPlaying && viewMode === "director" ? text("暂停导演视角预演", "Pause director-view preview") : text("播放导演视角预演", "Play director-view preview")}
             aria-pressed={viewMode === "director"}
             onClick={() => previewInView("director")}
           >
             <Route aria-hidden="true" size={17} />
-            <span><strong>{cameraMotionPlaying && viewMode === "director" ? "暂停" : "看路线"}</strong><small>导演视角看轨迹点</small></span>
+            <span><strong>{cameraMotionPlaying && viewMode === "director" ? text("暂停", "Pause") : text("看路线", "View route")}</strong><small>{text("导演视角看轨迹点", "Inspect waypoints in director view")}</small></span>
             {cameraMotionPlaying && viewMode === "director" ? <Pause aria-hidden="true" size={14} /> : <Play aria-hidden="true" size={14} />}
           </button>
           <button
             type="button"
             className={`motion-preview-option is-camera${viewMode === "camera" ? " is-active" : ""}`}
             disabled={!canPlay}
-            aria-label={cameraMotionPlaying && viewMode === "camera" ? "暂停第一视角运镜预演" : "播放第一视角运镜预演"}
+            aria-label={cameraMotionPlaying && viewMode === "camera" ? text("暂停第一视角运镜预演", "Pause first-person preview") : text("播放第一视角运镜预演", "Play first-person preview")}
             aria-pressed={viewMode === "camera"}
             onClick={() => previewInView("camera")}
           >
             <Video aria-hidden="true" size={17} />
-            <span><strong>{cameraMotionPlaying && viewMode === "camera" ? "暂停" : "看成片"}</strong><small>第一视角看最终镜头</small></span>
+            <span><strong>{cameraMotionPlaying && viewMode === "camera" ? text("暂停", "Pause") : text("看成片", "View final shot")}</strong><small>{text("第一视角看最终镜头", "Preview the final first-person shot")}</small></span>
             {cameraMotionPlaying && viewMode === "camera" ? <Pause aria-hidden="true" size={14} /> : <Play aria-hidden="true" size={14} />}
           </button>
         </div>
       </section>
 
       <div className="motion-studio-body">
-        <section className="motion-template-panel" aria-label="镜头预设">
+        <section className="motion-template-panel" aria-label={text("镜头预设", "Camera presets")}>
           <div className="motion-block-heading">
-            <strong>一键镜头</strong>
-            <small>选择主体和幅度，再套用镜头</small>
+            <strong>{text("一键镜头", "One-click shot")}</strong>
+            <small>{text("选择主体和幅度，再套用镜头", "Choose a subject and range, then apply a shot")}</small>
           </div>
-          <div className="motion-template-tabs" role="group" aria-label="镜头预设分类">
+          <div className="motion-template-tabs" role="group" aria-label={text("镜头预设分类", "Camera preset categories")}>
             <button
               type="button"
               aria-pressed={templateGroup === "official"}
               className={templateGroup === "official" ? "is-active" : undefined}
               onClick={() => setTemplateGroup("official")}
-              aria-label="基础预设"
-            >基础预设 <small>{getCameraPathTemplatesByGroup("official").length}</small></button>
+              aria-label={text("基础预设", "Basic presets")}
+            >{text("基础预设", "Basic presets")} <small>{getCameraPathTemplatesByGroup("official").length}</small></button>
             <button
               type="button"
               aria-pressed={templateGroup === "community"}
               className={templateGroup === "community" ? "is-active" : undefined}
               onClick={() => setTemplateGroup("community")}
-              aria-label="群友预设"
-            ><Users aria-hidden="true" size={12} />群友预设 <small>{getCameraPathTemplatesByGroup("community").length}</small></button>
+              aria-label={text("群友预设", "Community presets")}
+            ><Users aria-hidden="true" size={12} />{text("群友预设", "Community presets")} <small>{getCameraPathTemplatesByGroup("community").length}</small></button>
           </div>
           <div className="motion-template-controls">
             <label>
-              <span><LocateFixed aria-hidden="true" size={13} />跟踪主体</span>
+              <span><LocateFixed aria-hidden="true" size={13} />{text("跟踪主体", "Track subject")}</span>
               <select
-                aria-label="镜头预设跟踪主体"
+                aria-label={text("镜头预设跟踪主体", "Preset tracking subject")}
                 value={templateTargetObjectId}
                 onChange={(event) => updateTemplateTarget(event.currentTarget.value)}
               >
-                <option value="">固定当前画面中心</option>
+                <option value="">{text("固定当前画面中心", "Lock current frame center")}</option>
                 {trackableObjects.map((object) => (
                   <option key={object.id} value={object.id}>{object.name}</option>
                 ))}
               </select>
             </label>
             <label>
-              <span><Move3D aria-hidden="true" size={13} />轨迹范围</span>
+              <span><Move3D aria-hidden="true" size={13} />{text("轨迹范围", "Path range")}</span>
               <input
-                aria-label="镜头预设轨迹范围"
+                aria-label={text("镜头预设轨迹范围", "Preset path range")}
                 type="range"
                 min="0.5"
                 max="3"
@@ -526,33 +580,37 @@ export function MotionStudio({
             </label>
           </div>
           <div className="motion-template-grid">
-            {visiblePathTemplates.map((template) => (
-              <button
-                type="button"
-                key={template.id}
-                className={activeTemplateId === template.id ? "is-active" : undefined}
-                aria-label={`套用${template.label}镜头预设`}
-                aria-pressed={activeTemplateId === template.id}
-                title={template.description}
-                onClick={() => applyPathTemplate(template.id)}
-              >
-                {template.label}
-              </button>
-            ))}
+            {visiblePathTemplates.map((template) => {
+              const english = CAMERA_PATH_TEMPLATE_ENGLISH[template.id];
+              const label = text(template.label, english.label);
+              return (
+                <button
+                  type="button"
+                  key={template.id}
+                  className={activeTemplateId === template.id ? "is-active" : undefined}
+                  aria-label={text(`套用${template.label}镜头预设`, `Apply ${english.label} camera preset`)}
+                  aria-pressed={activeTemplateId === template.id}
+                  title={text(template.description, english.description)}
+                  onClick={() => applyPathTemplate(template.id)}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
           {templateGroup === "community" ? (
-            <div className="motion-community-template-meta" aria-label="群友预设资料">
+            <div className="motion-community-template-meta" aria-label={text("群友预设资料", "Community preset details")}>
               {activeTemplate?.group === "community" ? (
                 <>
-                  <strong>{activeTemplate.label} · v{activeTemplate.version}</strong>
-                  <span>{activeTemplate.description}；适合：{activeTemplate.suitableFor}</span>
-                  <span>贡献者：{activeTemplate.contribution?.contributorName ?? "待群主补充"}</span>
-                  <span>许可：{activeTemplate.contribution?.license}</span>
-                  {activeTemplate.contribution?.contact ? <span>联系：{activeTemplate.contribution.contact}</span> : null}
-                  {activeTemplate.contribution?.sourceUrl ? <a href={activeTemplate.contribution.sourceUrl} target="_blank" rel="noreferrer">查看来源</a> : null}
+                  <strong>{text(activeTemplate.label, CAMERA_PATH_TEMPLATE_ENGLISH[activeTemplate.id].label)} · v{activeTemplate.version}</strong>
+                  <span>{text(activeTemplate.description, CAMERA_PATH_TEMPLATE_ENGLISH[activeTemplate.id].description)}{text("；", "; ")}{text("适合：", "Best for: ")}{text(activeTemplate.suitableFor, CAMERA_PATH_TEMPLATE_ENGLISH[activeTemplate.id].suitableFor)}</span>
+                  <span>{text("贡献者：", "Contributor: ")}{activeTemplate.contribution?.contributorName ?? text("待群主补充", "To be added")}</span>
+                  <span>{text("许可：", "License: ")}{text(activeTemplate.contribution?.license ?? "", "Built-in implementation based on a community preset concept")}</span>
+                  {activeTemplate.contribution?.contact ? <span>{text("联系：", "Contact: ")}{activeTemplate.contribution.contact}</span> : null}
+                  {activeTemplate.contribution?.sourceUrl ? <a href={activeTemplate.contribution.sourceUrl} target="_blank" rel="noreferrer">{text("查看来源", "View source")}</a> : null}
                 </>
               ) : (
-                <span>选择一个群友预设后显示贡献者、来源、版本和许可资料。</span>
+                <span>{text("选择一个群友预设后显示贡献者、来源、版本和许可资料。", "Select a community preset to view its contributor, source, version and license.")}</span>
               )}
             </div>
           ) : null}
@@ -560,76 +618,76 @@ export function MotionStudio({
 
         <div className="motion-studio-primary-actions">
           <div className="motion-block-heading">
-            <strong>制作镜头</strong>
-            <small>移动镜头，按 Enter 添加轨迹点</small>
+            <strong>{text("制作镜头", "Create a shot")}</strong>
+            <small>{text("移动镜头，按 Enter 添加轨迹点", "Move the camera and press Enter to add waypoints")}</small>
           </div>
           <button
             type="button"
             className="motion-primary-button"
-            aria-label="开始掌镜"
+            aria-label={text("开始掌镜", "Start camera control")}
             onClick={() => onStartPilot ? onStartPilot(null) : startCameraPilot("pilot")}
           >
             <MousePointer2 aria-hidden="true" size={17} />
-            <span><strong>开始掌镜</strong><small>WASD 自由走镜头</small></span>
+            <span><strong>{text("开始掌镜", "Start camera control")}</strong><small>{text("WASD 自由走镜头", "Use WASD to move the camera")}</small></span>
           </button>
-          <button type="button" className="motion-add-current" aria-label="添加当前视角为轨迹点" onClick={addCurrentView}>
+          <button type="button" className="motion-add-current" aria-label={text("添加当前视角为轨迹点", "Add current view as waypoint")} onClick={addCurrentView}>
             <Plus aria-hidden="true" size={16} />
-            添加当前视角
+            {text("添加当前视角", "Add current view")}
           </button>
         </div>
 
-        <div className="motion-key-help" aria-label="掌镜键位说明">
-          <span><kbd>WASD</kbd><small>移动</small></span>
-          <span><kbd>E</kbd><small>上升</small></span>
-          <span><kbd>Q</kbd><small>下降</small></span>
-          <span><kbd>空格</kbd><small>播放 / 暂停人物</small></span>
-          <span><kbd>鼠标</kbd><small>看向</small></span>
-          <span><kbd>F</kbd><small>锁定</small></span>
-          <span><kbd>Enter</kbd><small>记录</small></span>
+        <div className="motion-key-help" aria-label={text("掌镜键位说明", "Camera control shortcuts")}>
+          <span><kbd>WASD</kbd><small>{text("移动", "Move")}</small></span>
+          <span><kbd>E</kbd><small>{text("上升", "Up")}</small></span>
+          <span><kbd>Q</kbd><small>{text("下降", "Down")}</small></span>
+          <span><kbd>{text("空格", "Space")}</kbd><small>{text("播放 / 暂停人物", "Play / pause characters")}</small></span>
+          <span><kbd>{text("鼠标", "Mouse")}</kbd><small>{text("看向", "Look")}</small></span>
+          <span><kbd>F</kbd><small>{text("锁定", "Lock")}</small></span>
+          <span><kbd>Enter</kbd><small>{text("记录", "Record")}</small></span>
         </div>
 
         <div className="motion-route-column">
           <div className="motion-route-title">
-            <div><Video aria-hidden="true" size={15} /><strong>镜头路线</strong><span>{motionPath.keyframes.length} 个点</span></div>
+            <div><Video aria-hidden="true" size={15} /><strong>{text("镜头路线", "Camera route")}</strong><span>{text(`${motionPath.keyframes.length} 个点`, `${motionPath.keyframes.length} points`)}</span></div>
             {motionPath.keyframes.length > 0 ? (
               <button
                 type="button"
                 className={batchSelectionEnabled ? "is-active" : undefined}
-                aria-label="批量选择并移动轨迹点"
+                aria-label={text("批量选择并移动轨迹点", "Select and move multiple waypoints")}
                 aria-pressed={batchSelectionEnabled}
                 onClick={toggleBatchSelection}
               >
                 <Move3D aria-hidden="true" size={13} />
-                批量移动
+                {text("批量移动", "Move multiple")}
               </button>
             ) : null}
           </div>
 
           {batchSelectionEnabled ? (
-            <div className="motion-batch-selection" aria-label="批量轨迹点选择工具">
-              <span>已选 {selectedCameraKeyframeIds.length} 个点</span>
-              <small>点下面的数字，可选 1、3、6</small>
+            <div className="motion-batch-selection" aria-label={text("批量轨迹点选择工具", "Waypoint multi-select tools")}>
+              <span>{text(`已选 ${selectedCameraKeyframeIds.length} 个点`, `${selectedCameraKeyframeIds.length} points selected`)}</span>
+              <small>{text("点下面的数字，可选 1、3、6", "Select waypoint numbers below, such as 1, 3 and 6")}</small>
               <button
                 type="button"
-                aria-label="全选所有轨迹点"
+                aria-label={text("全选所有轨迹点", "Select all waypoints")}
                 onClick={() => setCameraMotionKeyframeSelection(motionPath.keyframes.map((item) => item.id))}
-              >全选</button>
+              >{text("全选", "Select all")}</button>
               <button
                 type="button"
-                aria-label="清空轨迹点选择"
+                aria-label={text("清空轨迹点选择", "Clear waypoint selection")}
                 onClick={() => setCameraMotionKeyframeSelection([])}
-              >清空</button>
+              >{text("清空", "Clear")}</button>
             </div>
           ) : null}
 
           {motionPath.keyframes.length === 0 ? (
             <div className="motion-route-empty" role="status">
               <Route aria-hidden="true" size={20} />
-              <span>还没有轨迹点</span>
-              <small>点“开始掌镜”，走到合适的位置按 Enter。</small>
+              <span>{text("还没有轨迹点", "No waypoints yet")}</span>
+              <small>{text("点“开始掌镜”，走到合适的位置按 Enter。", "Select Start camera control, move into position and press Enter.")}</small>
             </div>
           ) : (
-            <div className="motion-waypoint-strip" role="list" aria-label="可编辑轨迹点">
+            <div className="motion-waypoint-strip" role="list" aria-label={text("可编辑轨迹点", "Editable waypoints")}>
               {motionPath.keyframes.map((keyframe, index) => {
                 const selected = selectedKeyframe?.id === keyframe.id;
                 const reached = timelinePreviewActive && index <= activeIndex;
@@ -645,8 +703,8 @@ export function MotionStudio({
                         <button
                           type="button"
                           className="motion-waypoint-insert"
-                          aria-label={`在轨迹点 ${index} 和 ${index + 1} 之间插入轨迹点`}
-                          title={`在 ${index} 和 ${index + 1} 中间插入`}
+                          aria-label={text(`在轨迹点 ${index} 和 ${index + 1} 之间插入轨迹点`, `Insert a waypoint between ${index} and ${index + 1}`)}
+                          title={text(`在 ${index} 和 ${index + 1} 中间插入`, `Insert between ${index} and ${index + 1}`)}
                           onClick={() => {
                             setBatchSelectionEnabled(false);
                             insertCameraMotionKeyframeAfter(activeCamera.id, motionPath.keyframes[index - 1].id);
@@ -659,31 +717,31 @@ export function MotionStudio({
                     <button
                       type="button"
                       className={`motion-waypoint${(batchSelectionEnabled ? selectedCameraKeyframeIds.includes(keyframe.id) : selected) ? " is-selected" : ""}${reached ? " is-reached" : ""}${approaching ? " is-approaching" : ""}${trackedObjectName ? " has-tracking" : ""}`}
-                      aria-label={batchSelectionEnabled ? `批量选择轨迹点 ${index + 1}` : `选择轨迹点 ${index + 1}`}
+                      aria-label={batchSelectionEnabled ? text(`批量选择轨迹点 ${index + 1}`, `Add waypoint ${index + 1} to selection`) : text(`选择轨迹点 ${index + 1}`, `Select waypoint ${index + 1}`)}
                       aria-pressed={batchSelectionEnabled ? selectedCameraKeyframeIds.includes(keyframe.id) : selected}
-                      title={trackedObjectName ? `轨迹点 ${index + 1} · 跟踪 ${trackedObjectName}` : `轨迹点 ${index + 1} · 固定朝向`}
+                      title={trackedObjectName ? text(`轨迹点 ${index + 1} · 跟踪 ${trackedObjectName}`, `Waypoint ${index + 1} · Tracking ${trackedObjectName}`) : text(`轨迹点 ${index + 1} · 固定朝向`, `Waypoint ${index + 1} · Fixed direction`)}
                       onClick={() => selectWaypoint(keyframe.id, activeTimingPlan?.arrivals[index] ?? keyframe.time)}
                     >
                       <span>{index + 1}</span>
-                      <small>{((activeTimingPlan?.arrivals[index] ?? keyframe.time) * motionPath.duration).toFixed(1)}s{trackedObjectName ? " · 跟" : ""}</small>
+                      <small>{((activeTimingPlan?.arrivals[index] ?? keyframe.time) * motionPath.duration).toFixed(1)}s{trackedObjectName ? text(" · 跟", " · Track") : ""}</small>
                     </button>
                   </div>
                 );
               })}
-              <button type="button" className="motion-waypoint-add" aria-label="添加当前视角为轨迹点" onClick={addCurrentView}>
+              <button type="button" className="motion-waypoint-add" aria-label={text("添加当前视角为轨迹点", "Add current view as waypoint")} onClick={addCurrentView}>
                 <Plus aria-hidden="true" size={16} />
               </button>
             </div>
           )}
 
           {selectedKeyframe && !batchSelectionEnabled ? (
-            <div className="motion-selected-actions" aria-label="当前轨迹点操作">
-              <span>轨迹点 {motionPath.keyframes.indexOf(selectedKeyframe) + 1}</span>
+            <div className="motion-selected-actions" aria-label={text("当前轨迹点操作", "Current waypoint actions")}>
+              <span>{text(`轨迹点 ${motionPath.keyframes.indexOf(selectedKeyframe) + 1}`, `Waypoint ${motionPath.keyframes.indexOf(selectedKeyframe) + 1}`)}</span>
               {motionPath.keyframes.indexOf(selectedKeyframe) > 0 && motionPath.keyframes.indexOf(selectedKeyframe) < motionPath.keyframes.length - 1 ? (
                 <label className="motion-waypoint-arrival">
-                  到达
+                  {text("到达", "Arrival")}
                   <input
-                    aria-label="当前轨迹点到达时间"
+                    aria-label={text("当前轨迹点到达时间", "Current waypoint arrival time")}
                     type="number"
                     min={(
                       motionPath.keyframes[motionPath.keyframes.indexOf(selectedKeyframe) - 1].time * motionPath.duration
@@ -701,23 +759,23 @@ export function MotionStudio({
                     onKeyDown={(event) => {
                       if (event.key === "Enter") event.currentTarget.blur();
                     }}
-                  />秒{motionPath.speedMode !== "custom" ? <small>自动</small> : null}
+                  />{text("秒", "s")}{motionPath.speedMode !== "custom" ? <small>{text("自动", "Auto")}</small> : null}
                 </label>
               ) : null}
-              <button type="button" onClick={editSelectedWaypoint}><MousePointer2 aria-hidden="true" size={13} />进入此点调整</button>
+              <button type="button" onClick={editSelectedWaypoint}><MousePointer2 aria-hidden="true" size={13} />{text("进入此点调整", "Adjust this point")}</button>
               <button
                 type="button"
-                aria-label="轨迹点前移"
+                aria-label={text("轨迹点前移", "Move waypoint earlier")}
                 disabled={motionPath.keyframes.indexOf(selectedKeyframe) === 0}
                 onClick={() => moveCameraMotionKeyframe(activeCamera.id, selectedKeyframe.id, -1)}
               ><ChevronUp aria-hidden="true" size={14} /></button>
               <button
                 type="button"
-                aria-label="轨迹点后移"
+                aria-label={text("轨迹点后移", "Move waypoint later")}
                 disabled={motionPath.keyframes.indexOf(selectedKeyframe) === motionPath.keyframes.length - 1}
                 onClick={() => moveCameraMotionKeyframe(activeCamera.id, selectedKeyframe.id, 1)}
               ><ChevronDown aria-hidden="true" size={14} /></button>
-              <button type="button" className="is-danger" aria-label="删除当前轨迹点" onClick={() => deleteCameraMotionKeyframe(activeCamera.id, selectedKeyframe.id)}>
+              <button type="button" className="is-danger" aria-label={text("删除当前轨迹点", "Delete current waypoint")} onClick={() => deleteCameraMotionKeyframe(activeCamera.id, selectedKeyframe.id)}>
                 <Trash2 aria-hidden="true" size={14} />
               </button>
             </div>
@@ -725,38 +783,40 @@ export function MotionStudio({
             <div className="motion-batch-move-hint" role="status">
               <Move3D aria-hidden="true" size={14} />
               {selectedCameraKeyframeIds.length > 0
-                ? "在画面里拖动 XYZ 箭头，所选轨迹点会一起移动"
-                : "请先点选要一起移动的轨迹点"}
+                ? text("在画面里拖动 XYZ 箭头，所选轨迹点会一起移动", "Drag the XYZ handles in the viewport to move selected waypoints together")
+                : text("请先点选要一起移动的轨迹点", "Select the waypoints you want to move together")}
             </div>
           ) : null}
         </div>
 
         <div className="motion-settings-column">
           <div className="motion-block-heading">
-            <strong>运镜细节</strong>
-            <small>速度、平滑和主体锁定</small>
+            <strong>{text("运镜细节", "Camera motion details")}</strong>
+            <small>{text("速度、平滑和主体锁定", "Speed, smoothing and subject lock")}</small>
           </div>
           <label className="motion-setting-row motion-preset-row">
-            <span><SlidersHorizontal aria-hidden="true" size={14} />速度与节奏</span>
+            <span><SlidersHorizontal aria-hidden="true" size={14} />{text("速度与节奏", "Speed and timing")}</span>
             <select
               className="motion-tracking-select"
-              aria-label="运镜参数预设"
+              aria-label={text("运镜参数预设", "Camera motion parameter preset")}
               value={matchingPreset?.id ?? "custom"}
               onChange={(event) => applyMotionPreset(event.currentTarget.value)}
             >
-              <option value="custom" disabled>自定义</option>
+              <option value="custom" disabled>{text("自定义", "Custom")}</option>
               {CAMERA_MOTION_PRESETS.map((preset) => (
-                <option key={preset.id} value={preset.id}>{preset.label}</option>
+                <option key={preset.id} value={preset.id}>{text(preset.label, CAMERA_MOTION_PRESET_ENGLISH[preset.id]?.label ?? preset.label)}</option>
               ))}
             </select>
             <small className="motion-tracking-status">
-              {matchingPreset?.description ?? "选择预设不会改变已经摆好的轨迹点"}
+              {matchingPreset
+                ? text(matchingPreset.description, CAMERA_MOTION_PRESET_ENGLISH[matchingPreset.id]?.description ?? matchingPreset.description)
+                : text("选择预设不会改变已经摆好的轨迹点", "Selecting a preset will not move existing waypoints")}
             </small>
           </label>
           <label className="motion-setting-row">
-            <span><Gauge aria-hidden="true" size={14} />整段时长</span>
+            <span><Gauge aria-hidden="true" size={14} />{text("整段时长", "Total duration")}</span>
             <input
-              aria-label="整段运镜时长"
+              aria-label={text("整段运镜时长", "Total camera motion duration")}
               type="range"
               min="0.5"
               max="30"
@@ -771,74 +831,78 @@ export function MotionStudio({
             <output>{motionPath.duration.toFixed(1)}s</output>
           </label>
           <div className="motion-setting-row">
-            <span><SlidersHorizontal aria-hidden="true" size={14} />轨迹形状</span>
-            <div className="motion-mini-segmented" role="group" aria-label="轨迹形状">
-              <button type="button" aria-pressed={motionPath.interpolation === "smooth"} onClick={() => updateCameraMotionPath(activeCamera.id, { interpolation: "smooth" })}>平滑</button>
-              <button type="button" aria-pressed={motionPath.interpolation === "linear"} onClick={() => updateCameraMotionPath(activeCamera.id, { interpolation: "linear" })}>折线</button>
+            <span><SlidersHorizontal aria-hidden="true" size={14} />{text("轨迹形状", "Path shape")}</span>
+            <div className="motion-mini-segmented" role="group" aria-label={text("轨迹形状", "Path shape")}>
+              <button type="button" aria-pressed={motionPath.interpolation === "smooth"} onClick={() => updateCameraMotionPath(activeCamera.id, { interpolation: "smooth" })}>{text("平滑", "Smooth")}</button>
+              <button type="button" aria-pressed={motionPath.interpolation === "linear"} onClick={() => updateCameraMotionPath(activeCamera.id, { interpolation: "linear" })}>{text("折线", "Linear")}</button>
             </div>
           </div>
           <div className="motion-setting-row">
-            <span><ArrowUp aria-hidden="true" size={14} /><ArrowDown aria-hidden="true" size={14} />速度曲线</span>
-            <div className="motion-mini-segmented" role="group" aria-label="速度曲线">
-              <button type="button" aria-pressed={(motionPath.speedMode ?? (motionPath.easing === "linear" ? "uniform" : "soft")) === "uniform"} onClick={() => setCameraSpeedMode("uniform")}>匀速</button>
-              <button type="button" aria-pressed={(motionPath.speedMode ?? (motionPath.easing === "linear" ? "uniform" : "soft")) === "soft"} onClick={() => setCameraSpeedMode("soft")}>柔和</button>
-              <button type="button" aria-pressed={motionPath.speedMode === "custom"} onClick={() => setCameraSpeedMode("custom")}>自定义</button>
+            <span><ArrowUp aria-hidden="true" size={14} /><ArrowDown aria-hidden="true" size={14} />{text("速度曲线", "Speed curve")}</span>
+            <div className="motion-mini-segmented" role="group" aria-label={text("速度曲线", "Speed curve")}>
+              <button type="button" aria-pressed={(motionPath.speedMode ?? (motionPath.easing === "linear" ? "uniform" : "soft")) === "uniform"} onClick={() => setCameraSpeedMode("uniform")}>{text("匀速", "Uniform")}</button>
+              <button type="button" aria-pressed={(motionPath.speedMode ?? (motionPath.easing === "linear" ? "uniform" : "soft")) === "soft"} onClick={() => setCameraSpeedMode("soft")}>{text("柔和", "Soft")}</button>
+              <button type="button" aria-pressed={motionPath.speedMode === "custom"} onClick={() => setCameraSpeedMode("custom")}>{text("自定义", "Custom")}</button>
             </div>
           </div>
           {motionPath.speedMode === "custom" ? (
             <RouteCustomEasingControl
               curve={motionPath.customEasing}
-              label="镜头段内节奏"
+              label={text("镜头段内节奏", "Segment timing")}
               onChange={(customEasing) => updateCameraMotionPath(activeCamera.id, { customEasing })}
             />
           ) : null}
           <div className="motion-setting-row">
-            <span><LocateFixed aria-hidden="true" size={14} />全线防抖</span>
-            <div className="motion-mini-segmented" role="group" aria-label="整条镜头路线防抖">
+            <span><LocateFixed aria-hidden="true" size={14} />{text("全线防抖", "Path stabilization")}</span>
+            <div className="motion-mini-segmented" role="group" aria-label={text("整条镜头路线防抖", "Full camera path stabilization")}>
               <button
                 type="button"
                 disabled={motionPath.keyframes.length === 0}
                 aria-pressed={motionPath.keyframes.length > 0 && stabilizedWaypointCount === 0}
                 onClick={() => setAllTrackingStabilization(false)}
-              >全部关闭</button>
+              >{text("全部关闭", "All off")}</button>
               <button
                 type="button"
                 disabled={motionPath.keyframes.length === 0}
                 aria-pressed={allWaypointsStabilized}
                 onClick={() => setAllTrackingStabilization(true)}
-              >全部开启</button>
+              >{text("全部开启", "All on")}</button>
             </div>
             <small className="motion-tracking-status">
               {motionPath.keyframes.length === 0
-                ? "生成轨迹后可一键设置全部点"
-                : `已开启 ${stabilizedWaypointCount} / ${motionPath.keyframes.length} 个点，仍可在下方单独修改`}
+                ? text("生成轨迹后可一键设置全部点", "Create a path to configure every waypoint at once")
+                : text(`已开启 ${stabilizedWaypointCount} / ${motionPath.keyframes.length} 个点，仍可在下方单独修改`, `${stabilizedWaypointCount} of ${motionPath.keyframes.length} points stabilized; each point can still be adjusted below`)}
             </small>
           </div>
           <div className="motion-setting-row">
-            <span><LocateFixed aria-hidden="true" size={14} />此点行为</span>
-            <div className="motion-mini-segmented" role="group" aria-label="轨迹点行为">
+            <span><LocateFixed aria-hidden="true" size={14} />{text("此点行为", "Point behavior")}</span>
+            <div className="motion-mini-segmented" role="group" aria-label={text("轨迹点行为", "Waypoint behavior")}>
               <button
                 type="button"
                 disabled={!selectedKeyframe}
                 aria-pressed={(selectedKeyframe?.pointBehavior ?? "pass") === "pass"}
                 onClick={() => selectedKeyframe && updateCameraMotionKeyframe(activeCamera.id, selectedKeyframe.id, { pointBehavior: "pass", holdSeconds: 0 })}
-              >经过</button>
+              >{text("经过", "Pass")}</button>
               <button
                 type="button"
                 disabled={!selectedKeyframe || motionPath.keyframes.indexOf(selectedKeyframe) === motionPath.keyframes.length - 1}
                 aria-pressed={selectedKeyframe?.pointBehavior === "hold"}
                 onClick={() => selectedKeyframe && updateCameraMotionKeyframe(activeCamera.id, selectedKeyframe.id, { pointBehavior: "hold", holdSeconds: selectedKeyframe.holdSeconds || 1 })}
-              >停留</button>
+              >{text("停留", "Hold")}</button>
             </div>
             <small className="motion-tracking-status">
-              {!selectedKeyframe ? "先选择一个轨迹点" : selectedKeyframe.pointBehavior === "hold" ? "镜头到这里后暂停" : "镜头连续通过，不会自动刹停"}
+              {!selectedKeyframe
+                ? text("先选择一个轨迹点", "Select a waypoint first")
+                : selectedKeyframe.pointBehavior === "hold"
+                  ? text("镜头到这里后暂停", "The camera pauses at this point")
+                  : text("镜头连续通过，不会自动刹停", "The camera passes through without stopping")}
             </small>
           </div>
           {selectedKeyframe?.pointBehavior === "hold" ? (
             <label className="motion-setting-row">
-              <span><Pause aria-hidden="true" size={14} />停留时长</span>
+              <span><Pause aria-hidden="true" size={14} />{text("停留时长", "Hold duration")}</span>
               <input
-                aria-label="轨迹点停留时长"
+                aria-label={text("轨迹点停留时长", "Waypoint hold duration")}
                 type="range"
                 min="0.1"
                 max={motionPath.duration}
@@ -854,104 +918,108 @@ export function MotionStudio({
             </label>
           ) : null}
           <div className="motion-setting-row">
-            <span><MousePointer2 aria-hidden="true" size={14} />此点跟踪</span>
+            <span><MousePointer2 aria-hidden="true" size={14} />{text("此点跟踪", "Point tracking")}</span>
             <select
               className="motion-tracking-select"
-              aria-label="轨迹点跟踪主体"
+              aria-label={text("轨迹点跟踪主体", "Waypoint tracking subject")}
               value={trackingObjectId}
               disabled={!selectedKeyframe}
               onChange={(event) => setTrackingObject(event.currentTarget.value)}
             >
-              <option value="">不跟踪（固定朝向）</option>
+              <option value="">{text("不跟踪（固定朝向）", "No tracking (fixed direction)")}</option>
               {trackableObjects.map((object) => (
                 <option key={object.id} value={object.id}>{object.name}</option>
               ))}
             </select>
             <small className="motion-tracking-status">
               {!selectedKeyframe
-                ? "先在上方选择一个轨迹点"
+                ? text("先在上方选择一个轨迹点", "Select a waypoint above first")
                 : trackingObjectId
-                  ? "这个点会实时看向所选主体"
-                  : "这个点使用自己保存的固定朝向"}
+                  ? text("这个点会实时看向所选主体", "This point looks at the selected subject in real time")
+                  : text("这个点使用自己保存的固定朝向", "This point uses its saved fixed direction")}
             </small>
           </div>
           {trackingObject?.kind === "character" ? (
             <label className="motion-setting-row">
-              <span><LocateFixed aria-hidden="true" size={14} />跟踪部位</span>
+              <span><LocateFixed aria-hidden="true" size={14} />{text("跟踪部位", "Tracking point")}</span>
               <select
                 className="motion-tracking-select"
-                aria-label="轨迹点跟踪身体部位"
+                aria-label={text("轨迹点跟踪身体部位", "Waypoint tracked body part")}
                 value={trackingBodyPart}
                 onChange={(event) => setTrackingBodyPart(event.currentTarget.value as DirectorCameraTargetBodyPart)}
               >
                 {DIRECTOR_CAMERA_TARGET_BODY_PART_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
+                  <option key={option.value} value={option.value}>{text(option.label, CAMERA_TARGET_BODY_PART_ENGLISH[option.value])}</option>
                 ))}
               </select>
-              <small className="motion-tracking-status">读取当前动作执行后的真实骨骼位置</small>
+              <small className="motion-tracking-status">{text("读取当前动作执行后的真实骨骼位置", "Uses the actual bone position after animation is applied")}</small>
             </label>
           ) : trackingObject ? (
             <div className="motion-setting-row">
-              <span><LocateFixed aria-hidden="true" size={14} />跟踪部位</span>
-              <strong>物体中心</strong>
-              <small className="motion-tracking-status">普通物体会跟踪整体中心</small>
+              <span><LocateFixed aria-hidden="true" size={14} />{text("跟踪部位", "Tracking point")}</span>
+              <strong>{text("物体中心", "Object center")}</strong>
+              <small className="motion-tracking-status">{text("普通物体会跟踪整体中心", "Regular objects are tracked from their center")}</small>
             </div>
           ) : null}
           {trackingObject ? (
             <div className="motion-setting-row">
-              <span><Gauge aria-hidden="true" size={14} />响应速度</span>
-              <div className="motion-mini-segmented" role="group" aria-label="轨迹点跟随响应速度">
+              <span><Gauge aria-hidden="true" size={14} />{text("响应速度", "Response speed")}</span>
+              <div className="motion-mini-segmented" role="group" aria-label={text("轨迹点跟随响应速度", "Waypoint tracking response speed")}>
                 <button
                   type="button"
                   aria-pressed={trackingFollowMode === "immediate"}
                   onClick={() => setTrackingFollowMode("immediate")}
-                >立即</button>
+                >{text("立即", "Immediate")}</button>
                 <button
                   type="button"
                   aria-pressed={trackingFollowMode === "smooth"}
                   onClick={() => setTrackingFollowMode("smooth")}
-                >柔和</button>
+                >{text("柔和", "Smooth")}</button>
               </div>
               <small className="motion-tracking-status">
-                {trackingFollowMode === "smooth" ? "柔和追上目标，镜头转向更舒缓" : "立即看向目标，响应最快"}
+                {trackingFollowMode === "smooth"
+                  ? text("柔和追上目标，镜头转向更舒缓", "Ease toward the target for gentler turns")
+                  : text("立即看向目标，响应最快", "Look at the target immediately for the fastest response")}
               </small>
             </div>
           ) : null}
           {trackingObject?.kind === "character" ? (
             <div className="motion-setting-row">
-              <span><LocateFixed aria-hidden="true" size={14} />镜头防抖</span>
-              <div className="motion-mini-segmented" role="group" aria-label="镜头跟踪抖动">
+              <span><LocateFixed aria-hidden="true" size={14} />{text("镜头防抖", "Camera stabilization")}</span>
+              <div className="motion-mini-segmented" role="group" aria-label={text("镜头跟踪抖动", "Camera tracking stabilization")}>
                 <button
                   type="button"
                   aria-pressed={!trackingStabilizationEnabled}
                   onClick={() => setTrackingStabilization(false)}
-                >保留抖动</button>
+                >{text("保留抖动", "Keep motion")}</button>
                 <button
                   type="button"
                   aria-pressed={trackingStabilizationEnabled}
                   onClick={() => setTrackingStabilization(true)}
-                >开启防抖</button>
+                >{text("开启防抖", "Stabilize")}</button>
               </div>
               <small className="motion-tracking-status">
-                {trackingStabilizationEnabled ? "过滤走路和肢体动作造成的细碎晃动" : "保留身体部位的真实运动感"}
+                {trackingStabilizationEnabled
+                  ? text("过滤走路和肢体动作造成的细碎晃动", "Filter small movements caused by walking and limb animation")
+                  : text("保留身体部位的真实运动感", "Keep the natural motion of the tracked body part")}
               </small>
             </div>
           ) : null}
           <div className="motion-setting-row">
-            <span><MousePointer2 aria-hidden="true" size={14} />掌镜锁定</span>
-            <div className="motion-mini-segmented" role="group" aria-label="主体锁定方式">
+            <span><MousePointer2 aria-hidden="true" size={14} />{text("掌镜锁定", "Camera lock")}</span>
+            <div className="motion-mini-segmented" role="group" aria-label={text("主体锁定方式", "Subject lock mode")}>
               <button
                 type="button"
-                aria-label="锁定后只保持看向主体"
+                aria-label={text("锁定后只保持看向主体", "Keep looking at the subject after locking")}
                 aria-pressed={!cameraPilotFollowTarget}
                 onClick={() => setCameraPilotFollowTarget(false)}
-              >只看向</button>
+              >{text("只看向", "Look only")}</button>
               <button
                 type="button"
-                aria-label="锁定后跟随主体移动"
+                aria-label={text("锁定后跟随主体移动", "Follow the subject after locking")}
                 aria-pressed={cameraPilotFollowTarget}
                 onClick={() => setCameraPilotFollowTarget(true)}
-              >跟随移动</button>
+              >{text("跟随移动", "Follow movement")}</button>
             </div>
           </div>
         </div>

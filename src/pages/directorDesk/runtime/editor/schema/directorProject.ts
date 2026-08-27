@@ -53,7 +53,7 @@ export interface SceneSettings {
   showGrid: boolean;
   showGround: boolean;
   groundMaterialPreset: GroundMaterialPresetId;
-  /** Multiplier for the world-space size of each ground texture tile. */
+  /** 每个地面纹理图块世界空间尺寸的倍率。 */
   groundTextureScale: number;
   groundColor: string;
   groundBrightness: number;
@@ -129,14 +129,14 @@ export interface DirectorObjectMotionKeyframe {
   id: string;
   time: number;
   transform: DirectorTransform;
-  /** Character action played from this route point until the next point. */
+  /** 从当前路径点到下一个路径点期间播放的角色动作。 */
   actionPresetId?: string | null;
-  /** Path-facing turns toward the next route point; manual keeps the point rotation. */
+  /** 路径朝向会转向下一个路径点；手动模式则保留当前点的旋转。 */
   facingMode?: "path" | "manual";
-  /** Pass-through keeps moving; hold pauses at this point for holdSeconds. */
+  /** 穿行模式会继续移动；停留模式会在当前点暂停 holdSeconds 秒。 */
   pointBehavior?: DirectorRoutePointBehavior;
   holdSeconds?: number;
-  /** Character pose/action used while this point is holding. */
+  /** 在当前路径点停留期间使用的角色姿态或动作。 */
   holdAction?: DirectorRouteHoldAction;
   holdActionPresetId?: string | null;
 }
@@ -168,16 +168,16 @@ export interface DirectorCameraMotionKeyframe {
   position: [number, number, number];
   target: [number, number, number];
   fov: number;
-  /** Each waypoint may independently aim at a moving scene subject. */
+  /** 每个路径点都可以独立瞄准场景中移动的主体。 */
   targetMode?: "manual" | "object";
   targetObjectId?: string | null;
-  /** Semantic animated body part used when the target is a character. */
+  /** 目标为角色时使用的语义化动画身体部位。 */
   targetBodyPart?: DirectorCameraTargetBodyPart;
-  /** Immediate follows exactly; smooth applies temporal damping in each render view. */
+  /** 即时模式会精确跟随；平滑模式会在各渲染视图中应用时间阻尼。 */
   targetFollowMode?: DirectorCameraTargetFollowMode;
-  /** Suppresses high-frequency body animation shake while retaining subject movement. */
+  /** 在保留主体移动的同时抑制身体动画的高频抖动。 */
   targetStabilizationEnabled?: boolean;
-  /** Pass-through keeps moving; hold pauses at this point for holdSeconds. */
+  /** 穿行模式会继续移动；停留模式会在当前点暂停 holdSeconds 秒。 */
   pointBehavior?: DirectorRoutePointBehavior;
   holdSeconds?: number;
 }
@@ -195,7 +195,7 @@ export interface DirectorCameraMotionPath {
 export interface DirectorCameraShot {
   id: string;
   name: string;
-  /** Internal camera created for the beginner motion workflow. It has no scene helper object. */
+  /** 为初级运镜工作流创建的内部相机，不包含场景辅助对象。 */
   isVirtual?: boolean;
   fov: number;
   transform: DirectorTransform;

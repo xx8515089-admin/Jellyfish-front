@@ -1,4 +1,4 @@
-/* Chapter Shooting Studio – separation & hierarchy pass (scoped) */
+/* 章节拍摄工作台：分区与层级样式（限定作用域） */
 
 .cs-studio {
   --cs-left-bg: #f8f9fc;
@@ -85,7 +85,7 @@
   box-shadow: 0 0 0 rgba(0, 0, 0, 0);
 }
 
-/* Antd cards inside studio: lighter, clearer containers */
+/* 工作台内的 Antd 卡片：更轻、更清晰的容器 */
 .cs-studio .ant-card {
   border-radius: 12px;
 }
@@ -111,7 +111,7 @@
   -webkit-overflow-scrolling: touch;
 }
 
-/* Shot list item */
+/* 镜头列表项 */
 .cs-shot-item {
   position: relative;
   border: 1px solid #e5e7eb;
@@ -197,7 +197,7 @@
   50% { transform: scale(1.12); opacity: 1; }
 }
 
-/* Main preview focus */
+/* 主预览焦点区域 */
 .cs-preview-card .ant-card-body {
   padding: 16px;
 }
@@ -217,7 +217,7 @@
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
 }
 
-/* Inspector spacing + group card feel */
+/* 检查器间距与分组卡片效果 */
 .cs-inspector {
   padding: 20px 22px;
 }
@@ -414,7 +414,7 @@
   color: #9ca3af;
 }
 
-/* Make controls breathe */
+/* 增加控件之间的留白 */
 .cs-studio .ant-tabs-left > .ant-tabs-nav {
   width: 120px;
 }
@@ -432,7 +432,7 @@
   border-color: var(--cs-primary);
 }
 
-/* Right collapsed strip */
+/* 右侧折叠条 */
 .cs-right-strip {
   position: absolute;
   right: 0;

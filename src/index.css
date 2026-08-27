@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Keep every Ant Design modal centered while preserving wrap scrolling for tall content. */
+/* 保持所有 Ant Design 弹窗居中，同时为超高内容保留外层滚动。 */
 .ant-modal-root .ant-modal-wrap:not(.ant-modal-centered) {
   text-align: center;
 }
@@ -21,6 +21,114 @@
   padding-bottom: 0;
   text-align: start;
   vertical-align: middle;
+}
+
+/* 通用分页：克制的暗色控件，并清晰勾勒当前页。 */
+.ant-pagination {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #cfd2d8;
+}
+
+.ant-pagination .ant-pagination-item,
+.ant-pagination .ant-pagination-prev,
+.ant-pagination .ant-pagination-next,
+.ant-pagination .ant-pagination-jump-prev,
+.ant-pagination .ant-pagination-jump-next {
+  min-width: 32px !important;
+  height: 32px !important;
+  margin-inline-end: 0 !important;
+  border: 1px solid transparent !important;
+  border-radius: 6px !important;
+  background: transparent !important;
+  line-height: 30px !important;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+
+.ant-pagination .ant-pagination-item a,
+.ant-pagination .ant-pagination-prev button,
+.ant-pagination .ant-pagination-next button,
+.ant-pagination .ant-pagination-jump-prev .ant-pagination-item-container,
+.ant-pagination .ant-pagination-jump-next .ant-pagination-item-container {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  padding: 0;
+  border-radius: 5px;
+  color: #d9dce2;
+}
+
+.ant-pagination .ant-pagination-item:not(.ant-pagination-item-active):hover,
+.ant-pagination .ant-pagination-prev:not(.ant-pagination-disabled):hover,
+.ant-pagination .ant-pagination-next:not(.ant-pagination-disabled):hover,
+.ant-pagination .ant-pagination-jump-prev:hover,
+.ant-pagination .ant-pagination-jump-next:hover {
+  background: rgba(255, 255, 255, 0.075) !important;
+}
+
+.ant-pagination .ant-pagination-item:not(.ant-pagination-item-active):hover a,
+.ant-pagination .ant-pagination-prev:not(.ant-pagination-disabled):hover button,
+.ant-pagination .ant-pagination-next:not(.ant-pagination-disabled):hover button,
+.ant-pagination .ant-pagination-jump-prev:hover .ant-pagination-item-container,
+.ant-pagination .ant-pagination-jump-next:hover .ant-pagination-item-container {
+  color: #ffffff;
+}
+
+.ant-pagination .ant-pagination-item-active,
+.ant-pagination .ant-pagination-item-active:hover {
+  border-color: #aeb2bb !important;
+  background: #171718 !important;
+  box-shadow: none !important;
+}
+
+.ant-pagination .ant-pagination-item-active a,
+.ant-pagination .ant-pagination-item-active:hover a {
+  color: #ffffff !important;
+  font-weight: 600;
+}
+
+.ant-pagination .ant-pagination-disabled {
+  opacity: 0.34;
+}
+
+.ant-pagination .ant-pagination-disabled button,
+.ant-pagination .ant-pagination-disabled:hover button {
+  color: #747780 !important;
+}
+
+.ant-pagination .ant-pagination-options {
+  height: 32px;
+  margin-inline-start: 12px;
+}
+
+.ant-pagination .ant-pagination-options .ant-select,
+.ant-pagination .ant-pagination-options .ant-select-selector {
+  height: 32px !important;
+}
+
+.ant-pagination .ant-pagination-options .ant-select-selector {
+  min-width: 94px;
+  border-color: #38383e !important;
+  border-radius: 6px !important;
+  background: #202023 !important;
+  box-shadow: none !important;
+}
+
+.ant-pagination .ant-pagination-options .ant-select-selection-item {
+  display: flex;
+  align-items: center;
+  color: #f2f2f2;
+}
+
+.ant-pagination .ant-pagination-options .ant-select-arrow {
+  color: #777b84;
+}
+
+.ant-pagination .ant-pagination-options .ant-select:hover .ant-select-selector,
+.ant-pagination .ant-pagination-options .ant-select-focused .ant-select-selector {
+  border-color: #686c75 !important;
 }
 
 html {

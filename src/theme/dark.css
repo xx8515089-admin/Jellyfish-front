@@ -587,7 +587,7 @@ code {
   color: var(--jf-text) !important;
 }
 
-/* Project creation is a full-screen route outside MainLayout, so it needs its own dark surface pass. */
+/* 项目创建页是 MainLayout 之外的全屏路由，因此需要单独设置暗色表面样式。 */
 .project-create-page {
   background: var(--jf-bg) !important;
   color: var(--jf-text) !important;

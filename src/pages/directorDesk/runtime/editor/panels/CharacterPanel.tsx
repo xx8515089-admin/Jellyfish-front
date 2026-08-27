@@ -9,7 +9,18 @@ import {
   InspectorSection,
 } from "./InspectorControls";
 import { MANNEQUIN_POSE_PRESETS } from "../presets/mannequinPosePresets";
-import { CHARACTER_ACTION_PRESETS } from "../presets/characterActionPresets";
+import {
+  CHARACTER_ACTION_PRESETS,
+  getCharacterActionDisplayDuration,
+} from "../presets/characterActionPresets";
+import {
+  CHARACTER_ACTION_PROFILE_LABELS,
+  CHARACTER_ACTION_PROFILE_LABELS_ENGLISH,
+  getCompatibleCharacterCommonActionPresets,
+  getCharacterActionProfile,
+  getCharacterSpecificActionPresets,
+  resolveCompatibleCharacterActionPresetId,
+} from "../presets/characterSpecificActionPresets";
 import { getCameraMotionPath } from "../schema/cameraMotion";
 import { getObjectMotionTimingPlan, normalizeObjectMotionPath } from "../schema/objectMotion";
 import { getCrowdAnchorTransform, useDirectorStore } from "../store/directorStore";
@@ -24,6 +35,7 @@ import {
   isNativeAnimationForCharacter,
   normalizeAnimationRigProfile,
 } from "./characterAnimationCompatibility";
+import { useDirectorDeskText } from "../../useDirectorDeskText";
 
 export { areAnimationProfilesCompatible, isNativeAnimationForCharacter } from "./characterAnimationCompatibility";
 
@@ -32,6 +44,7 @@ function replaceAxis(tuple: [number, number, number], axis: 0 | 1 | 2, value: nu
 }
 
 export function CharacterPanel() {
+  const text = useDirectorDeskText();
   const animationInputRef = useRef<HTMLInputElement | null>(null);
   const [activeTab, setActiveTab] = useState<"properties" | "pose" | "action" | "route">("properties");
   const [animationImportStatus, setAnimationImportStatus] = useState<string | null>(null);
@@ -84,7 +97,7 @@ export function CharacterPanel() {
           crowdMembers,
           crowdAnchor,
           role: crowdMembers[crowdMembers.length - 1] ?? crowdMembers[0],
-          name: crowdMembers[0]?.crowdLabel ?? "群众",
+          name: crowdMembers[0]?.crowdLabel ?? text("群众", "Crowd"),
           color: crowdMembers[0]?.color ?? "#4F8EF7",
         };
       }
@@ -101,7 +114,7 @@ export function CharacterPanel() {
       name: role.name,
       color: role.color ?? "#4F8EF7",
     };
-  }, [objects, selectedCrowdId, selectedObjectId]);
+  }, [objects, selectedCrowdId, selectedObjectId, text]);
 
   if (!selection) return null;
 
@@ -131,12 +144,14 @@ export function CharacterPanel() {
     const file = input.files?.[0];
     if (!file) return;
     setAnimationImportBusy(true);
-    setAnimationImportStatus("正在检查动作文件...");
+    setAnimationImportStatus(text("正在检查动作文件...", "Inspecting animation file..."));
 
     try {
       const report = await inspectCharacterAnimationFile(file);
       const validClips = report.clips.filter((clip) => clip.duration > 0.05 && clip.trackCount > 0);
-      if (!validClips.length) throw new Error(report.warnings[0] ?? "没有检测到可播放动作");
+      if (!validClips.length) {
+        throw new Error(report.warnings[0] ?? text("没有检测到可播放动作", "No playable animation was detected"));
+      }
       const stored = await readLocalModelFile(file);
       const rigProfile = normalizeAnimationRigProfile(report.rigProfile);
       const animationAssetId = addImportedAnimationAsset({
@@ -156,23 +171,53 @@ export function CharacterPanel() {
       });
 
       if (areAnimationProfilesCompatible(roleRigProfile, rigProfile, roleHasCompleteBoneMap)) {
-        applyCharacterActionPreset(role.id, createImportedCharacterActionId(animationAssetId, "clip_1"));
-        restartCameraMotionPlayback();
-        setAnimationImportStatus(`已导入 ${validClips.length} 个动作，正在预览第一段`);
+        const actionPresetId = createImportedCharacterActionId(animationAssetId, "clip_1");
+        applyCharacterActionPreset(role.id, actionPresetId);
+        restartCameraMotionPlayback({
+          objectId: role.id,
+          actionPresetId,
+          durationSeconds: validClips[0].duration,
+        });
+        setAnimationImportStatus(text(
+          `已导入 ${validClips.length} 个动作，正在预览第一段`,
+          `Imported ${validClips.length} animation(s). Previewing the first clip.`,
+        ));
       } else {
-        setAnimationImportStatus(`动作已保存，但与当前人物骨架不兼容（人物 ${roleRigProfile} / 动作 ${rigProfile}）`);
+        setAnimationImportStatus(text(
+          `动作已保存，但与当前人物骨架不兼容（人物 ${roleRigProfile} / 动作 ${rigProfile}）`,
+          `Animation saved, but its rig is incompatible with this character (${roleRigProfile} / ${rigProfile}).`,
+        ));
       }
     } catch (error) {
-      setAnimationImportStatus(error instanceof Error ? error.message : "动作导入失败");
+      setAnimationImportStatus(error instanceof Error ? error.message : text("动作导入失败", "Animation import failed"));
     } finally {
       setAnimationImportBusy(false);
       input.value = "";
     }
   }
   const roleColor = role.color ?? (roleAsset ? "#ffffff" : selection.color);
-  const isRobotExpressive = /robot-expressive\.glb(?:$|[?#])/i.test(roleAsset?.url ?? "");
   const transform = selection.crowdAnchor;
   const isCrowd = selection.mode === "crowd";
+  const characterActionContext = {
+    assetUrl: roleAsset?.url,
+    assetName: roleAsset?.name ?? roleAsset?.fileName,
+    objectName: role.name,
+    bodyType: role.bodyType,
+    importReadiness: roleImportReadiness,
+  };
+  const characterActionProfile = getCharacterActionProfile(characterActionContext);
+  const compatibleCommonActionPresets = getCompatibleCharacterCommonActionPresets(
+    characterActionContext,
+    CHARACTER_ACTION_PRESETS,
+  );
+  const characterSpecificActionPresets = !isCrowd && allowsHumanoidActions
+    ? getCharacterSpecificActionPresets(characterActionContext)
+    : [];
+  const availableActionPresets = [...compatibleCommonActionPresets, ...characterSpecificActionPresets];
+  const activeActionPresetId = resolveCompatibleCharacterActionPresetId(
+    characterActionContext,
+    role.characterRig?.actionPresetId,
+  );
   const routePath = normalizeObjectMotionPath(role.motionPath, role.transform);
   const selectedRoutePoint = routePath.keyframes.find((item) => item.id === selectedObjectMotionKeyframeId) ?? null;
   const activeCamera = cameras.find((item) => item.id === activeCameraId) ?? cameras[0];
@@ -209,96 +254,96 @@ export function CharacterPanel() {
   }
   const poseGroups = [
     {
-      title: "身体",
+      title: text("身体", "Body"),
       controls: [
-        { key: "body.pitch", label: "前倾" },
-        { key: "body.yaw", label: "转身" },
-        { key: "body.roll", label: "侧倾" },
+        { key: "body.pitch", label: text("前倾", "Lean") },
+        { key: "body.yaw", label: text("转身", "Turn") },
+        { key: "body.roll", label: text("侧倾", "Side lean") },
       ],
     },
     {
-      title: "躯干",
+      title: text("躯干", "Torso"),
       controls: [
-        { key: "torso.pitch", label: "前倾" },
-        { key: "torso.yaw", label: "扭转" },
-        { key: "torso.roll", label: "侧倾" },
+        { key: "torso.pitch", label: text("前倾", "Lean") },
+        { key: "torso.yaw", label: text("扭转", "Twist") },
+        { key: "torso.roll", label: text("侧倾", "Side lean") },
       ],
     },
     {
-      title: "头部",
+      title: text("头部", "Head"),
       controls: [
-        { key: "head.pitch", label: "点头" },
-        { key: "head.yaw", label: "转头" },
-        { key: "head.roll", label: "歪头" },
+        { key: "head.pitch", label: text("点头", "Nod") },
+        { key: "head.yaw", label: text("转头", "Turn") },
+        { key: "head.roll", label: text("歪头", "Tilt") },
       ],
     },
     {
-      title: "左肩",
+      title: text("左肩", "Left shoulder"),
       controls: [
-        { key: "leftShoulder.pitch", label: "前举" },
-        { key: "leftShoulder.spread", label: "外展" },
-        { key: "leftShoulder.twist", label: "扭转" },
+        { key: "leftShoulder.pitch", label: text("前举", "Raise") },
+        { key: "leftShoulder.spread", label: text("外展", "Spread") },
+        { key: "leftShoulder.twist", label: text("扭转", "Twist") },
       ],
     },
     {
-      title: "右肩",
+      title: text("右肩", "Right shoulder"),
       controls: [
-        { key: "rightShoulder.pitch", label: "前举" },
-        { key: "rightShoulder.spread", label: "外展" },
-        { key: "rightShoulder.twist", label: "扭转" },
+        { key: "rightShoulder.pitch", label: text("前举", "Raise") },
+        { key: "rightShoulder.spread", label: text("外展", "Spread") },
+        { key: "rightShoulder.twist", label: text("扭转", "Twist") },
       ],
     },
     {
-      title: "左肘",
-      controls: [{ key: "leftElbow.bend", label: "弯曲" }],
+      title: text("左肘", "Left elbow"),
+      controls: [{ key: "leftElbow.bend", label: text("弯曲", "Bend") }],
     },
     {
-      title: "右肘",
-      controls: [{ key: "rightElbow.bend", label: "弯曲" }],
+      title: text("右肘", "Right elbow"),
+      controls: [{ key: "rightElbow.bend", label: text("弯曲", "Bend") }],
     },
     {
-      title: "左髋",
+      title: text("左髋", "Left hip"),
       controls: [
-        { key: "leftHip.pitch", label: "前抬" },
-        { key: "leftHip.spread", label: "外展" },
-        { key: "leftHip.twist", label: "扭转" },
+        { key: "leftHip.pitch", label: text("前抬", "Raise") },
+        { key: "leftHip.spread", label: text("外展", "Spread") },
+        { key: "leftHip.twist", label: text("扭转", "Twist") },
       ],
     },
     {
-      title: "右髋",
+      title: text("右髋", "Right hip"),
       controls: [
-        { key: "rightHip.pitch", label: "前抬" },
-        { key: "rightHip.spread", label: "外展" },
-        { key: "rightHip.twist", label: "扭转" },
+        { key: "rightHip.pitch", label: text("前抬", "Raise") },
+        { key: "rightHip.spread", label: text("外展", "Spread") },
+        { key: "rightHip.twist", label: text("扭转", "Twist") },
       ],
     },
     {
-      title: "左膝",
-      controls: [{ key: "leftKnee.bend", label: "弯曲" }],
+      title: text("左膝", "Left knee"),
+      controls: [{ key: "leftKnee.bend", label: text("弯曲", "Bend") }],
     },
     {
-      title: "右膝",
-      controls: [{ key: "rightKnee.bend", label: "弯曲" }],
+      title: text("右膝", "Right knee"),
+      controls: [{ key: "rightKnee.bend", label: text("弯曲", "Bend") }],
     },
   ] as const;
 
   return (
     <InspectorPanel
-      title="角色"
-      ariaLabel="角色右侧属性面板"
+      title={text("角色", "Character")}
+      ariaLabel={text("角色右侧属性面板", "Character properties panel")}
       className="character-inspector"
       tabs={[
-        { label: "属性", active: activeTab === "properties", onClick: () => setActiveTab("properties") },
-        { label: "姿势", active: activeTab === "pose", onClick: () => setActiveTab("pose") },
-        { label: "动作", active: activeTab === "action", onClick: () => setActiveTab("action") },
-        { label: "路线", active: activeTab === "route", onClick: () => setActiveTab("route") },
+        { label: text("属性", "Properties"), active: activeTab === "properties", onClick: () => setActiveTab("properties") },
+        { label: text("姿势", "Pose"), active: activeTab === "pose", onClick: () => setActiveTab("pose") },
+        { label: text("动作", "Animation"), active: activeTab === "action", onClick: () => setActiveTab("action") },
+        { label: text("路线", "Route"), active: activeTab === "route", onClick: () => setActiveTab("route") },
       ]}
     >
       {activeTab === "properties" ? (
         <>
           <InspectorTextField
-            label="名称"
-            ariaLabel="角色名称"
+            label={text("名称", "Name")}
+            ariaLabel={text("角色名称", "Character name")}
             value={selection.name}
             onChange={(value) => {
               if (isCrowd && selection.crowdId) {
@@ -310,11 +355,11 @@ export function CharacterPanel() {
             }}
           />
           <InspectorAxisGroup
-            label="位置"
+            label={text("位置", "Position")}
             axes={[
               {
                 axis: "X",
-                ariaLabel: "角色位置 X",
+                ariaLabel: text("角色位置 X", "Character position X"),
                 value: transform.position[0],
                 onChange: (value) =>
                   isCrowd && selection.crowdId
@@ -327,7 +372,7 @@ export function CharacterPanel() {
               },
               {
                 axis: "Y",
-                ariaLabel: "角色位置 Y",
+                ariaLabel: text("角色位置 Y", "Character position Y"),
                 value: transform.position[1],
                 onChange: (value) =>
                   isCrowd && selection.crowdId
@@ -340,7 +385,7 @@ export function CharacterPanel() {
               },
               {
                 axis: "Z",
-                ariaLabel: "角色位置 Z",
+                ariaLabel: text("角色位置 Z", "Character position Z"),
                 value: transform.position[2],
                 onChange: (value) =>
                   isCrowd && selection.crowdId
@@ -354,11 +399,11 @@ export function CharacterPanel() {
             ]}
           />
           <InspectorAxisGroup
-            label="旋转"
+            label={text("旋转", "Rotation")}
             axes={[
               {
                 axis: "X",
-                ariaLabel: "角色旋转 X",
+                ariaLabel: text("角色旋转 X", "Character rotation X"),
                 value: transform.rotation[0],
                 onChange: (value) =>
                   isCrowd && selection.crowdId
@@ -371,7 +416,7 @@ export function CharacterPanel() {
               },
               {
                 axis: "Y",
-                ariaLabel: "角色旋转 Y",
+                ariaLabel: text("角色旋转 Y", "Character rotation Y"),
                 value: transform.rotation[1],
                 onChange: (value) =>
                   isCrowd && selection.crowdId
@@ -384,7 +429,7 @@ export function CharacterPanel() {
               },
               {
                 axis: "Z",
-                ariaLabel: "角色旋转 Z",
+                ariaLabel: text("角色旋转 Z", "Character rotation Z"),
                 value: transform.rotation[2],
                 onChange: (value) =>
                   isCrowd && selection.crowdId
@@ -398,11 +443,11 @@ export function CharacterPanel() {
             ]}
           />
           <InspectorAxisGroup
-            label="缩放"
+            label={text("缩放", "Scale")}
             axes={[
               {
                 axis: "X",
-                ariaLabel: "角色缩放 X",
+                ariaLabel: text("角色缩放 X", "Character scale X"),
                 step: "0.01",
                 value: transform.scale[0],
                 onChange: (value) =>
@@ -416,7 +461,7 @@ export function CharacterPanel() {
               },
               {
                 axis: "Y",
-                ariaLabel: "角色缩放 Y",
+                ariaLabel: text("角色缩放 Y", "Character scale Y"),
                 step: "0.01",
                 value: transform.scale[1],
                 onChange: (value) =>
@@ -430,7 +475,7 @@ export function CharacterPanel() {
               },
               {
                 axis: "Z",
-                ariaLabel: "角色缩放 Z",
+                ariaLabel: text("角色缩放 Z", "Character scale Z"),
                 step: "0.01",
                 value: transform.scale[2],
                 onChange: (value) =>
@@ -445,9 +490,9 @@ export function CharacterPanel() {
             ]}
           />
           <InspectorRangeNumberField
-            label="统一缩放"
-            rangeAriaLabel="角色统一缩放滑杆"
-            numberAriaLabel="角色统一缩放"
+            label={text("统一缩放", "Uniform scale")}
+            rangeAriaLabel={text("角色统一缩放滑杆", "Character uniform scale slider")}
+            numberAriaLabel={text("角色统一缩放", "Character uniform scale")}
             max="3"
             min="0.2"
             step="0.01"
@@ -459,9 +504,9 @@ export function CharacterPanel() {
             }
           />
           <InspectorColorField
-            label="颜色"
-            colorAriaLabel="角色颜色"
-            hexAriaLabel="角色颜色 HEX"
+            label={text("颜色", "Color")}
+            colorAriaLabel={text("角色颜色", "Character color")}
+            hexAriaLabel={text("角色颜色 HEX", "Character color HEX")}
             value={roleColor}
             onColorChange={(value) =>
               isCrowd && selection.crowdId ? updateCrowdColor(selection.crowdId, value) : updateObjectColor(role.id, value)
@@ -472,7 +517,7 @@ export function CharacterPanel() {
           />
         </>
       ) : activeTab === "pose" ? (
-        <InspectorSection title="姿势预设" className="pose-preset-section">
+        <InspectorSection title={text("姿势预设", "Pose presets")} className="pose-preset-section">
           {role.characterRig && allowsHumanoidActions ? (
             <>
               <div className="preset-grid">
@@ -487,11 +532,11 @@ export function CharacterPanel() {
                         : applyPosePreset(role.id, preset.id)
                     }
                   >
-                    {preset.label}
+                    {text(preset.label, preset.labelEn)}
                   </button>
                 ))}
               </div>
-              <InspectorSection title="姿势调节" className="pose-adjust-section">
+              <InspectorSection title={text("姿势调节", "Pose controls")} className="pose-adjust-section">
                 <div className="pose-groups">
                   {poseGroups.map((group) => (
                     <section key={group.title} className="pose-group">
@@ -500,7 +545,10 @@ export function CharacterPanel() {
                         <InspectorRangeNumberField
                           key={control.key}
                           label={control.label}
-                          rangeAriaLabel={`${group.title} · ${control.label} 滑杆`}
+                          rangeAriaLabel={text(
+                            `${group.title} · ${control.label} 滑杆`,
+                            `${group.title} · ${control.label} slider`,
+                          )}
                           numberAriaLabel={`${group.title} · ${control.label}`}
                           max="90"
                           min="-90"
@@ -519,76 +567,152 @@ export function CharacterPanel() {
               </InspectorSection>
             </>
           ) : (
-            <p className="character-action-compatibility" role="status">该模型尚未完成标准人形骨骼映射，暂不支持人形姿势编辑。</p>
+            <p className="character-action-compatibility" role="status">
+              {text(
+                "该模型尚未完成标准人形骨骼映射，暂不支持人形姿势编辑。",
+                "This model does not have a complete humanoid bone map, so humanoid pose editing is unavailable.",
+              )}
+            </p>
           )}
         </InspectorSection>
       ) : activeTab === "action" ? (
-        <InspectorSection title="动作预设" className="pose-preset-section">
+        <InspectorSection title={text("动作预设", "Animation presets")} className="pose-preset-section">
           {!allowsHumanoidActions ? (
             <p className="character-action-compatibility" role="status">
               {roleImportReadiness === "native-only"
-                ? "这个模型只保证播放自带动作，暂不套用人形走路、跑步等预设。"
+                ? text(
+                    "这个模型只保证播放自带动作，暂不套用人形走路、跑步等预设。",
+                    "This model only supports its embedded animations; humanoid walk and run presets are disabled.",
+                  )
                 : roleImportReadiness === "manual-mapping"
-                  ? "这个模型需要补全骨骼映射后，才能安全使用人形动作预设。"
-                  : "这个模型只能静态使用。"}
+                  ? text(
+                      "这个模型需要补全骨骼映射后，才能安全使用人形动作预设。",
+                      "Complete the bone mapping before using humanoid animation presets.",
+                    )
+                  : text("这个模型只能静态使用。", "This model can only be used as a static character.")}
             </p>
           ) : null}
-          <div className="preset-grid">
-            <button
-              className={!role.characterRig?.actionPresetId ? "is-active" : undefined}
-              type="button"
-              onClick={() => {
-                if (isCrowd && selection.crowdId) applyCrowdActionPreset(selection.crowdId, null);
-                else applyCharacterActionPreset(role.id, null);
-                setCameraMotionPlaying(false);
-              }}
-            >
-              无动作
-            </button>
-            {allowsHumanoidActions ? CHARACTER_ACTION_PRESETS.map((preset) => (
+          <div className="character-action-group">
+            <span className="character-action-group-label">{text("通用动作", "Common animations")}</span>
+            <div className="preset-grid">
               <button
-                key={preset.id}
-                className={role.characterRig?.actionPresetId === preset.id ? "is-active" : undefined}
+                className={!activeActionPresetId ? "is-active" : undefined}
                 type="button"
-                aria-label={`播放动作 ${preset.label}`}
                 onClick={() => {
-                  if (isCrowd && selection.crowdId) applyCrowdActionPreset(selection.crowdId, preset.id);
-                  else applyCharacterActionPreset(role.id, preset.id);
-                  restartCameraMotionPlayback();
+                  if (isCrowd && selection.crowdId) applyCrowdActionPreset(selection.crowdId, null);
+                  else applyCharacterActionPreset(role.id, null);
+                  setCameraMotionPlaying(false);
                 }}
               >
-                <span>{preset.label}</span>
-                  <small>{(
-                  isRobotExpressive
-                    ? preset.robotExpressiveDuration ?? preset.duration
-                    : role.characterRig?.rigType === "mixamo"
-                    ? preset.mixamoDuration ?? preset.duration
-                    : preset.duration
-                ).toFixed(2)} 秒</small>
+                {text("无动作", "No animation")}
               </button>
-            )) : null}
-            {!isCrowd ? importedActionOptions.map((action) => (
-              <button
-                key={action.id}
-                className={`imported-action-preset${role.characterRig?.actionPresetId === action.id ? " is-active" : ""}`}
-                type="button"
-                aria-label={`播放导入动作 ${action.label}`}
-                onClick={() => {
-                  applyCharacterActionPreset(role.id, action.id);
-                  restartCameraMotionPlayback();
-                }}
-              >
-                <span>{action.displayLabel}</span>
-                <small>{action.duration.toFixed(2)} 秒</small>
-              </button>
-            )) : null}
+              {allowsHumanoidActions ? compatibleCommonActionPresets.map((preset) => (
+                <button
+                  key={preset.id}
+                  className={activeActionPresetId === preset.id ? "is-active" : undefined}
+                  type="button"
+                  aria-label={text(`播放动作 ${preset.label}`, `Play animation ${preset.labelEn}`)}
+                  onClick={() => {
+                    if (isCrowd && selection.crowdId) applyCrowdActionPreset(selection.crowdId, preset.id);
+                    else applyCharacterActionPreset(role.id, preset.id);
+                    restartCameraMotionPlayback({
+                      objectId: role.id,
+                      objectIds: isCrowd ? selection.crowdMembers.map((item) => item.id) : undefined,
+                      actionPresetId: preset.id,
+                      durationSeconds: getCharacterActionDisplayDuration(
+                        preset,
+                        roleAsset?.url,
+                        role.characterRig?.rigType,
+                      ),
+                    });
+                  }}
+                >
+                  <span>{text(preset.label, preset.labelEn)}</span>
+                  <small>{getCharacterActionDisplayDuration(
+                    preset,
+                    roleAsset?.url,
+                    role.characterRig?.rigType,
+                  ).toFixed(2)} {text("秒", "sec")}</small>
+                </button>
+              )) : null}
+            </div>
           </div>
+          {allowsHumanoidActions && characterSpecificActionPresets.length ? (
+            <div className="character-action-group character-action-group--specific">
+              <span className="character-action-group-label">
+                {text(
+                  `${CHARACTER_ACTION_PROFILE_LABELS[characterActionProfile]}适配动作`,
+                  `${CHARACTER_ACTION_PROFILE_LABELS_ENGLISH[characterActionProfile]} animations`,
+                )}
+              </span>
+              <div className="preset-grid">
+                {characterSpecificActionPresets.map((preset) => (
+                  <button
+                    key={preset.id}
+                    className={activeActionPresetId === preset.id ? "is-active" : undefined}
+                    type="button"
+                    aria-label={text(`播放角色适配动作 ${preset.label}`, `Play adapted animation ${preset.labelEn}`)}
+                    onClick={() => {
+                      applyCharacterActionPreset(role.id, preset.id);
+                      restartCameraMotionPlayback({
+                        objectId: role.id,
+                        actionPresetId: preset.id,
+                        durationSeconds: getCharacterActionDisplayDuration(
+                          preset,
+                          roleAsset?.url,
+                          role.characterRig?.rigType,
+                        ),
+                      });
+                    }}
+                  >
+                    <span>{text(preset.label, preset.labelEn)}</span>
+                    <small>{getCharacterActionDisplayDuration(
+                      preset,
+                      roleAsset?.url,
+                      role.characterRig?.rigType,
+                    ).toFixed(2)} {text("秒", "sec")}</small>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {!isCrowd && importedActionOptions.length ? (
+            <div className="character-action-group character-action-group--specific">
+              <span className="character-action-group-label">{text("已导入动作", "Imported animations")}</span>
+              <div className="preset-grid">
+                {importedActionOptions.map((action) => (
+                  <button
+                    key={action.id}
+                    className={`imported-action-preset${role.characterRig?.actionPresetId === action.id ? " is-active" : ""}`}
+                    type="button"
+                    aria-label={text(`播放导入动作 ${action.label}`, `Play imported animation ${action.label}`)}
+                    onClick={() => {
+                      applyCharacterActionPreset(role.id, action.id);
+                      restartCameraMotionPlayback({
+                        objectId: role.id,
+                        actionPresetId: action.id,
+                        durationSeconds: action.duration,
+                      });
+                    }}
+                  >
+                    <span>{action.displayLabel}</span>
+                    <small>{action.duration.toFixed(2)} {text("秒", "sec")}</small>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {!isCrowd ? (
             <div className="imported-action-section">
               <div className="imported-action-header">
                 <div>
-                  <strong>我的动作</strong>
-                  <span>{animationAssets.length ? `${compatibleAnimationAssets.length}/${animationAssets.length} 个文件兼容` : "支持 FBX / GLB"}</span>
+                  <strong>{text("我的动作", "My animations")}</strong>
+                  <span>{animationAssets.length
+                    ? text(
+                        `${compatibleAnimationAssets.length}/${animationAssets.length} 个文件兼容`,
+                        `${compatibleAnimationAssets.length}/${animationAssets.length} compatible files`,
+                      )
+                    : text("支持 FBX / GLB", "Supports FBX / GLB")}</span>
                 </div>
                 <button
                   className="imported-action-upload"
@@ -597,12 +721,12 @@ export function CharacterPanel() {
                   onClick={() => animationInputRef.current?.click()}
                 >
                   <Upload aria-hidden="true" size={14} />
-                  {animationImportBusy ? "检查中" : "导入动作"}
+                  {animationImportBusy ? text("检查中", "Inspecting") : text("导入动作", "Import animation")}
                 </button>
               </div>
               <input
                 ref={animationInputRef}
-                aria-label="选择人物动作文件"
+                aria-label={text("选择人物动作文件", "Select character animation file")}
                 className="hidden-file-input"
                 accept=".fbx,.glb"
                 type="file"
@@ -622,10 +746,12 @@ export function CharacterPanel() {
                       <div key={animationAsset.id} className="imported-action-file">
                         <span>
                           <strong>{animationAsset.name}</strong>
-                          <small>{compatible ? `${animationAsset.clips.length} 个动作` : `不兼容 · ${animationAsset.rigProfile}`}</small>
+                          <small>{compatible
+                            ? text(`${animationAsset.clips.length} 个动作`, `${animationAsset.clips.length} animations`)
+                            : text(`不兼容 · ${animationAsset.rigProfile}`, `Incompatible · ${animationAsset.rigProfile}`)}</small>
                         </span>
                         <button
-                          aria-label={`删除动作文件 ${animationAsset.name}`}
+                          aria-label={text(`删除动作文件 ${animationAsset.name}`, `Remove animation file ${animationAsset.name}`)}
                           type="button"
                           onClick={() => removeImportedAnimationAsset(animationAsset.id)}
                         >
@@ -640,12 +766,15 @@ export function CharacterPanel() {
           ) : null}
         </InspectorSection>
       ) : (
-        <InspectorSection title="人物路线" className="pose-preset-section">
+        <InspectorSection title={text("人物路线", "Character route")} className="pose-preset-section">
           {isCrowd ? (
-            <p>群众组暂不支持共用路线。请先选中单个人物。</p>
+            <p>{text(
+              "群众组暂不支持共用路线。请先选中单个人物。",
+              "Crowd groups cannot share a route. Select an individual character first.",
+            )}</p>
           ) : (
             <>
-              <div className="character-route-toolbar" aria-label="路线编辑操作">
+              <div className="character-route-toolbar" aria-label={text("路线编辑操作", "Route editing actions")}>
                 <button
                   className="character-route-add"
                   type="button"
@@ -656,11 +785,11 @@ export function CharacterPanel() {
                   }}
                 >
                   <MapPinPlus aria-hidden="true" size={14} />
-                  添加点
+                  {text("添加点", "Add point")}
                 </button>
                 <button
-                  aria-label="预览当前路线点"
-                  title="定位预览"
+                  aria-label={text("预览当前路线点", "Preview current route point")}
+                  title={text("定位预览", "Preview position")}
                   className="character-route-icon-button"
                   type="button"
                   disabled={!selectedRoutePoint}
@@ -671,8 +800,8 @@ export function CharacterPanel() {
                   <LocateFixed aria-hidden="true" size={14} />
                 </button>
                 <button
-                  aria-label="在当前路线点后插入"
-                  title="在当前点后插入"
+                  aria-label={text("在当前路线点后插入", "Insert after current route point")}
+                  title={text("在当前点后插入", "Insert after current point")}
                   className="character-route-icon-button"
                   type="button"
                   disabled={!selectedRoutePoint || routePath.keyframes[routePath.keyframes.length - 1]?.id === selectedRoutePoint.id}
@@ -685,8 +814,8 @@ export function CharacterPanel() {
                   <Plus aria-hidden="true" size={15} />
                 </button>
                 <button
-                  aria-label="删除当前路线点"
-                  title="删除当前点"
+                  aria-label={text("删除当前路线点", "Delete current route point")}
+                  title={text("删除当前点", "Delete current point")}
                   className="character-route-icon-button is-danger"
                   type="button"
                   disabled={!selectedRoutePoint}
@@ -699,59 +828,65 @@ export function CharacterPanel() {
                   <Trash2 aria-hidden="true" size={14} />
                 </button>
               </div>
-              <div className="character-route-shape" role="group" aria-label="路线形状">
-                <span>形状</span>
+              <div className="character-route-shape" role="group" aria-label={text("路线形状", "Route shape")}>
+                <span>{text("形状", "Shape")}</span>
                 <button
                   type="button"
                   aria-pressed={routePath.interpolation === "smooth"}
                   onClick={() => updateObjectMotionPath(role.id, { interpolation: "smooth" })}
                 >
-                  平滑
+                  {text("平滑", "Smooth")}
                 </button>
                 <button
                   type="button"
                   aria-pressed={routePath.interpolation === "linear"}
                   onClick={() => updateObjectMotionPath(role.id, { interpolation: "linear" })}
                 >
-                  折线
+                  {text("折线", "Linear")}
                 </button>
               </div>
-              <div className="character-route-shape character-route-shape--speed" role="group" aria-label="路线速度">
-                <span>速度</span>
-                <button type="button" aria-pressed={routePath.speedMode === "uniform"} onClick={() => setRouteSpeedMode("uniform")}>匀速</button>
-                <button type="button" aria-pressed={routePath.speedMode === "soft"} onClick={() => setRouteSpeedMode("soft")}>柔和</button>
-                <button type="button" aria-pressed={(routePath.speedMode ?? "custom") === "custom"} onClick={() => setRouteSpeedMode("custom")}>自定义</button>
+              <div className="character-route-shape character-route-shape--speed" role="group" aria-label={text("路线速度", "Route speed")}>
+                <span>{text("速度", "Speed")}</span>
+                <button type="button" aria-pressed={routePath.speedMode === "uniform"} onClick={() => setRouteSpeedMode("uniform")}>{text("匀速", "Uniform")}</button>
+                <button type="button" aria-pressed={routePath.speedMode === "soft"} onClick={() => setRouteSpeedMode("soft")}>{text("柔和", "Smooth")}</button>
+                <button type="button" aria-pressed={(routePath.speedMode ?? "custom") === "custom"} onClick={() => setRouteSpeedMode("custom")}>{text("自定义", "Custom")}</button>
               </div>
               {routePath.speedMode === "custom" ? (
                 <RouteCustomEasingControl
                   curve={routePath.customEasing}
-                  label="人物段内节奏"
+                  label={text("人物段内节奏", "Segment timing")}
                   onChange={(customEasing) => updateObjectMotionPath(role.id, { customEasing })}
                 />
               ) : null}
-              <div className="character-route-points" role="group" aria-label="人物路线点列表">
+              <div className="character-route-points" role="group" aria-label={text("人物路线点列表", "Character route point list")}>
                 {routePath.keyframes.map((point, index) => (
                   <button
                     key={point.id}
                     className={point.id === selectedRoutePoint?.id ? "is-active" : undefined}
                     type="button"
-                    aria-label={`选择路线点 ${index + 1}`}
+                    aria-label={text(`选择路线点 ${index + 1}`, `Select route point ${index + 1}`)}
                     aria-pressed={point.id === selectedRoutePoint?.id}
                     onClick={() => {
                       selectObjectMotionKeyframe(point.id);
                     }}
                   >
                     <strong>{index + 1}</strong>
-                    <span>{((routeTimingPlan?.arrivals[index] ?? point.time) * timelineDuration).toFixed(1)} 秒</span>
+                    <span>{((routeTimingPlan?.arrivals[index] ?? point.time) * timelineDuration).toFixed(1)} {text("秒", "sec")}</span>
                   </button>
                 ))}
               </div>
               {selectedRoutePoint ? (
-                <InspectorSection title={`路线点 ${routePath.keyframes.findIndex((point) => point.id === selectedRoutePoint.id) + 1}`} className="character-route-editor">
+                <InspectorSection
+                  title={text(
+                    `路线点 ${routePath.keyframes.findIndex((point) => point.id === selectedRoutePoint.id) + 1}`,
+                    `Route point ${routePath.keyframes.findIndex((point) => point.id === selectedRoutePoint.id) + 1}`,
+                  )}
+                  className="character-route-editor"
+                >
                   <InspectorRangeNumberField
-                    label="到达时间"
-                    rangeAriaLabel="路线点到达时间滑杆"
-                    numberAriaLabel="路线点到达时间"
+                    label={text("到达时间", "Arrival time")}
+                    rangeAriaLabel={text("路线点到达时间滑杆", "Route point arrival time slider")}
+                    numberAriaLabel={text("路线点到达时间", "Route point arrival time")}
                     min={String(selectedArrivalMinimum)}
                     max={String(selectedArrivalMaximum)}
                     step="0.1"
@@ -762,13 +897,13 @@ export function CharacterPanel() {
                     })}
                   />
                   <div className="inspector-field">
-                    <span className="inspector-field-label">到点行为</span>
-                    <div className="character-route-shape character-route-shape--compact" role="group" aria-label="人物路线点行为">
+                    <span className="inspector-field-label">{text("到点行为", "Point behavior")}</span>
+                    <div className="character-route-shape character-route-shape--compact" role="group" aria-label={text("人物路线点行为", "Character route point behavior")}>
                       <button
                         type="button"
                         aria-pressed={(selectedRoutePoint.pointBehavior ?? "pass") === "pass"}
                         onClick={() => updateObjectMotionKeyframe(role.id, selectedRoutePoint.id, { pointBehavior: "pass", holdSeconds: 0 })}
-                      >经过</button>
+                      >{text("经过", "Pass")}</button>
                       <button
                         type="button"
                         disabled={selectedRoutePointIndex === routePath.keyframes.length - 1}
@@ -777,15 +912,15 @@ export function CharacterPanel() {
                           pointBehavior: "hold",
                           holdSeconds: selectedRoutePoint.holdSeconds || 1,
                         })}
-                      >停留</button>
+                      >{text("停留", "Hold")}</button>
                     </div>
                   </div>
                   {selectedRoutePoint.pointBehavior === "hold" ? (
                     <>
                       <InspectorRangeNumberField
-                        label="停留时长"
-                        rangeAriaLabel="路线点停留时长滑杆"
-                        numberAriaLabel="路线点停留时长"
+                        label={text("停留时长", "Hold duration")}
+                        rangeAriaLabel={text("路线点停留时长滑杆", "Route point hold duration slider")}
+                        numberAriaLabel={text("路线点停留时长", "Route point hold duration")}
                         min="0.1"
                         max={String(timelineDuration)}
                         step="0.1"
@@ -795,9 +930,9 @@ export function CharacterPanel() {
                         })}
                       />
                       <label className="inspector-field">
-                        <span className="inspector-field-label">停留动作</span>
+                        <span className="inspector-field-label">{text("停留动作", "Hold animation")}</span>
                         <select
-                          aria-label="路线点停留动作方式"
+                          aria-label={text("路线点停留动作方式", "Route point hold animation mode")}
                           value={selectedRoutePoint.holdAction ?? "current"}
                           onChange={(event) => updateObjectMotionKeyframe(role.id, selectedRoutePoint.id, {
                             holdAction: event.currentTarget.value === "stand"
@@ -807,23 +942,28 @@ export function CharacterPanel() {
                                 : "current",
                           })}
                         >
-                          <option value="stand">站立</option>
-                          <option value="current">保持当前动作</option>
-                          <option value="custom">指定动作</option>
+                          <option value="stand">{text("站立", "Stand")}</option>
+                          <option value="current">{text("保持当前动作", "Keep current animation")}</option>
+                          <option value="custom">{text("指定动作", "Choose animation")}</option>
                         </select>
                       </label>
                       {selectedRoutePoint.holdAction === "custom" ? (
                         <label className="inspector-field">
-                          <span className="inspector-field-label">指定动作</span>
+                          <span className="inspector-field-label">{text("指定动作", "Animation")}</span>
                           <select
-                            aria-label="路线点指定停留动作"
-                            value={selectedRoutePoint.holdActionPresetId ?? ""}
+                            aria-label={text("路线点指定停留动作", "Route point selected hold animation")}
+                            value={resolveCompatibleCharacterActionPresetId(
+                              characterActionContext,
+                              selectedRoutePoint.holdActionPresetId,
+                            ) ?? ""}
                             onChange={(event) => updateObjectMotionKeyframe(role.id, selectedRoutePoint.id, {
                               holdActionPresetId: event.currentTarget.value || null,
                             })}
                           >
-                            <option value="">站立</option>
-                            {allowsHumanoidActions ? CHARACTER_ACTION_PRESETS.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>) : null}
+                            <option value="">{text("站立", "Stand")}</option>
+                            {allowsHumanoidActions ? availableActionPresets.map((preset) => (
+                              <option key={preset.id} value={preset.id}>{text(preset.label, preset.labelEn)}</option>
+                            )) : null}
                             {importedActionOptions.map((action) => <option key={action.id} value={action.id}>{action.label}</option>)}
                           </select>
                         </label>
@@ -831,10 +971,13 @@ export function CharacterPanel() {
                     </>
                   ) : null}
                   <InspectorAxisGroup
-                    label="路线点位置"
+                    label={text("路线点位置", "Route point position")}
                     axes={([0, 1, 2] as const).map((axis) => ({
                       axis: (["X", "Y", "Z"] as const)[axis],
-                      ariaLabel: `路线点位置 ${(["X", "Y", "Z"] as const)[axis]}`,
+                      ariaLabel: text(
+                        `路线点位置 ${(["X", "Y", "Z"] as const)[axis]}`,
+                        `Route point position ${(["X", "Y", "Z"] as const)[axis]}`,
+                      ),
                       value: selectedRoutePoint.transform.position[axis],
                       onChange: (value: string) => updateObjectMotionKeyframe(role.id, selectedRoutePoint.id, {
                         transform: { position: replaceAxis(selectedRoutePoint.transform.position, axis, Number(value)) },
@@ -842,37 +985,42 @@ export function CharacterPanel() {
                     }))}
                   />
                   <label className="inspector-field">
-                    <span className="inspector-field-label">本段动作</span>
+                    <span className="inspector-field-label">{text("本段动作", "Segment animation")}</span>
                     <select
-                      aria-label="路线点本段动作"
-                      value={selectedRoutePoint.actionPresetId ?? ""}
+                      aria-label={text("路线点本段动作", "Route point segment animation")}
+                      value={resolveCompatibleCharacterActionPresetId(
+                        characterActionContext,
+                        selectedRoutePoint.actionPresetId,
+                      ) ?? ""}
                       onChange={(event) => updateObjectMotionKeyframe(role.id, selectedRoutePoint.id, {
                         actionPresetId: event.currentTarget.value || null,
                       })}
                     >
-                      <option value="">自动行走</option>
-                      {allowsHumanoidActions ? CHARACTER_ACTION_PRESETS.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>) : null}
+                      <option value="">{text("自动行走", "Automatic walk")}</option>
+                      {allowsHumanoidActions ? availableActionPresets.map((preset) => (
+                        <option key={preset.id} value={preset.id}>{text(preset.label, preset.labelEn)}</option>
+                      )) : null}
                       {importedActionOptions.map((action) => <option key={action.id} value={action.id}>{action.label}</option>)}
                     </select>
                   </label>
                   <label className="inspector-field">
-                    <span className="inspector-field-label">到点朝向</span>
+                    <span className="inspector-field-label">{text("到点朝向", "Facing at point")}</span>
                     <select
-                      aria-label="路线点朝向方式"
+                      aria-label={text("路线点朝向方式", "Route point facing mode")}
                       value={selectedRoutePoint.facingMode ?? "manual"}
                       onChange={(event) => updateObjectMotionKeyframe(role.id, selectedRoutePoint.id, {
                         facingMode: event.currentTarget.value === "path" ? "path" : "manual",
                       })}
                     >
-                      <option value="path">面向下一个点</option>
-                      <option value="manual">手动朝向</option>
+                      <option value="path">{text("面向下一个点", "Face next point")}</option>
+                      <option value="manual">{text("手动朝向", "Manual facing")}</option>
                     </select>
                   </label>
                   {selectedRoutePoint.facingMode !== "path" ? (
                     <InspectorRangeNumberField
-                      label="手动朝向"
-                      rangeAriaLabel="路线点手动朝向滑杆"
-                      numberAriaLabel="路线点手动朝向"
+                      label={text("手动朝向", "Manual facing")}
+                      rangeAriaLabel={text("路线点手动朝向滑杆", "Route point manual facing slider")}
+                      numberAriaLabel={text("路线点手动朝向", "Route point manual facing")}
                       min="-180"
                       max="180"
                       step="1"
@@ -889,7 +1037,10 @@ export function CharacterPanel() {
                     />
                   ) : null}
                 </InspectorSection>
-              ) : <p>添加第一个路线点后，可在场景里拖动编号点继续摆路线。</p>}
+              ) : <p>{text(
+                "添加第一个路线点后，可在场景里拖动编号点继续摆路线。",
+                "Add the first route point, then drag numbered points in the scene to shape the route.",
+              )}</p>}
             </>
           )}
         </InspectorSection>

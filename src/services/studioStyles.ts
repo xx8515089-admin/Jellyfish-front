@@ -72,7 +72,7 @@ function createCustomStyle(
   })
 }
 
-/** Uploads one cropped JPG or PNG custom-style cover. */
+/** 上传一张裁剪后的 JPG 或 PNG 自定义风格封面。 */
 function uploadCustomStyleCover(
   file: File,
 ): CancelablePromise<ApiEnvelope<StudioCustomStyleCover>> {
@@ -87,7 +87,7 @@ function uploadCustomStyleCover(
   })
 }
 
-/** Loads the enabled style options for one backend style category. */
+/** 加载指定后端风格类别中已启用的风格选项。 */
 function getStyleOptions(
   styleType: StudioCustomStyleType,
 ): CancelablePromise<ApiEnvelope<StudioStyleOption[]>> {
@@ -104,7 +104,7 @@ function getStyleOptions(
 }
 
 export const StudioStylesApi = {
-  /** Uploads a custom cover and returns its persistent online URL metadata. */
+  /** 上传自定义封面，并返回其持久化在线 URL 元数据。 */
   async uploadCustomCover(file: File): Promise<StudioCustomStyleCover> {
     const response = await uploadCustomStyleCover(file)
     if ((response.code ?? 200) >= 400) {
@@ -115,7 +115,7 @@ export const StudioStylesApi = {
     }
     return response.data
   },
-  /** Returns visual styles for type 1 or tone styles for type 2. */
+  /** type 为 1 时返回视觉风格，为 2 时返回影调风格。 */
   async getOptions(styleType: StudioCustomStyleType): Promise<StudioStyleOption[]> {
     const response = await getStyleOptions(styleType)
     if ((response.code ?? 200) >= 400) {

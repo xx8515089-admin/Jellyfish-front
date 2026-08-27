@@ -2,8 +2,10 @@ import type { ReactNode } from "react";
 import { ObjectTreePanel } from "../../editor/panels/ObjectTreePanel";
 import { RightPanel } from "../../editor/panels/RightPanel";
 import { useDirectorStore } from "../../editor/store/directorStore";
+import { useDirectorDeskText } from "../../useDirectorDeskText";
 
 export function DirectorDeskShell({ children }: { children: ReactNode }) {
+  const text = useDirectorDeskText();
   const viewportPanelsCollapsed = useDirectorStore((state) => state.viewportPanelsCollapsed);
   const motionStudioOpen = useDirectorStore((state) => state.motionStudioOpen);
   const cameraPilotMode = useDirectorStore((state) => state.cameraPilotMode);
@@ -27,20 +29,20 @@ export function DirectorDeskShell({ children }: { children: ReactNode }) {
         isCameraPreviewing ? "is-camera-previewing" : "",
       ].filter(Boolean).join(" ")}
     >
-      <section className="viewport-column" aria-label="3D视口">
+      <section className="viewport-column" aria-label={text("3D视口", "3D viewport")}>
         {children}
       </section>
       <aside
         className="left-sidebar director-sidebar"
         aria-hidden={viewportPanelsCollapsed ? "true" : undefined}
-        aria-label="场景"
+        aria-label={text("场景", "Scene")}
       >
         <ObjectTreePanel />
       </aside>
       <aside
         className="right-sidebar director-sidebar"
         aria-hidden={viewportPanelsCollapsed ? "true" : undefined}
-        aria-label="属性"
+        aria-label={text("属性", "Properties")}
       >
         <RightPanel />
       </aside>

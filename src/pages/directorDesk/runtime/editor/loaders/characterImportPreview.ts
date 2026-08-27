@@ -5,13 +5,14 @@ import { createImportedCharacterActionId } from "../schema/importedCharacterActi
 export interface CharacterImportPreviewStep {
   actionPresetId: string;
   label: string;
+  labelEn?: string;
 }
 
 export const HUMANOID_IMPORT_PREVIEW_STEPS: CharacterImportPreviewStep[] = [
-  { actionPresetId: "walk-cycle", label: "走路" },
-  { actionPresetId: "run-cycle", label: "跑步" },
-  { actionPresetId: "jump-cycle", label: "跳跃" },
-  { actionPresetId: "wave-cycle", label: "挥手" },
+  { actionPresetId: "walk-cycle", label: "走路", labelEn: "Walk" },
+  { actionPresetId: "run-cycle", label: "跑步", labelEn: "Run" },
+  { actionPresetId: "jump-cycle", label: "跳跃", labelEn: "Jump" },
+  { actionPresetId: "wave-cycle", label: "挥手", labelEn: "Wave" },
 ];
 
 export function getCharacterImportPreviewSteps({

@@ -1,28 +1,39 @@
+/* eslint-disable react/no-unknown-property -- React Three Fiber 使用 Three.js 对象属性扩展了 JSX。 */
 import { useFrame, useLoader } from "@react-three/fiber";
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import {
-  AnimationClip,
   AnimationMixer,
   Box3,
   Euler,
+  LoopOnce,
   LoopRepeat,
   Matrix4,
   Quaternion,
-  SkinnedMesh,
   Vector3,
+  type AnimationClip,
+  type Group,
   type Object3D,
+  type SkinnedMesh,
 } from "three";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkeleton, retargetClip } from "three/examples/jsm/utils/SkeletonUtils.js";
-import { getCharacterActionPreset } from "../presets/characterActionPresets";
-import { getObjectMotionActionSample } from "../schema/objectMotion";
-import type { CharacterRigState, DirectorModelFormat, DirectorObject } from "../schema/directorProject";
-import type { DirectorCharacterBoneMap } from "../schema/semanticBody";
+import {
+  getCharacterActionPreset,
+  sampleCharacterActionControls,
+} from "../presets/characterActionPresets";
+import type { CharacterRigState, DirectorModelFormat } from "../schema/directorProject";
+import type { DirectorCharacterBoneMap, DirectorCharacterBonePart } from "../schema/semanticBody";
 import { getSemanticBodyPartForBoneName } from "./semanticBodyTracking";
 import { getRuntimePlaybackProgress } from "./playbackRuntime";
 import { VIEWPORT_OBJECT_LABEL_VERTICAL_GAP } from "../schema/viewportLabels";
 import { disposeIsolatedModelMaterials, isolateAndTintModelMaterials } from "./modelMaterialTint";
+import {
+  getCharacterActionPlaybackMode,
+  shouldUseProceduralBuiltInAction,
+  type CharacterActionPlaybackMode,
+} from "./characterActionPlaybackPolicy";
+import { getCharacterRuntimeActionSample, type CharacterRuntimeMotion } from "./characterRuntimeMotion";
 
 interface MixamoCharacterModelProps {
   url: string;
@@ -33,7 +44,7 @@ interface MixamoCharacterModelProps {
   actionPresetId?: string | null;
   animationTimeSeconds?: number;
   onLabelAnchorYChange?: (anchorY: number) => void;
-  runtimeMotion?: { duration: number; object: DirectorObject };
+  runtimeMotion?: CharacterRuntimeMotion;
   boneMap?: DirectorCharacterBoneMap;
   color?: string;
 }
@@ -82,6 +93,11 @@ export const SOLDIER_NATIVE_ACTION_CLIPS: NativeActionClipNames = {
 export const ROBOT_EXPRESSIVE_ACTION_CLIPS: NativeActionClipNames = {
   "crouch-cycle": "sitting",
   "jump-cycle": "jump",
+  "robot-approve": "thumbsup",
+  "robot-dance": "dance",
+  "robot-guard": "idle",
+  "robot-punch": "punch",
+  "robot-scan": "no",
   "run-cycle": "running",
   "side-step-left": "walking",
   "walk-cycle": "walking",
@@ -121,6 +137,24 @@ const BONE_MAP = {
   leftKnee: "mixamorig:LeftLeg",
   rightKnee: "mixamorig:RightLeg",
 } as const;
+
+type ProceduralJoint = keyof typeof BONE_MAP;
+
+const SEMANTIC_BODY_PART_TO_JOINT: Partial<Record<DirectorCharacterBonePart, ProceduralJoint>> = {
+  waist: "body",
+  chest: "torso",
+  head: "head",
+  leftUpperArm: "leftShoulder",
+  leftForearm: "leftElbow",
+  leftHand: "leftHand",
+  rightUpperArm: "rightShoulder",
+  rightForearm: "rightElbow",
+  rightHand: "rightHand",
+  leftThigh: "leftHip",
+  leftCalf: "leftKnee",
+  rightThigh: "rightHip",
+  rightCalf: "rightKnee",
+};
 
 function degrees(value: number) {
   return value * Math.PI / 180;
@@ -353,9 +387,29 @@ export function prepareMixamoAnimationClip(
   return clip;
 }
 
-function rotationForBone(name: string, controls: Record<string, number>): [number, number, number] | null {
-  const normalizedName = getCanonicalHumanoidBoneName(name);
-  const joint = Object.entries(BONE_MAP).find(([, bone]) => getCanonicalHumanoidBoneName(bone) === normalizedName)?.[0];
+export function getProceduralJointForBoneName(
+  name: string,
+  boneMap?: DirectorCharacterBoneMap,
+): ProceduralJoint | null {
+  const normalizedName = getCanonicalHumanoidBoneName(name).toLowerCase();
+  const directJoint = Object.entries(BONE_MAP).find(
+    ([, bone]) => getCanonicalHumanoidBoneName(bone).toLowerCase() === normalizedName,
+  )?.[0] as ProceduralJoint | undefined;
+  if (directJoint) return directJoint;
+
+  const mappedBodyPart = Object.entries(boneMap ?? {}).find(
+    ([, bone]) => getCanonicalHumanoidBoneName(bone).toLowerCase() === normalizedName,
+  )?.[0] as DirectorCharacterBonePart | undefined;
+  const semanticBodyPart = mappedBodyPart ?? getSemanticBodyPartForBoneName(name);
+  return semanticBodyPart ? SEMANTIC_BODY_PART_TO_JOINT[semanticBodyPart] ?? null : null;
+}
+
+function rotationForBone(
+  name: string,
+  controls: Record<string, number>,
+  boneMap?: DirectorCharacterBoneMap,
+): [number, number, number] | null {
+  const joint = getProceduralJointForBoneName(name, boneMap);
   if (!joint) return null;
   const pitch = degrees(controls[`${joint}.pitch`] ?? controls[`${joint}.bend`] ?? 0);
   const yaw = degrees(controls[`${joint}.yaw`] ?? controls[`${joint}.twist`] ?? 0);
@@ -368,6 +422,41 @@ function rotationForBone(name: string, controls: Record<string, number>): [numbe
   return [pitch, yaw, roll];
 }
 
+interface ProceduralBoneBinding {
+  object: Object3D;
+  restQuaternion: Quaternion;
+}
+
+function getProceduralBoneBindings(
+  scene: Object3D,
+  restPose: CharacterRestPose,
+  boneMap?: DirectorCharacterBoneMap,
+) {
+  const bindings: ProceduralBoneBinding[] = [];
+  scene.traverse((object) => {
+    if (!getProceduralJointForBoneName(object.name, boneMap)) return;
+    const rest = restPose.get(object.uuid);
+    if (!rest) return;
+    bindings.push({
+      object,
+      restQuaternion: new Quaternion().fromArray(rest.quaternion),
+    });
+  });
+  return bindings;
+}
+
+function applyProceduralCharacterPose(
+  bindings: ProceduralBoneBinding[],
+  controls: Record<string, number>,
+  boneMap?: DirectorCharacterBoneMap,
+) {
+  bindings.forEach(({ object, restQuaternion }) => {
+    object.quaternion.copy(restQuaternion);
+    const rotation = rotationForBone(object.name, controls, boneMap);
+    if (rotation) object.quaternion.multiply(new Quaternion().setFromEuler(new Euler(...rotation)));
+  });
+}
+
 const ANIMATION_SAMPLE_EPSILON = 1e-7;
 
 export function applyMixamoAnimationSample({
@@ -375,6 +464,7 @@ export function applyMixamoAnimationSample({
   clipDuration,
   lastClipTime,
   mixer,
+  playbackMode = "loop",
   restPose,
   scene,
 }: {
@@ -382,12 +472,15 @@ export function applyMixamoAnimationSample({
   clipDuration: number;
   lastClipTime: number | null;
   mixer: AnimationMixer;
+  playbackMode?: CharacterActionPlaybackMode;
   restPose: CharacterRestPose;
   scene: Object3D;
 }) {
   if (clipDuration <= 0) return lastClipTime;
-  const clipTime = ((animationTimeSeconds % clipDuration) + clipDuration) % clipDuration;
-  if (lastClipTime != null && Math.abs(lastClipTime - clipTime) <= ANIMATION_SAMPLE_EPSILON) {
+  const clipTime = playbackMode === "once"
+    ? Math.min(clipDuration, Math.max(0, animationTimeSeconds))
+    : ((animationTimeSeconds % clipDuration) + clipDuration) % clipDuration;
+  if (lastClipTime !== null && Math.abs(lastClipTime - clipTime) <= ANIMATION_SAMPLE_EPSILON) {
     return lastClipTime;
   }
   applyCharacterRestPose(scene, restPose);
@@ -399,14 +492,16 @@ export function applyMixamoAnimationSample({
 function MixamoAnimationPlayer({
   animationTimeSeconds,
   clip,
+  playbackMode = "loop",
   restPose,
   runtimeMotion,
   scene,
 }: {
   animationTimeSeconds: number;
   clip: AnimationClip;
+  playbackMode?: CharacterActionPlaybackMode;
   restPose: CharacterRestPose;
-  runtimeMotion?: { duration: number; object: DirectorObject };
+  runtimeMotion?: CharacterRuntimeMotion;
   scene: Object3D;
 }) {
   const mixer = useMemo(() => new AnimationMixer(scene), [scene]);
@@ -419,14 +514,16 @@ function MixamoAnimationPlayer({
     mixer.uncacheRoot(scene);
     applyCharacterRestPose(scene, restPose);
     const action = mixer.clipAction(clip, scene);
-    action.reset().setLoop(LoopRepeat, Infinity).play();
+    action.reset();
+    action.clampWhenFinished = playbackMode === "once";
+    action.setLoop(playbackMode === "once" ? LoopOnce : LoopRepeat, playbackMode === "once" ? 1 : Infinity).play();
     return () => {
       lastClipTimeRef.current = null;
       mixer.stopAllAction();
       mixer.uncacheRoot(scene);
       applyCharacterRestPose(scene, restPose);
     };
-  }, [clip, mixer, restPose, scene]);
+  }, [clip, mixer, playbackMode, restPose, scene]);
 
   useLayoutEffect(() => {
     if (!clip || clip.duration <= 0) return;
@@ -435,26 +532,80 @@ function MixamoAnimationPlayer({
       clipDuration: clip.duration,
       lastClipTime: lastClipTimeRef.current,
       mixer,
+      playbackMode,
       restPose,
       scene,
     });
-  }, [animationTimeSeconds, clip, mixer, restPose, scene]);
+  }, [animationTimeSeconds, clip, mixer, playbackMode, restPose, scene]);
 
   useFrame(() => {
     if (!runtimeMotion || clip.duration <= 0) return;
-    const animationTime = getObjectMotionActionSample(
-      runtimeMotion.object,
+    const animationTime = getCharacterRuntimeActionSample(
+      runtimeMotion,
       getRuntimePlaybackProgress(),
-      runtimeMotion.duration,
     ).animationTimeSeconds;
     lastClipTimeRef.current = applyMixamoAnimationSample({
       animationTimeSeconds: animationTime,
       clipDuration: clip.duration,
       lastClipTime: lastClipTimeRef.current,
       mixer,
+      playbackMode,
       restPose,
       scene,
     });
+  });
+
+  return null;
+}
+
+function ProceduralCharacterPosePlayer({
+  actionPresetId,
+  animationTimeSeconds,
+  baseControls,
+  boneMap,
+  modelGroup,
+  modelGroupBaseY,
+  restPose,
+  runtimeMotion,
+  scene,
+}: {
+  actionPresetId?: string | null;
+  animationTimeSeconds: number;
+  baseControls: Record<string, number>;
+  boneMap?: DirectorCharacterBoneMap;
+  modelGroup: { current: Group | null };
+  modelGroupBaseY: number;
+  restPose: CharacterRestPose;
+  runtimeMotion?: CharacterRuntimeMotion;
+  scene: Object3D;
+}) {
+  const bindings = useMemo(
+    () => getProceduralBoneBindings(scene, restPose, boneMap),
+    [boneMap, restPose, scene],
+  );
+  const lastActionPresetIdRef = useRef<string | null>(null);
+
+  const applySample = useCallback((sampleActionPresetId: string | null | undefined, sampleTimeSeconds: number) => {
+    const controls = sampleActionPresetId
+      ? sampleCharacterActionControls(sampleActionPresetId, sampleTimeSeconds, baseControls)
+      : baseControls;
+    applyProceduralCharacterPose(bindings, controls, boneMap);
+    if (modelGroup.current) {
+      modelGroup.current.position.y = modelGroupBaseY + (controls["body.offsetY"] ?? 0);
+    }
+    scene.updateMatrixWorld(true);
+    lastActionPresetIdRef.current = sampleActionPresetId ?? null;
+  }, [baseControls, bindings, boneMap, modelGroup, modelGroupBaseY, scene]);
+
+  useLayoutEffect(() => {
+    applySample(actionPresetId, animationTimeSeconds);
+  }, [actionPresetId, animationTimeSeconds, applySample]);
+
+  useFrame(() => {
+    if (!runtimeMotion) return;
+    const sample = getCharacterRuntimeActionSample(runtimeMotion, getRuntimePlaybackProgress());
+    if (!sample.actionPresetId && !lastActionPresetIdRef.current) return;
+    applySample(sample.actionPresetId, sample.animationTimeSeconds);
   });
 
   return null;
@@ -469,6 +620,7 @@ function PreparedExternalAnimationClip({
   sourceScene,
   runtimeMotion,
   targetBoneMap,
+  playbackMode = "loop",
 }: {
   animationTimeSeconds: number;
   retargetMode: MixamoRetargetMode;
@@ -476,8 +628,9 @@ function PreparedExternalAnimationClip({
   scene: Object3D;
   sourceClip: AnimationClip | null;
   sourceScene: Object3D;
-  runtimeMotion?: { duration: number; object: DirectorObject };
+  runtimeMotion?: CharacterRuntimeMotion;
   targetBoneMap?: DirectorCharacterBoneMap;
+  playbackMode?: CharacterActionPlaybackMode;
 }) {
   const sourceRestPose = useMemo(() => captureCharacterRestPose(sourceScene), [sourceScene]);
   const clip = useMemo(
@@ -495,7 +648,7 @@ function PreparedExternalAnimationClip({
     [restPose, retargetMode, scene, sourceClip, sourceRestPose, sourceScene, targetBoneMap]
   );
   return clip
-    ? <MixamoAnimationPlayer animationTimeSeconds={animationTimeSeconds} clip={clip} restPose={restPose} runtimeMotion={runtimeMotion} scene={scene} />
+    ? <MixamoAnimationPlayer animationTimeSeconds={animationTimeSeconds} clip={clip} playbackMode={playbackMode} restPose={restPose} runtimeMotion={runtimeMotion} scene={scene} />
     : null;
 }
 
@@ -504,8 +657,9 @@ function ExternalFbxAnimationClip({ animation, ...props }: {
   animationTimeSeconds: number;
   retargetMode: MixamoRetargetMode;
   restPose: CharacterRestPose;
-  runtimeMotion?: { duration: number; object: DirectorObject };
+  runtimeMotion?: CharacterRuntimeMotion;
   targetBoneMap?: DirectorCharacterBoneMap;
+  playbackMode?: CharacterActionPlaybackMode;
   scene: Object3D;
 }) {
   const source = useLoader(FBXLoader, animation.url);
@@ -518,8 +672,9 @@ function ExternalGlbAnimationClip({ animation, ...props }: {
   animationTimeSeconds: number;
   retargetMode: MixamoRetargetMode;
   restPose: CharacterRestPose;
-  runtimeMotion?: { duration: number; object: DirectorObject };
+  runtimeMotion?: CharacterRuntimeMotion;
   targetBoneMap?: DirectorCharacterBoneMap;
+  playbackMode?: CharacterActionPlaybackMode;
   scene: Object3D;
 }) {
   const source = useLoader(GLTFLoader, animation.url);
@@ -532,8 +687,9 @@ function ExternalCharacterAnimationClip(props: {
   animationTimeSeconds: number;
   retargetMode: MixamoRetargetMode;
   restPose: CharacterRestPose;
-  runtimeMotion?: { duration: number; object: DirectorObject };
+  runtimeMotion?: CharacterRuntimeMotion;
   targetBoneMap?: DirectorCharacterBoneMap;
+  playbackMode?: CharacterActionPlaybackMode;
   scene: Object3D;
 }) {
   return props.animation.format === "glb"
@@ -563,10 +719,13 @@ function LoadedMixamoCharacter({
   source: Object3D;
   retargetMode: MixamoRetargetMode;
 }) {
+  const modelGroupRef = useRef<Group>(null);
   const nativeClip = getNativeMixamoActionClip(actionPresetId, nativeAnimations, nativeActionClipNames);
+  const playbackMode = getCharacterActionPlaybackMode(actionPresetId);
   const animationUrl = externalAnimation
     ? null
     : getFallbackMixamoAnimationUrl(actionPresetId, nativeClip, allowExternalAnimations);
+  const hasActiveAnimationClip = Boolean(animationUrl || nativeClip || externalAnimation);
   const { scene, restPose, scale, offset } = useMemo(() => {
     const clone = cloneSkeleton(source) as Object3D;
     clone.rotation.set(...orientationCorrection);
@@ -592,7 +751,7 @@ function LoadedMixamoCharacter({
   useLayoutEffect(() => () => disposeIsolatedModelMaterials(scene), [scene]);
 
   useLayoutEffect(() => {
-    if (animationUrl || nativeClip || externalAnimation) {
+    if (hasActiveAnimationClip) {
       onLabelAnchorYChange?.(1.8 + VIEWPORT_OBJECT_LABEL_VERTICAL_GAP);
       return;
     }
@@ -601,20 +760,21 @@ function LoadedMixamoCharacter({
     scene.traverse((object) => {
       const rest = restPose.get(object.uuid);
       if (!rest) return;
-      const rotation = rotationForBone(object.name, controls);
+      const rotation = rotationForBone(object.name, controls, boneMap);
       if (rotation) object.quaternion.multiply(new Quaternion().setFromEuler(new Euler(...rotation)));
     });
     onLabelAnchorYChange?.(1.8 + VIEWPORT_OBJECT_LABEL_VERTICAL_GAP + (controls["body.offsetY"] ?? 0));
-  }, [animationUrl, externalAnimation, nativeClip, onLabelAnchorYChange, restPose, rigState?.controls, scene]);
+  }, [boneMap, hasActiveAnimationClip, onLabelAnchorYChange, restPose, rigState?.controls, scene]);
 
   const preparedNativeClip = useMemo(
     () => nativeClip?.clone() ?? null,
-    [nativeClip, scene]
+    [nativeClip]
   );
 
-  const bodyOffsetY = rigState?.controls["body.offsetY"] ?? 0;
+  const bodyOffsetY = hasActiveAnimationClip ? 0 : rigState?.controls["body.offsetY"] ?? 0;
+  const proceduralBaseControls = runtimeMotion?.object.characterRig?.controls ?? rigState?.controls ?? {};
   return (
-    <group name="mixamo-character" position={[offset.x, offset.y + bodyOffsetY, offset.z]} scale={scale}>
+    <group ref={modelGroupRef} name="mixamo-character" position={[offset.x, offset.y + bodyOffsetY, offset.z]} scale={scale}>
       <primitive object={scene} />
       {externalAnimation ? (
         <ExternalCharacterAnimationClip
@@ -623,6 +783,7 @@ function LoadedMixamoCharacter({
           retargetMode={retargetMode}
           restPose={restPose}
           runtimeMotion={runtimeMotion}
+          playbackMode={playbackMode}
           targetBoneMap={boneMap}
           scene={scene}
         />
@@ -630,6 +791,7 @@ function LoadedMixamoCharacter({
         <MixamoAnimationPlayer
           animationTimeSeconds={animationTimeSeconds}
           clip={preparedNativeClip}
+          playbackMode={playbackMode}
           restPose={restPose}
           runtimeMotion={runtimeMotion}
           scene={scene}
@@ -641,17 +803,41 @@ function LoadedMixamoCharacter({
           retargetMode={retargetMode}
           restPose={restPose}
           runtimeMotion={runtimeMotion}
+          playbackMode={playbackMode}
           targetBoneMap={boneMap}
           scene={scene}
         />
-      ) : null}
+      ) : (
+        <ProceduralCharacterPosePlayer
+          actionPresetId={actionPresetId}
+          animationTimeSeconds={animationTimeSeconds}
+          baseControls={proceduralBaseControls}
+          boneMap={boneMap}
+          modelGroup={modelGroupRef}
+          modelGroupBaseY={offset.y}
+          restPose={restPose}
+          runtimeMotion={runtimeMotion}
+          scene={scene}
+        />
+      )}
     </group>
   );
 }
 
 function MixamoFbxCharacter(props: MixamoCharacterModelProps) {
   const loaded = useLoader(FBXLoader, props.url);
-  return <LoadedMixamoCharacter {...props} retargetMode="local-rest" source={loaded} />;
+  const useProceduralBuiltInAction = shouldUseProceduralBuiltInAction(
+    props.url,
+    props.actionPresetId,
+  );
+  return (
+    <LoadedMixamoCharacter
+      {...props}
+      allowExternalAnimations={!useProceduralBuiltInAction}
+      retargetMode="local-rest"
+      source={loaded}
+    />
+  );
 }
 
 function MixamoGlbCharacter(props: MixamoCharacterModelProps) {

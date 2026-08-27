@@ -95,7 +95,7 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
       return true
     }
   } catch {
-    // Fall through to the textarea fallback.
+    // 继续使用 textarea 回退方案。
   }
 
   const textarea = document.createElement('textarea')
@@ -141,7 +141,7 @@ const GlobalAiChat = () => {
     try {
       window.localStorage.setItem(POSITION_STORAGE_KEY, JSON.stringify(nextPosition))
     } catch {
-      // Position persistence is optional.
+      // 位置持久化失败不影响使用。
     }
   }, [])
 

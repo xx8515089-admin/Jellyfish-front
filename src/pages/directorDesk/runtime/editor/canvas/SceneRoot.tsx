@@ -43,6 +43,7 @@ import type { TransformMode } from "../store/directorStore";
 import { useDirectorStore } from "../store/directorStore";
 import { CharacterModel } from "../runtime/CharacterModel";
 import { sampleCharacterActionControls } from "../presets/characterActionPresets";
+import { resolveCompatibleCharacterActionPresetId } from "../presets/characterSpecificActionPresets";
 import { getGroundedLabelY } from "../runtime/mannequin/bodyTypes";
 import { constrainCameraPosition, constrainObjectMotionTransform } from "../schema/pathCollision";
 import { getUE4GroundedLabelY } from "../runtime/ue4Mannequin/ue4MannequinRig";
@@ -65,6 +66,7 @@ import { useResolvedLocalAssetUrl } from "../loaders/useResolvedLocalAssetUrl";
 import { parseImportedCharacterActionId } from "../schema/importedCharacterAction";
 import { GROUND_PLANE_SIZE, createGroundMaterialTexture, getGroundMaterialPreset } from "./groundMaterialPresets";
 import { getRuntimePlaybackProgress, subscribeRuntimePlayback } from "../runtime/playbackRuntime";
+import { useDirectorDeskText } from "../../useDirectorDeskText";
 import { disposeIsolatedModelMaterials, isolateAndTintModelMaterials } from "../runtime/modelMaterialTint";
 import {
   createCameraTrackingSmoothingState,
@@ -340,6 +342,7 @@ function ObjectSceneNode({
   motionDurationSeconds?: number;
   motionProgress?: number;
 }) {
+  const text = useDirectorDeskText();
   const groupRef = useRef<Group>(null!);
   const [measuredCharacterLabel, setMeasuredCharacterLabel] = useState<{
     key: string;
@@ -365,10 +368,32 @@ function ObjectSceneNode({
     measuredCharacterLabel?.key === characterLabelKey ? measuredCharacterLabel.y : fallbackCharacterLabelY;
   const focusOffsetY = item.kind === "character" ? Math.max(0.8, characterLabelY * 0.58) : 0.75;
   const pilotTargetState = pilotLockedTargetId === item.id ? "locked" : pilotHoveredTargetId === item.id ? "hovered" : null;
-  const routeActionPresetId = characterActionPreview?.objectId === item.id
-    ? characterActionPreview.actionPresetId
+  const isCharacterActionPreviewTarget = Boolean(
+    characterActionPreview
+      && (characterActionPreview.objectIds?.includes(item.id) || characterActionPreview.objectId === item.id)
+  );
+  const requestedRouteActionPresetId = characterActionPreview
+    ? isCharacterActionPreviewTarget
+      ? characterActionPreview.actionPresetId
+      : null
     : runtimeActionPresetId;
-  const resolvedActionPresetId = routeActionPresetId ?? (motionWalking ? "walk-cycle" : null);
+  const characterActionContext = {
+    assetUrl: asset?.url,
+    assetName: asset?.name ?? asset?.fileName,
+    objectName: item.name,
+    bodyType: item.bodyType,
+    importReadiness: asset?.characterImportReadiness ?? "ready" as const,
+  };
+  const routeActionPresetId = resolveCompatibleCharacterActionPresetId(
+    characterActionContext,
+    requestedRouteActionPresetId,
+  );
+  const requestedActionPresetId = requestedRouteActionPresetId
+    ?? (!characterActionPreview && motionWalking ? "walk-cycle" : null);
+  const resolvedActionPresetId = resolveCompatibleCharacterActionPresetId(
+    characterActionContext,
+    requestedActionPresetId,
+  );
   const importedActionRef = parseImportedCharacterActionId(resolvedActionPresetId);
   const importedAnimationAsset = importedActionRef
     ? (animationAssets ?? []).find(
@@ -390,7 +415,7 @@ function ObjectSceneNode({
         ),
       };
     }
-    if (!motionWalking) return item.characterRig;
+    if (!motionWalking || requestedRouteActionPresetId) return item.characterRig;
     const stride = Math.sin(motionPhase) * 28;
     const leftKnee = Math.max(0, Math.sin(motionPhase + Math.PI / 2)) * 24;
     const rightKnee = Math.max(0, Math.sin(motionPhase - Math.PI / 2)) * 24;
@@ -408,7 +433,7 @@ function ObjectSceneNode({
         "rightKnee.bend": rightKnee,
       },
     };
-  }, [item, motionPhase, motionTimeSeconds, motionWalking, routeActionPresetId]);
+  }, [item, motionPhase, motionTimeSeconds, motionWalking, requestedRouteActionPresetId, routeActionPresetId]);
   const handleCharacterLabelAnchorYChange = useCallback(
     (anchorY: number) => {
       setMeasuredCharacterLabel((current) => {
@@ -430,6 +455,7 @@ function ObjectSceneNode({
   useEffect(() => subscribeRuntimePlayback((progress) => {
     const group = groupRef.current;
     if (!group?.position?.set || !group.rotation?.set || !group.scale?.set) return;
+    if (characterActionPreview) return;
     if (item.motionPath?.keyframes.length) {
       const nextTransform = constrainObjectMotionTransform(
         item,
@@ -444,7 +470,7 @@ function ObjectSceneNode({
     }
     const nextAction = getObjectMotionActionPresetId(item, progress, motionDurationSeconds);
     setRuntimeActionPresetId((current) => current === nextAction ? current : nextAction);
-  }), [item, motionDurationSeconds, motionObjects, motionScene]);
+  }), [characterActionPreview, item, motionDurationSeconds, motionObjects, motionScene]);
 
   function commitTransformFromViewport() {
     const group = groupRef.current;
@@ -482,7 +508,9 @@ function ObjectSceneNode({
             <meshBasicMaterial color={pilotTargetState === "locked" ? "#4ADE80" : "#F7B955"} depthTest={false} transparent opacity={0.95} />
           </mesh>
           <ViewportObjectLabel position={[0, 0.42, 0]}>
-            {pilotTargetState === "locked" ? `已锁定 · ${item.name}` : `${item.name} · F 锁定`}
+            {pilotTargetState === "locked"
+              ? text(`已锁定 · ${item.name}`, `Locked · ${item.name}`)
+              : text(`${item.name} · F 锁定`, `${item.name} · F to lock`)}
           </ViewportObjectLabel>
         </group>
       ) : null}
@@ -508,7 +536,13 @@ function ObjectSceneNode({
               motionWalking={motionWalking}
               onLabelAnchorYChange={handleCharacterLabelAnchorYChange}
               rigState={animatedCharacterRig}
-              runtimeMotion={{ duration: motionDurationSeconds, object: item }}
+              runtimeMotion={{
+                duration: motionDurationSeconds,
+                object: item,
+                previewActionPresetId: isCharacterActionPreviewTarget
+                  ? resolvedActionPresetId
+                  : null,
+              }}
             />
           </Suspense>
           {showLabels ? (
@@ -827,6 +861,7 @@ function CameraMotionSelectionTransform({
   keyframes: DirectorCameraMotionKeyframe[];
   translationSnap: number | null;
 }) {
+  const text = useDirectorDeskText();
   const groupRef = useRef<Group>(null!);
   const translateSelectedCameraMotionKeyframes = useDirectorStore(
     (state) => state.translateSelectedCameraMotionKeyframes
@@ -875,7 +910,9 @@ function CameraMotionSelectionTransform({
         position={center}
         userData={{ [HIDE_FROM_VIEWPORT_CAPTURE_KEY]: true }}
       >
-        <ViewportObjectLabel position={[0, 0.48, 0]}>已选 {keyframes.length} 个轨迹点</ViewportObjectLabel>
+        <ViewportObjectLabel position={[0, 0.48, 0]}>
+          {text(`已选 ${keyframes.length} 个轨迹点`, `${keyframes.length} waypoints selected`)}
+        </ViewportObjectLabel>
       </group>
       <ViewportTransformControls
         mode="translate"
@@ -1202,6 +1239,7 @@ function CharacterRouteRig({
   transformMode: TransformMode;
   translationSnap: number | null;
 }) {
+  const text = useDirectorDeskText();
   const selectedObjectMotionKeyframeId = useDirectorStore((state) => state.selectedObjectMotionKeyframeId);
   const path = useMemo(
     () => normalizeObjectMotionPath(character.motionPath, character.transform),
@@ -1258,7 +1296,9 @@ function CharacterRouteRig({
             <sphereGeometry args={[0.11, 18, 12]} />
             <meshBasicMaterial color="#FFFFFF" depthTest={false} />
           </mesh>
-          <ViewportObjectLabel position={[0, 0.31, 0]}>进行中：{activeIndex + 1}</ViewportObjectLabel>
+          <ViewportObjectLabel position={[0, 0.31, 0]}>
+            {text(`进行中：${activeIndex + 1}`, `Active: ${activeIndex + 1}`)}
+          </ViewportObjectLabel>
         </group>
       ) : null}
     </group>
@@ -1282,6 +1322,7 @@ export function SceneRoot({ renderMode = "interactive" }: { renderMode?: SceneRo
   const activeCameraId = useDirectorStore((state) => state.project.activeCameraId);
   const cameraMotionProgress = getRuntimePlaybackProgress();
   const cameraMotionPlaying = useDirectorStore((state) => state.cameraMotionPlaying);
+  const characterActionPreview = useDirectorStore((state) => state.characterActionPreview);
   const selectedCrowdId = useDirectorStore((state) => state.selectedCrowdId);
   const transformMode = useDirectorStore((state) => state.transformMode);
   const showCharacterRoutes = useDirectorStore((state) => state.showCharacterRoutes);
@@ -1318,10 +1359,12 @@ export function SceneRoot({ renderMode = "interactive" }: { renderMode?: SceneRo
         .map((item) => [item.linkedCameraId as string, item])
     );
   }, [objects]);
-  const activeMotionDuration = useMemo(() => {
+  const timelineMotionDuration = useMemo(() => {
     const camera = cameras.find((item) => item.id === activeCameraId) ?? cameras[0];
     return camera ? getCameraMotionPath(camera).duration : 6;
   }, [activeCameraId, cameras]);
+  const activeMotionDuration = characterActionPreview?.durationSeconds ?? timelineMotionDuration;
+  const routeMotionProgress = characterActionPreview?.restoreProgress ?? cameraMotionProgress;
   const crowdLocksById = useMemo(() => {
     const result = new Map<string, boolean>();
     const crowdMembers = objects.filter((item) => item.kind === "character" && item.crowdId);
@@ -1371,12 +1414,13 @@ export function SceneRoot({ renderMode = "interactive" }: { renderMode?: SceneRo
         .map((item) => {
           const asset = item.assetRefId ? assetsById.get(item.assetRefId) : undefined;
           const hasMotion = Boolean(item.motionPath?.keyframes?.length);
-          const motionWalking = cameraMotionPlaying
+          const motionWalking = !characterActionPreview
+            && cameraMotionPlaying
             && item.kind === "character"
             && hasMotion
-            && getObjectMotionSpeed(item, cameraMotionProgress, activeMotionDuration) > 0.05;
+            && getObjectMotionSpeed(item, cameraMotionProgress, timelineMotionDuration) > 0.05;
           const motionTransform = hasMotion
-            ? getObjectMotionSnapshot(item, cameraMotionProgress, activeMotionDuration)
+            ? getObjectMotionSnapshot(item, routeMotionProgress, timelineMotionDuration)
             : item.transform;
           const renderedItem = {
             ...item,

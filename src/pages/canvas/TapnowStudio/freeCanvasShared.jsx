@@ -50,7 +50,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo, memo } from '
 import { createPortal } from 'react-dom';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-// V3.5.20-1: Direct icon imports for better performance (eliminates wrapper overhead)
+// V3.5.20-1：直接导入图标以提升性能，避免包装组件的额外开销
 import {
     Plus, Image as ImageIcon, Video, Settings, X, Play, Layers, MousePointer2, Wand2, Loader2,
     Link as LinkIcon, History, ImagePlus, Trash2, Edit2, CheckCircle2, Square, Circle, Unlink, CopyPlus,
@@ -61,7 +61,7 @@ import {
     Scissors, Layout, Download, Save, FolderOpen, Brush, Undo2, Eraser, HardDrive, ChevronDown, ChevronUp, UploadCloud,
     Monitor,
     Zap, // V3.5.24
-    Ban, Clock, Edit3, Pencil // V3.7.24: API management buttons + V3.7.25: Edit icons
+    Ban, Clock, Edit3, Pencil // V3.7.24：API 管理按钮；V3.7.25：编辑图标
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
@@ -140,15 +140,15 @@ const MaskVisualFeedback = ({ canvasRef, isDrawing }) => {
     );
 };
 
-// --- V3.5.16: LocalImageManager - IndexedDB-based image storage ---
-// Replaces localStorage Base64 storage with IndexedDB for better performance and larger capacity
+// --- V3.5.16：LocalImageManager，基于 IndexedDB 的图像存储 ---
+// 使用 IndexedDB 替代 localStorage 中的 Base64 存储，以提升性能和容量
 const LocalImageManager = (() => {
     const DB_NAME = 'tapnow_images_db';
     const DB_VERSION = 1;
     const STORE_NAME = 'images';
     let dbInstance = null;
     let dbInitPromise = null;
-    const blobUrlCache = new Map(); // Cache: id -> blobUrl
+    const blobUrlCache = new Map(); // 缓存映射：id -> blobUrl
     let workspaceId = null;
 
     const initDB = () => {
@@ -187,10 +187,10 @@ const LocalImageManager = (() => {
         return dbInitPromise;
     };
 
-    // Generate unique ID for image
+    // 为图像生成唯一 ID
     const generateId = () => `img_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-    // Save image (Base64 or Blob) to IndexedDB
+    // 将图像（Base64 或 Blob）保存到 IndexedDB
     const saveImage = async (data, existingId = null) => {
         const db = await initDB();
         if (!db) return null;
@@ -201,7 +201,7 @@ const LocalImageManager = (() => {
             try {
                 let blob;
                 if (typeof data === 'string' && data.startsWith('data:')) {
-                    // Convert Base64 to Blob
+                    // 将 Base64 转换为 Blob
                     const parts = data.split(',');
                     const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/png';
                     const binaryStr = atob(parts[1]);
@@ -245,9 +245,9 @@ const LocalImageManager = (() => {
         });
     };
 
-    // Get image as Blob URL from IndexedDB
+    // 从 IndexedDB 读取图像并生成 Blob URL
     const getImage = async (id) => {
-        // Check cache first
+        // 优先检查缓存
         if (blobUrlCache.has(id)) {
             return blobUrlCache.get(id);
         }
@@ -264,7 +264,7 @@ const LocalImageManager = (() => {
                 request.onsuccess = () => {
                     const record = request.result;
                     if (record && record.blob) {
-                        // V3.7.32 Fix: Use FileReader to return Base64 avoiding blob:null security error in file:// protocol
+                        // V3.7.32 修复：使用 FileReader 返回 Base64，避免 file:// 协议下的 blob:null 安全错误
                         const reader = new FileReader();
                         reader.onloadend = () => {
                             const base64 = reader.result;
@@ -289,12 +289,12 @@ const LocalImageManager = (() => {
         });
     };
 
-    // Delete image from IndexedDB
+    // 从 IndexedDB 删除图像
     const deleteImage = async (id) => {
         const db = await initDB();
         if (!db) return false;
 
-        // Revoke cached blob URL (only if it is a blob url)
+        // 释放缓存的 Blob URL，仅处理 Blob URL
         if (blobUrlCache.has(id)) {
             const url = blobUrlCache.get(id);
             if (url && url.startsWith('blob:')) {
@@ -312,7 +312,7 @@ const LocalImageManager = (() => {
         });
     };
 
-    // Get storage stats
+    // 获取存储统计信息
     const getStats = async () => {
         const db = await initDB();
         if (!db) return { count: 0, totalSize: 0 };
@@ -332,18 +332,18 @@ const LocalImageManager = (() => {
         });
     };
 
-    // Check if ID is an image reference
+    // 检查 ID 是否为图像引用
     const isImageId = (str) => typeof str === 'string' && str.startsWith('img_');
 
-    // V3.7.19: Removed auto-init on module load - now lazy-loaded on first use
-    // initDB();
+    // V3.7.19：移除模块加载时的自动初始化，改为首次使用时延迟加载
+    // 旧的主动初始化调用：initDB();
 
     const setWorkspace = (nextWorkspaceId) => {
         const normalizedWorkspaceId = nextWorkspaceId || 'default';
         if (workspaceId === normalizedWorkspaceId) return;
         workspaceId = normalizedWorkspaceId;
         if (dbInstance) {
-            try { dbInstance.close(); } catch (e) { /* empty */ }
+            try { dbInstance.close(); } catch (e) { /* 无需处理 */ }
         }
         dbInstance = null;
         dbInitPromise = null;
@@ -356,7 +356,7 @@ const LocalImageManager = (() => {
     return { saveImage, getImage, deleteImage, getStats, isImageId, initDB, setWorkspace };
 })();
 
-// Keep the image manager scoped to the canvas runtime.
+// 将图像管理器限制在画布运行时作用域内
 
 
 const normalizeDataUrl = (value) => {
@@ -380,7 +380,7 @@ const normalizeBase64Payload = (value) => {
         try {
             cleaned = decodeURIComponent(cleaned);
         } catch (e) {
-            // Keep original when decode fails.
+            // 解码失败时保留原值
         }
     }
     cleaned = cleaned.replace(/-/g, '+').replace(/_/g, '/');
@@ -437,7 +437,7 @@ const truncateByBytes = (value, maxBytes) => {
 const LazyBase64Image = ({ src, className, alt, onError, onLoad, ...props }) => {
     const [blobUrl, setBlobUrl] = useState(null);
     const [error, setError] = useState(false);
-    const [loading, setLoading] = useState(false); // V3.5.39: Add loading state for IDB images
+    const [loading, setLoading] = useState(false); // V3.5.39：为 IDB 图片增加加载状态
     const blobUrlRef = useRef(null);
 
     useEffect(() => {
@@ -458,9 +458,9 @@ const LazyBase64Image = ({ src, className, alt, onError, onLoad, ...props }) => 
             return () => { active = false; };
         }
 
-        // V3.5.16: If it's an IndexedDB image reference (img_xxx), resolve it
+        // V3.5.16：若为 IndexedDB 图像引用（img_xxx），则解析实际图像
         if (LocalImageManager.isImageId(src)) {
-            // V3.5.39: Set loading state to prevent rendering invalid src
+            // V3.5.39：设置加载状态，防止渲染无效的 src
             setLoading(true);
             const resolveFromIDB = async () => {
                 try {
@@ -536,7 +536,7 @@ const LazyBase64Image = ({ src, className, alt, onError, onLoad, ...props }) => 
         };
     }, [src]);
 
-    // V3.5.39: Don't render while loading IDB image to prevent 404 on "img_xxx"
+    // V3.5.39：加载 IndexedDB 图像时暂不渲染，避免 img_xxx 引发 404
     if (loading) {
         return null;
     }
@@ -545,7 +545,7 @@ const LazyBase64Image = ({ src, className, alt, onError, onLoad, ...props }) => 
         return null;
     }
 
-    // V3.5.39: Only render if blobUrl is valid (not an img_xxx string)
+    // V3.5.39：仅当 blobUrl 有效且不是 img_xxx 字符串时才渲染
     if (!blobUrl || LocalImageManager.isImageId(blobUrl)) {
         return null;
     }
@@ -816,7 +816,7 @@ const TagListEditor = ({
     );
 };
 
-// --- 极简艺术进度条组件 (Centered & Artistic) ---
+// --- 居中展示的极简艺术进度条组件 ---
 const ArtisticProgress = ({ visible, progress, status, type }) => {
     if (!visible) return null;
 
@@ -865,8 +865,8 @@ const HistoryItem = memo(({
     onImageContextMenu,
     onRefresh,
     onRebuildThumbnail,
-    performanceMode, // V2.6.1 Feature
-    localServerUrl, // V2.6.1 Feature
+    performanceMode, // V2.6.1 功能
+    localServerUrl, // V2.6.1 功能
     localCacheActive,
     onCacheMissing,
     getHistoryMeta,
@@ -1266,7 +1266,7 @@ const HistoryItem = memo(({
                     </p>
                 )}
 
-                {/* 第二行 - 空行 (通过 margin 实现) */}
+                {/* 第二行为空行，通过外边距实现 */}
                 <div className="h-1.5"></div>
 
                 {/* 第三行 - 生成类型·比率·分辨率 */}
@@ -1755,10 +1755,10 @@ const styles = `
         .input-point.connected { background-color: #60a5fa; box-shadow: 0 0 6px #60a5fa; }
         .input-point.active { background-color: #60a5fa; border-color: #fff; transform: translateY(-50%) scale(1.3); box-shadow: 0 0 8px #60a5fa; }
 
-        /* Lightbox & Overlay */
+        /* 灯箱与遮罩层 */
         .lightbox-overlay { background-color: rgba(0, 0, 0, 0.95); backdrop-filter: blur(5px); }
 
-        /* Stack Items */
+        /* 堆叠条目 */
         .thumb-stack-item {
              transition: transform 0.2s, z-index 0.2s;
         }
@@ -1789,7 +1789,7 @@ const styles = `
             background-color: rgba(96, 165, 250, 0.1);
         }
 
-        /* Markdown Styles for Chat */
+        /* 聊天内容的 Markdown 样式 */
         .markdown-body { font-size: 13px; line-height: 1.5; color: #e4e4e7; word-wrap: break-word; user-select: text !important; cursor: text; }
         .markdown-body * { user-select: text !important; cursor: text; }
         .markdown-body pre { background: #27272a; padding: 10px; border-radius: 6px; overflow-x: auto; margin: 8px 0; white-space: pre-wrap; word-wrap: break-word; user-select: text !important; cursor: text; }
@@ -1832,7 +1832,7 @@ const DEFAULT_BASE_URL = 'https://ai.comfly.chat';
 const JIMENG_API_BASE_URL = 'http://localhost:5100';
 const JIMENG_SESSION_ID = '7a16459fbd65d9c87b4ea44d3318f5fa';
 
-// V3.6.0: 供应商配置（简化版 - 无 name 字段，直接用 key 作为显示名）
+// V3.6.0：供应商配置（简化版，无 name 字段，直接用 key 作为显示名）
 const DEFAULT_PROVIDERS = {
     'openai': { key: '', url: DEFAULT_BASE_URL, apiType: 'openai', useProxy: false, forceAsync: false },
     'google': { key: '', url: DEFAULT_BASE_URL, apiType: 'openai', useProxy: false, forceAsync: false },
@@ -1843,16 +1843,16 @@ const DEFAULT_PROVIDERS = {
     'yunwu': { key: '', url: 'https://yunwu.ai', apiType: 'gemini', useProxy: false, forceAsync: false },
 };
 
-// V3.6.0: 模型配置（简化版 - id 即 modelName，无 displayName）
+// V3.6.0：模型配置（简化版，id 即 modelName，无 displayName）
 const DEFAULT_API_CONFIGS = [
-    // Chat Models
+    // 对话模型
     { id: 'gpt-5.1', provider: 'openai', type: 'Chat' },
     { id: 'gpt-5.2', provider: 'openai', type: 'Chat' },
     { id: 'gpt-4o', provider: 'openai', type: 'Chat' },
     { id: 'deepseek-v3-1-250821', provider: 'deepseek', type: 'Chat' },
     { id: 'gemini-3-pro-preview', provider: 'google', type: 'Chat' },
 
-    // Image Models
+    // 图像模型
     { id: 'MJ V6', provider: 'midjourney', type: 'Image' },
     { id: 'gpt-4o-image', provider: 'openai', type: 'Image' },
     { id: 'gemini-3-pro-image-preview', provider: 'yunwu', type: 'Image' },
@@ -1866,7 +1866,7 @@ const DEFAULT_API_CONFIGS = [
     { id: 'nanobananapro', provider: 'jimeng', type: 'Image' },
     { id: 'nanobanana', provider: 'jimeng', type: 'Image' },
 
-    // Video Models
+    // 视频模型
     { id: 'sora-2', provider: 'openai', type: 'Video', durations: ['5s', '10s'] },
     { id: 'sora-2-pro', provider: 'openai', type: 'Video', durations: ['15s', '25s'] },
     { id: 'jimeng-video-3.5-pro', provider: 'jimeng', type: 'Video', durations: ['5s', '10s'] },
@@ -2719,7 +2719,7 @@ const parseJsonArrayFromText = (text = '') => {
             const parsedDirect = JSON.parse(trimmed);
             if (Array.isArray(parsedDirect)) return parsedDirect;
         } catch (err) {
-            // ignore and try bracket extraction
+            // 忽略当前错误并尝试提取括号内容
         }
         const match = trimmed.match(/\[[\s\S]*\]/);
         if (!match) continue;
@@ -2727,7 +2727,7 @@ const parseJsonArrayFromText = (text = '') => {
             const parsedArray = JSON.parse(match[0]);
             if (Array.isArray(parsedArray)) return parsedArray;
         } catch (err) {
-            // ignore and continue
+            // 忽略当前错误并继续处理
         }
     }
     return null;
@@ -3797,7 +3797,7 @@ const buildRequestFromTemplate = (template, vars, options = {}) => {
                     try {
                         const blob = dataUrlToBlob(fileVal);
                         form.append(key, blob, 'file');
-                    } catch { /* empty */ }
+                    } catch { /* 无需处理 */ }
                 }
             };
             if (Array.isArray(val)) {
@@ -3908,7 +3908,7 @@ const getDefaultResolutionsForModel = (modelId) => {
     if (modelId.includes('jimeng-4.5')) return ['2K', '4K'];
     return RESOLUTIONS;
 };
-// Midjourney版本列表
+// Midjourney 版本列表
 const MJ_VERSIONS = [
     { label: 'MJ V7', value: '--v 7' },
     { label: 'MJ V6.1', value: '--v 6.1' },
@@ -4020,7 +4020,7 @@ const writeAssetBundleMeta = (meta) => {
             return;
         }
         localStorage.setItem(ASSET_BUNDLE_META_KEY, JSON.stringify(meta));
-    } catch (e) { /* empty */ }
+    } catch (e) { /* 无需处理 */ }
 };
 
 const getAssetBundleFallbackById = (id) => {
@@ -4090,10 +4090,10 @@ const readAutoSaveMeta = () => {
 const writeAutoSaveMeta = (meta) => {
     try {
         localStorage.setItem(AUTOSAVE_META_KEY, JSON.stringify(meta));
-    } catch (e) { /* empty */ }
+    } catch (e) { /* 无需处理 */ }
 };
 
-// --- Helper: Get Image Dimensions ---
+// --- 辅助函数：获取图像尺寸 ---
 const getImageDimensions = (src) => {
     return new Promise((resolve, reject) => {
         const img = new Image();
@@ -4103,7 +4103,7 @@ const getImageDimensions = (src) => {
     });
 };
 
-// --- Helper: Check if URL is video ---
+// --- 辅助函数：检查 URL 是否为视频 ---
 const isVideoUrl = (url) => {
     if (!url) return false;
     if (url.startsWith('data:video')) return true;
@@ -4132,7 +4132,7 @@ const getMimeTypeFromPath = (path) => {
     return map[ext] || '';
 };
 
-// --- Helper: Load Video Metadata ---
+// --- 辅助函数：加载视频元数据 ---
 const getVideoMetadata = (src) => {
     return new Promise((resolve, reject) => {
         const video = document.createElement('video');
@@ -4151,7 +4151,7 @@ const getVideoMetadata = (src) => {
     });
 };
 
-// --- Helper: Extract Key Frames from video using <video> + <canvas> ---
+// --- 辅助函数：使用 <video> 和 <canvas> 从视频中提取关键帧 ---
 const extractKeyFrames = (src, { fps = 2 } = {}) => {
     return new Promise((resolve, reject) => {
         const video = document.createElement('video');
@@ -4198,7 +4198,7 @@ const extractKeyFrames = (src, { fps = 2 } = {}) => {
     });
 };
 
-// --- Component: ImageCompareView (Beautified & Optimized) ---
+// --- 组件：经过样式与性能优化的 ImageCompareView ---
 const ImageCompareView = React.memo(({ img1, img2, theme = 'dark', language }) => {
     const [pos, setPos] = useState(50);
     const containerRef = useRef(null);
@@ -4265,7 +4265,7 @@ const ImageCompareView = React.memo(({ img1, img2, theme = 'dark', language }) =
             onMouseEnter={() => setIsHovering(true)}
             onMouseLeave={() => setIsHovering(false)}
         >
-            {/* Checkered Background */}
+            {/* 棋盘格背景 */}
             <div className="absolute inset-0 opacity-20 pointer-events-none"
                 style={{
                     backgroundImage: `conic-gradient(${isDark ? '#333' : isSolarized ? '#c9c2a8' : '#bbb'} 90deg, transparent 90deg), conic-gradient(transparent 90deg, ${isDark ? '#333' : isSolarized ? '#c9c2a8' : '#bbb'} 90deg)`,
@@ -4335,7 +4335,7 @@ const Modal = ({ isOpen, onClose, title, children, theme = 'dark' }) => {
     const isDark = theme === 'dark';
     const isSolarized = theme === 'solarized';
     return (
-        // V3.4.8: 改用 onMouseDown 关闭，避免拖拽到外部时误触 (onClick 会在 mouseUp 时触发)
+        // V3.4.8：改用 onMouseDown 关闭，避免拖拽到外部时误触（onClick 会在 mouseUp 时触发）
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onMouseDown={onClose}>
             <div
                 className={`rounded-xl shadow-2xl w-[680px] max-w-[90vw] overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[85vh] border ${isDark

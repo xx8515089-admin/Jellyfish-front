@@ -21,7 +21,7 @@ type TimelineClip = {
   end: number
 }
 
-/** Adapts real backend file records into the lightweight timeline row model. */
+/** 将后端真实文件记录转换为轻量时间轴行模型。 */
 const toTimelineClip = (file: FileRead, index: number): TimelineClip => ({
   id: file.id,
   label: file.name,

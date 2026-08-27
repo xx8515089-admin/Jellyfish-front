@@ -79,6 +79,7 @@ export default function DirectorDeskStandalonePage({ embeddedHome = false }: Dir
             key={initialInstanceId ?? 'standalone'}
             initialInstanceId={initialInstanceId}
             initialInstanceName={projectId && chapterId ? '当前章节导演台' : undefined}
+            onBackHome={handleClose}
             onClose={handleClose}
             onOpenDesk={embeddedHome ? handleOpenDesk : undefined}
           />,

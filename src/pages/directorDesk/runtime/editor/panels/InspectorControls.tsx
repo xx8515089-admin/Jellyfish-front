@@ -12,6 +12,7 @@ import {
 import { ChevronDown } from "lucide-react";
 import { useDirectorStore } from "../store/directorStore";
 import { isDirectorDeskEventInside } from "../io/directorDeskDom";
+import { useDirectorDeskText } from "../../useDirectorDeskText";
 
 type InspectorTab = {
   label: string;
@@ -161,13 +162,15 @@ export function InspectorPanel({
   children: ReactNode;
   footer?: ReactNode;
 }) {
+  const text = useDirectorDeskText();
+
   return (
     <section className={`panel-card right-inspector${className ? ` ${className}` : ""}`} aria-label={ariaLabel}>
       <header className="right-inspector-header">
         <h2 className="right-inspector-title">{title}</h2>
       </header>
       {tabs ? (
-        <div className="tab-row right-inspector-tabs" role="tablist" aria-label={`${title}面板标签`}>
+        <div className="tab-row right-inspector-tabs" role="tablist" aria-label={`${title} ${text("面板标签", "panel tabs")}`}>
           {tabs.map((tab) => (
             <button
               key={tab.label}
@@ -233,6 +236,7 @@ export function InspectorSelectField({
   children?: ReactNode;
   options?: InspectorSelectOption[];
 }) {
+  const text = useDirectorDeskText();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const resolvedOptions = options ?? parseSelectOptions(children);
@@ -289,7 +293,7 @@ export function InspectorSelectField({
           onClick={() => setIsOpen((current) => !current)}
           onKeyDown={handleTriggerKeyDown}
         >
-          <span className="inspector-dropdown-value">{selectedOption?.label ?? "请选择"}</span>
+          <span className="inspector-dropdown-value">{selectedOption?.label ?? text("请选择", "Select")}</span>
           <ChevronDown aria-hidden="true" className="inspector-dropdown-chevron" strokeWidth={1.8} />
         </button>
         {isOpen ? (
@@ -332,6 +336,7 @@ export function InspectorAxisGroup({ label, axes }: { label: string; axes: AxisC
 }
 
 function InspectorAxisInput({ control }: { control: AxisControl }) {
+  const text = useDirectorDeskText();
   const [isDragging, setIsDragging] = useState(false);
   const cleanupDragRef = useRef<(() => void) | null>(null);
   const { beginInteraction, endInteraction } = useUndoBatchInteraction();
@@ -402,7 +407,7 @@ function InspectorAxisInput({ control }: { control: AxisControl }) {
   return (
     <div className={`inspector-axis-input${isDragging ? " is-dragging" : ""}`}>
       <button
-        aria-label={`${control.ariaLabel} 拖动调整`}
+        aria-label={`${control.ariaLabel} ${text("拖动调整", "drag to adjust")}`}
         className="inspector-axis-prefix"
         type="button"
         onKeyDown={handlePrefixKeyDown}

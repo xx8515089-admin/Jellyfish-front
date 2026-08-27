@@ -1,4 +1,5 @@
-import type { CharacterRigState, DirectorObject } from "../schema/directorProject";
+import type { CharacterRigState } from "../schema/directorProject";
+import type { CharacterRuntimeMotion } from "./characterRuntimeMotion";
 import { ProceduralMannequin } from "./mannequin/ProceduralMannequin";
 import type { CharacterBodyType } from "./mannequin/bodyTypes";
 
@@ -6,7 +7,7 @@ interface PrimitiveMannequinProps {
   bodyType?: CharacterBodyType;
   color?: string;
   rigState?: CharacterRigState;
-  runtimeMotion?: { duration: number; object: DirectorObject };
+  runtimeMotion?: CharacterRuntimeMotion;
 }
 
 export function PrimitiveMannequin({ bodyType, color = "#4F8EF7", rigState, runtimeMotion }: PrimitiveMannequinProps) {

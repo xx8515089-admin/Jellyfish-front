@@ -45,7 +45,7 @@ i18n
     },
   })
 
-/** Keeps the document language metadata aligned with i18next, including on initial page load. */
+/** 保持文档语言元数据与 i18next 一致，包括页面首次加载时。 */
 function syncDocumentLanguage(language: string): void {
   document.documentElement.lang = language.startsWith('en') ? 'en' : 'zh-CN'
 }

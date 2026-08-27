@@ -173,7 +173,7 @@ const TASK_COPY_EN_TITLES: Record<TaskCopyKey, string> = {
   shotFrameImage: 'Keyframe image generation',
 }
 
-/** Builds consistent English lifecycle copy for a background task. */
+/** 为后台任务生成统一的英文生命周期文案。 */
 function createEnglishTaskCopy(title: string): TaskCopyPreset {
   return {
     title,
@@ -191,7 +191,7 @@ function createEnglishTaskCopy(title: string): TaskCopyPreset {
   }
 }
 
-/** Exposes task copy through dynamic getters so language changes do not retain module-level snapshots. */
+/** 通过动态 getter 暴露任务文案，避免语言切换后继续使用模块级快照。 */
 function createLocalizedTaskCopy(zhCN: TaskCopyPreset, enUS: TaskCopyPreset): TaskCopyPreset {
   return new Proxy(zhCN, {
     get(target, property: keyof TaskCopyPreset) {

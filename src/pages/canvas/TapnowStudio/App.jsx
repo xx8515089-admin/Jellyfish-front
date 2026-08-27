@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { createPortal, flushSync } from 'react-dom';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-// V3.5.20-1: Direct icon imports for better performance (eliminates wrapper overhead)
+// V3.5.20-1：直接导入图标以提升性能，避免包装组件的额外开销
 import {
     Plus, Image as ImageIcon, Video, X, Play, Layers, MousePointer2, Wand2, Loader2,
     Link as LinkIcon, History, ImagePlus, Trash2, Edit2, CheckCircle2, Square, Circle, CopyPlus,
@@ -13,7 +13,7 @@ import {
     Scissors, Layout, Download, Save, FolderOpen, Brush, Undo2, Eraser, HardDrive, ChevronDown, ChevronUp, UploadCloud,
     Monitor,
     Zap, // V3.5.24
-    Ban, Clock, Edit3, Pencil // V3.7.24: API management buttons + V3.7.25: Edit icons
+    Ban, Clock, Edit3, Pencil // V3.7.24：API 管理按钮；V3.7.25：编辑图标
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
@@ -389,7 +389,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         }
     }, []);
 
-    // V3.5.12-a: Auto-save interval for OOM protection (every 60 seconds)
+    // V3.5.12-a：每 60 秒自动保存一次，防止内存溢出导致数据丢失
     useEffect(() => {
         const saveInterval = setInterval(() => {
             const saveAuto = async () => {
@@ -427,10 +427,10 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         return () => clearInterval(saveInterval);
     }, []);
 
-    // V3.5.12-a: beforeunload warning to prevent accidental data loss
+    // V3.5.12-a：离开页面前发出警告，防止意外丢失数据
     useEffect(() => {
         const handleBeforeUnload = (e) => {
-            // Only warn if there are nodes on the canvas
+            // 仅当画布中存在节点时才发出警告
             if (nodesRef.current && nodesRef.current.length > 0) {
                 e.preventDefault();
                 e.returnValue = '您有未保存的更改，确定要离开吗？';
@@ -451,7 +451,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                 const parsed = JSON.parse(saved);
                 return parsed.nodes || [];
             }
-            // Compatible with legacy storage
+            // 兼容旧版存储格式
             const legacy = localStorage.getItem('tapnow_nodes');
             return legacy ? JSON.parse(legacy) : [];
         } catch (e) { return []; }
@@ -465,7 +465,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                 const parsed = JSON.parse(saved);
                 return parsed.connections || [];
             }
-            // Compatible with legacy storage
+            // 兼容旧版存储格式
             const legacy = localStorage.getItem('tapnow_connections');
             return legacy ? JSON.parse(legacy) : [];
         } catch (e) { return []; }
@@ -497,16 +497,16 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
     const [redoStack, setRedoStack] = useState([]);
     const isUndoRedoRef = useRef(false); // 防止 undo/redo 操作本身被记录
 
-    // V3.5.20: State for drag-insert logic (VideoKeyframes & Storyboard)
+    // V3.5.20：视频关键帧和分镜的拖拽插入状态
     const [dragInsertNodeId, setDragInsertNodeId] = useState(null);
     const [dragInsertIndex, setDragInsertIndex] = useState(null);
-    const [dragOverNodeId, setDragOverNodeId] = useState(null); // V3.5.22: Fixed ReferenceError
+    const [dragOverNodeId, setDragOverNodeId] = useState(null); // V3.5.22：修复 ReferenceError
 
-    // V3.5.24: Batch Generation State
-    const [batchQueue, setBatchQueue] = useState([]); // Array of {nodeId, shotId, retryCount}
-    const [batchGroups, setBatchGroups] = useState([]); // Batch group metadata
-    const batchTaskCounterRef = useRef(new Map()); // nodeId -> taskIndex
-    const shotBatchMapRef = useRef(new Map()); // key: nodeId:shotId -> { batchId, batchOrder, taskIndex }
+    // V3.5.24：批量生成状态
+    const [batchQueue, setBatchQueue] = useState([]); // 数组元素结构：{nodeId, shotId, retryCount}
+    const [batchGroups, setBatchGroups] = useState([]); // 批次分组元数据
+    const batchTaskCounterRef = useRef(new Map()); // 映射关系：nodeId -> taskIndex
+    const shotBatchMapRef = useRef(new Map()); // 键：nodeId:shotId；值：{ batchId, batchOrder, taskIndex }
     const [batchQueueMode, setBatchQueueMode] = useState(() => {
         try {
             return localStorage.getItem('tapnow_batch_queue_mode') || 'parallel';
@@ -514,12 +514,12 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
             return 'parallel';
         }
     });
-    const [batchTick, setBatchTick] = useState(0); // Used to trigger next batch after cooldown
-    const [batchConcurrency, setBatchConcurrency] = useState(() => parseInt(localStorage.getItem('tapnow_batch_concurrency') || '1')); // Default 1
-    const pendingStartsRef = useRef(new Set()); // Track items that are starting but not yet 'generating' in nodes
+    const [batchTick, setBatchTick] = useState(0); // 冷却结束后用于触发下一批任务
+    const [batchConcurrency, setBatchConcurrency] = useState(() => parseInt(localStorage.getItem('tapnow_batch_concurrency') || '1')); // 默认值为 1
+    const pendingStartsRef = useRef(new Set()); // 跟踪已经开始但节点尚未进入“生成中”的项目
     const batchStateRef = useRef('idle'); // 'idle' | 'running' | 'cooling'
 
-    // Save batch concurrency to localStorage
+    // 将批量并发数保存到 localStorage
     useEffect(() => {
         localStorage.setItem('tapnow_batch_concurrency', batchConcurrency);
     }, [batchConcurrency]);
@@ -545,11 +545,11 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         saveToUndoStackRef.current = saveToUndoStack;
     }, [saveToUndoStack]);
 
-    // V3.5.24: Batch Queue Processor
-    // V3.7.26: Strict Batch Queue Processor (Wait for batch finish + 1s delay)
-    // V3.7.29: Enhanced state machine logic + Debug logging
+    // V3.5.24：批量队列处理器
+    // V3.7.26：严格按批次处理队列，每批完成后等待 1 秒
+    // V3.7.29：增强状态机逻辑并补充调试日志
     useEffect(() => {
-        // 1. Calculate current active shots
+        // 1. 计算当前正在执行的镜头数
         let currentGeneratingCount = 0;
         const stuckTasks = []; // V3.7.27: 检测卡住的任务
         const now = Date.now();
@@ -566,7 +566,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                             stuckTasks.push({ nodeId: n.id, shotId: s.id, timeoutMs: taskTimeoutMs });
                         }
                     }
-                    // Cleanup pending starts
+                    // 清理等待启动的任务
                     const key = `${n.id}:${s.id}`;
                     if (pendingStartsRef.current.has(key)) {
                         if (s.status === 'generating' || s.status === 'done' || s.status === 'failed') {
@@ -588,7 +588,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
             currentGeneratingCount -= stuckTasks.length;
         }
 
-        // Add pending starts (tasks initiated but not yet generating)
+        // 加入等待启动的任务，即已触发但尚未进入生成状态的任务
         const totalActive = currentGeneratingCount + pendingStartsRef.current.size;
 
         if (batchQueue.length === 0) {
@@ -599,45 +599,45 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
             return;
         }
 
-        // 2. State Machine Logic
+        // 2. 状态机逻辑
         if (totalActive > 0) {
             batchStateRef.current = 'running';
-            return; // Wait for current batch to finish
+            return; // 等待当前批次完成
         }
 
-        // If totalActive is 0:
+        // 当 totalActive 为 0 时：
         if (batchStateRef.current === 'running') {
-            // Just finished a batch
+            // 表示刚刚完成一个批次
             batchStateRef.current = 'cooling';
             setTimeout(() => {
                 batchStateRef.current = 'idle';
-                setBatchTick(t => t + 1); // Trigger next batch
+                setBatchTick(t => t + 1); // 触发下一批任务
             }, 1000);
             return;
         }
 
         if (batchStateRef.current === 'cooling') {
-            return; // Still cooling down
+            return; // 仍处于冷却阶段
         }
 
-        // 3. Start Next Batch (State is 'idle')
+        // 3. 状态为 idle 时启动下一批任务
         const batchSize = batchConcurrency === 0 ? batchQueue.length : batchConcurrency;
         const toProcess = batchQueue.slice(0, batchSize);
         const remaining = batchQueue.slice(batchSize);
 
         if (toProcess.length > 0) {
 
-            // Update queue first
+            // 先更新队列
             setBatchQueue(remaining);
 
-            // Mark strict running state
+            // 标记为严格批次执行状态
             batchStateRef.current = 'running';
 
-            // Trigger all concurrently (No internal delay, delay is between batches)
+            // 同一批内并发触发，延迟仅发生在批次之间
             toProcess.forEach((item) => {
                 pendingStartsRef.current.add(`${item.nodeId}:${item.shotId}`);
 
-                // Find correct shot object
+                // 查找对应的镜头对象
                 const currentNode = nodes.find(n => n.id === item.nodeId);
                 const currentShot = currentNode?.settings?.shots?.find(s => isSameShotId(s.id, item.shotId));
 
@@ -849,7 +849,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [undo, redo]);
-    // === End Undo/Redo ===
+    // === 撤销/重做功能结束 ===
     const [view, setView] = useState(() => ({ ...DEFAULT_VIEW }));
     const normalizeViewState = (candidate) => {
         if (!candidate || typeof candidate !== 'object') return { ...DEFAULT_VIEW };
@@ -861,8 +861,8 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
     // 性能优化：使用 ref 存储 view 和拖拽状态，避免频繁 setState
     const viewRef = useRef({ x: 0, y: 0, zoom: 1 });
     const viewRafRef = useRef(null);
-    const dragOffsetRef = useRef(new Map()); // nodeId -> { x, y }
-    const dragStartPosRef = useRef(new Map()); // nodeId -> { x, y }
+    const dragOffsetRef = useRef(new Map()); // 映射关系：nodeId -> { x, y }
+    const dragStartPosRef = useRef(new Map()); // 映射关系：nodeId -> { x, y }
     const [selectedNodeId, setSelectedNodeId] = useState(null);
 
     const normalizeProviderConfig = (providerKey, config = {}) => {
@@ -1040,8 +1040,8 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                     }
                 });
 
-                // V3.8.2: Ensure every config has a unique internal ID for UI rendering stability
-                // This prevents input focus loss when editing the ID
+                // V3.8.2：确保每项配置都有唯一的内部 ID，以保证界面渲染稳定
+                // 避免编辑 ID 时输入框意外失去焦点
                 configs = configs.map(c => c._uid ? c : { ...c, _uid: `uid-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` });
 
                 return configs;
@@ -1054,15 +1054,15 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         return DEFAULT_API_CONFIGS.map(c => ({ ...c, _uid: `uid-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` }));
     });
 
-    // V3.3: Provider 状态管理
-    // V3.4.18: 使用 _deleted 标记追踪删除的Provider
+    // V3.3：供应商状态管理
+    // V3.4.18：使用 _deleted 标记追踪已删除的供应商
     const [providers, setProviders] = useState(() => {
         try {
             const saved = localStorage.getItem('tapnow_providers');
             if (saved) {
                 const parsed = JSON.parse(saved);
-                // 直接使用用户保存的数据，不再自动补充默认Provider
-                // 如果用户删除了一个Provider，它就不会再出现
+                // 直接使用用户保存的数据，不再自动补充默认供应商
+                // 用户删除供应商后，该供应商不会再次出现
                 return Object.fromEntries(Object.entries(parsed).map(([key, config]) => [key, normalizeProviderConfig(key, config)]));
             }
         } catch (e) {
@@ -1139,7 +1139,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         const oldBlacklist = apiBlacklistRef.current || {};
         apiBlacklistRef.current = { ...oldBlacklist, [key]: entry };
 
-        // V3.5.1 Debug: 详细追踪黑名单更新
+        // V3.5.1 调试：详细追踪黑名单更新
 
         // 异步更新 React 状态（用于持久化和 UI）
         setApiBlacklist(prev => ({
@@ -1235,7 +1235,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         type: 'import' // 'import' | 'export'
     });
 
-    // V2.6.1 Feature: 历史面板性能模式 (Performance Mode)
+    // V2.6.1：历史面板性能模式
     // off: 关闭 (显示原图)
     // normal: 普通 (缩略图质量 0.6)
     // ultra: 极速 (缩略图质量 0.3)
@@ -1261,12 +1261,12 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         }
     });
 
-    // V2.6.1 Feature: 本地服务器 URL
+    // V2.6.1：本地服务器 URL
     const [localServerUrl, setLocalServerUrl] = useState(() => {
         return localStorage.getItem('tapnow_local_server_url') || 'http://127.0.0.1:9527';
     });
 
-    // V2.6.1 Feature: 本地缓存服务器状态
+    // V2.6.1：本地缓存服务器状态
     const [localCacheServerConnected, setLocalCacheServerConnected] = useState(false);
     const [localCacheEnabled, setLocalCacheEnabled] = useState(() => {
         try {
@@ -1835,7 +1835,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         } catch (e) { }
     }, [promptLibrary]);
 
-    // State management
+    // 状态管理
     const [isPanning, setIsPanning] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
     const [dragNodeId, setDragNodeId] = useState(null);
@@ -1848,7 +1848,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
     const [isMouseOverStoryboard, setIsMouseOverStoryboard] = useState(false); // 鼠标是否在智能分镜表窗口内
 
     // 框选相关状态
-    // V3.7.33: Storyboard Shot Execution Timer
+    // V3.7.33：分镜镜头执行计时器
     const [shotTimers, setShotTimers] = useState({});
 
     useEffect(() => {
@@ -2029,7 +2029,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         try { return localStorage.getItem('tapnow_last_extract_model') || ''; } catch { return ''; }
     });
 
-    // V2.6.1 Feature: 本地缓存服务器连接检查
+    // V2.6.1：本地缓存服务器连接检查
     useEffect(() => {
         if (!localCacheEnabled) {
             setLocalCacheServerConnected(false);
@@ -2101,7 +2101,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         };
     }, [localCacheEnabled, localCacheServerConnected]);
 
-    // V2.6.1 Feature: 同步 local-save 节点连接状态
+    // V2.6.1：同步 local-save 节点连接状态
     useEffect(() => {
         setNodes(prev => prev.map(n => {
             if (n.type !== 'local-save') return n;
@@ -2112,7 +2112,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         }));
     }, [localCacheServerConnected]);
 
-    // V2.6.1 Feature: 本地缓存与缩略图辅助函数
+    // V2.6.1：本地缓存与缩略图辅助函数
     const sanitizeCacheId = useCallback((value) => {
         if (!value) return '';
         return value
@@ -3485,7 +3485,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                     }
                 }
             } catch (e) {
-                // fallback to browser picker
+                // 失败时回退到浏览器文件选择器
             }
         }
 
@@ -3515,7 +3515,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         input.click();
     }, [localServerUrl, normalizeLocalPath, updateLocalCacheServerConfig, showToast, refreshLocalCache]);
 
-    // V2.6.1 Feature: 性能模式缩略图生成
+    // V2.6.1：性能模式缩略图生成
     useEffect(() => {
         if (performanceMode === 'off') return;
 
@@ -3572,7 +3572,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         return () => clearTimeout(timer);
     }, [performanceMode, history, generateThumbnail]);
 
-    // V2.6.1 Feature: 角色库本地缓存
+    // V2.6.1：角色库本地缓存
     useEffect(() => {
         if (!localCacheActive) return;
 
@@ -3597,7 +3597,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         return () => clearTimeout(timer);
     }, [characterLibrary, localCacheActive, saveImageToLocalCache]);
 
-    // V2.6.1 Feature: 历史记录本地缓存（图片）
+    // V2.6.1：历史记录本地缓存（图片）
     useEffect(() => {
         if (!localCacheActive) return;
 
@@ -3815,7 +3815,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         return () => clearTimeout(timer);
     }, [history, localCacheActive, localServerConfig.imageSavePath, localServerConfig.videoSavePath, localServerUrl, saveImageToLocalCache, sanitizeCacheId, getCacheIdFromUrl, getItemProxyPreference, getProxyPreferenceForUrl, cacheRefreshTick, historyLocalCacheMap, cacheRedownloadOnEnable, refreshLocalCacheFileIndex, getLocalCacheCandidateUrl, isLocalCacheUrlAvailable, isHistoryCacheMappingValid]);
 
-    // V2.6.1 Feature: 历史记录本地缓存（视频）
+    // V2.6.1：历史记录本地缓存（视频）
     useEffect(() => {
         if (!localCacheActive) return;
 
@@ -3943,7 +3943,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         localStorage.setItem('tapnow_api_configs', JSON.stringify(apiConfigs));
     }, [apiConfigs]);
 
-    // --- MOVED HELPERS to fix ReferenceError ---
+    // --- 将辅助函数移到此处以修复 ReferenceError ---
     const deleteNode = useCallback((id) => {
         saveToUndoStack(); // V3.4.6: 保存到撤销栈
         setNodes((prev) => prev.filter((n) => n.id !== id));
@@ -4700,7 +4700,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         });
     }, [apiConfigs.length, resolveModelKey, setNodes]);
 
-    // V3.4.19: 统一获取 API 凭据 - 只从 Provider 获取，不再从 Model 获取
+    // V3.4.19：统一获取 API 凭据，仅从供应商获取，不再从模型获取
     const getApiCredentials = useCallback((modelId) => {
         const config = getApiConfigByKey(modelId);
         if (!config) {
@@ -4715,9 +4715,9 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
             };
         }
 
-        // V3.4.19: 只从 Provider 获取凭据，不再使用 model 级别的 key/url
+        // V3.4.19：只从供应商获取凭据，不再使用模型级别的 key/url
         const provider = providers[config.provider];
-        // 如果Provider没有key，使用全局key作为最后fallback
+        // 供应商未配置 key 时，最后回退到全局 key
         const key = provider?.key || globalApiKey;
         const url = (provider?.url || DEFAULT_BASE_URL).replace(/\/+$/, '');
 
@@ -4976,7 +4976,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         );
     }, [getApiConfigByKey, theme]);
 
-    // V3.4.7: 按 Provider 分组的 API 配置（用于两级菜单）
+    // V3.4.7：按供应商分组的 API 配置（用于两级菜单）
     const groupedApiConfigs = useMemo(() => {
         const groups = {};
 
@@ -5239,8 +5239,8 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
     // 使用 useMemo 缓存连接相关的计算，避免重复计算
     const connectionsByNode = useMemo(() => {
         const byNode = {
-            to: new Map(), // nodeId -> connections[]
-            from: new Map() // nodeId -> connections[]
+            to: new Map(), // 映射关系：nodeId -> connections[]
+            from: new Map() // 映射关系：nodeId -> connections[]
         };
         connections.forEach(conn => {
             if (!byNode.to.has(conn.to)) {
@@ -5619,7 +5619,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         showToast('本地服务连接失败', 'error');
     }, [localServerUrl, showToast, updateNodeSettings]);
 
-    // V2.6.1 Feature: 自动保存功能 (local-save节点)
+    // V2.6.1：自动保存功能（local-save 节点）
     const autoSaveProcessingRef = useRef(new Set());
     useEffect(() => {
         const localSaveNodes = nodes.filter(n => n.type === 'local-save' && n.settings?.autoSave);
@@ -6003,7 +6003,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
     const handleMouseDown = (e) => {
         if (e.button === 0 || e.button === 1) {
             if (e.currentTarget.id === 'canvas-bg') {
-                // Check if clicking on interactive elements
+                // 检查是否点击了可交互元素
                 const target = e.target;
                 if (target && (
                     target.tagName === 'INPUT' ||
@@ -6013,11 +6013,11 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                     target.isContentEditable ||
                     target.closest('input, textarea, select, button, [contenteditable="true"]')
                 )) {
-                    return; // Do not handle drag if clicking on interactive element
+                    return; // 点击交互元素时不处理拖拽
                 }
 
-                // Auto-clear text selection if we are starting a drag on the canvas background
-                // This improves UX by preventing dragging from being "stuck" due to accidental text selection
+                // 从画布背景开始拖动时自动清除文本选区
+                // 防止意外选中文字导致拖动卡住
                 const selection = window.getSelection();
                 if (selection && selection.toString().length > 0) {
                     selection.removeAllRanges();
@@ -6803,7 +6803,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
     }, [extractNodeIOMediaPayload, extractNodeIOTextPayload]);
 
     const connectedNodeIOEnvelopeCache = useMemo(() => {
-        const cache = new Map(); // nodeId -> { inputType -> envelopes[] }
+        const cache = new Map(); // 映射关系：nodeId -> { inputType -> envelopes[] }
         connections.forEach((conn) => {
             const sourceNode = nodesMap.get(conn.from);
             if (!sourceNode) return;
@@ -9950,7 +9950,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                                         updateShot(storyboardTask.nodeId, storyboardTask.shotId, {
                                             video_url: videoUrl,
                                             status: 'done',
-                                            durationCost: durationMs / 1000 // Save duration in seconds
+                                            durationCost: durationMs / 1000 // 以秒为单位保存耗时
                                         });
                                         // 清理任务映射
                                         storyboardTaskMapRef.current.delete(taskId);
@@ -9994,7 +9994,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                                     updateShot(storyboardTask.nodeId, storyboardTask.shotId, {
                                         video_url: videoUrl,
                                         status: 'done',
-                                        durationCost: durationMs / 1000 // Save duration in seconds
+                                        durationCost: durationMs / 1000 // 以秒为单位保存耗时
                                     });
                                     // 清理任务映射
                                     storyboardTaskMapRef.current.delete(taskId);
@@ -10029,27 +10029,27 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                     console.error('[Tapnow] Veo: 任务失败', { status, failReason, errorMsg });
                     setHistory((prev) => prev.map((hItem) => hItem.id === taskId ? { ...hItem, status: 'failed', errorMsg } : hItem));
 
-                    // V3.7.33: Save duration even on failure for storyboard
+                    // V3.7.33：分镜任务失败时也保存执行时长
                     const endTime = Date.now();
-                    // Need to find startTime from history
-                    // Since specific history item isn't easily accessible here without searching 'prev', we rely on storyboardTaskMapRef if possible or just use current time approx
-                    // Better to calculate approximate duration if history lookup is hard within state updater, but we can do it outside
-                    // NOTE: pollVeoJob doesn't have easy access to historyMap like pollSoraJob above (which used it).
-                    // We can conceptually assume startTime was passed or we just check the item.
-                    // Let's use a functional update for history to find it, but we need to run side effect.
-                    // For now, simpler approach: we don't have perfect duration for Veo failure here easily without reading history. 
-                    // Let's defer to avoiding complex lookup inside loop. 
-                    // Wait, we can use the ref map to check if it's a storyboard task first.
+                    // 需要从历史记录中查找 startTime
+                    // 此处若不搜索 prev 就难以直接取得指定历史项，因此优先使用 storyboardTaskMapRef，否则用当前时间估算
+                    // 若在状态更新器中查询历史记录过于复杂，可以在外部计算近似时长
+                    // 注意：pollVeoJob 不像上方的 pollSoraJob 那样便于访问 historyMap
+                    // 可以假定调用方传入了 startTime，也可以直接检查历史项
+                    // 使用历史记录的函数式更新查找任务，但需要留意其中的副作用
+                    // 当前简化处理：不读取历史记录时，无法精确计算 Veo 失败任务的时长
+                    // 暂不在循环内部加入复杂查询
+                    // 可先通过引用映射判断它是否为分镜任务
                     const storyboardTask = storyboardTaskMapRef.current.get(taskId);
                     if (storyboardTask) {
-                        // For Veo/Jimeng, we don't have local historyMap cache updated in pollVeoJob scope usually? 
-                        // Actually historyMap is just a ref or state? It was used in pollSoraJob as `historyMap.get(taskId)`.
-                        // `historyMap` is defined in App component scope? Yes, `const [historyMap, setHistoryMap] = useState(new Map());` NO, it's usually derived or ref.
-                        // Checked file: `historyMap` was used in pollSoraJob. Let's assume it's available.
-                        // If not, we can't easily get startTime.
-                        // Fallback: We can't get accurate duration easily. BUT user wants persistent time.
-                        // Maybe just mark as failed. If we can't get duration, we can't show it.
-                        // Let's try to access historyMap.
+                        // 对于 Veo/即梦，pollVeoJob 作用域中的本地 historyMap 缓存通常不会同步更新
+                        // pollSoraJob 通过 `historyMap.get(taskId)` 使用了该映射，需要确认这里拿到的是引用还是状态
+                        // historyMap 位于 App 组件作用域，通常是派生值或引用，而不是独立状态
+                        // pollSoraJob 已使用 historyMap，因此这里按可访问处理
+                        // 若无法访问，就不容易取得 startTime
+                        // 回退方案无法得到精确时长，但界面仍需要持久化时长
+                        // 若确实无法计算，只能先标记为失败且不展示时长
+                        // 尝试读取 historyMap
                         const historyItem = historyMap.get(taskId);
                         const durationMs = historyItem ? (Date.now() - historyItem.startTime) : 0;
 
@@ -10086,14 +10086,14 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
     };
 
     const pollSoraJob = (jobId, taskId, baseUrl, apiKey, w, h, modelId = '', attempt = 0) => {
-        // V3.5.15 debug: Prevent polling with null/undefined jobId
+        // V3.5.15 调试修复：jobId 为 null 或 undefined 时禁止轮询
         if (!jobId || jobId === 'null' || jobId === 'undefined') {
             console.error(`[Poll Error] Invalid JobId: ${jobId} for task ${taskId}`);
             setHistory(prev => prev.map(hItem => hItem.id === taskId ? {
                 ...hItem,
                 status: 'failed',
                 errorMsg: 'Task failed: No Job ID returned',
-                durationMs: Date.now() - (hItem.startTime || Date.now()) // Stop timer
+                durationMs: Date.now() - (hItem.startTime || Date.now()) // 停止计时
             } : hItem));
             return;
         }
@@ -10163,7 +10163,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                             updateShot(storyboardTask.nodeId, storyboardTask.shotId, {
                                 video_url: videoUrl,
                                 status: 'done',
-                                durationCost: durationMs / 1000 // Save duration in seconds
+                                durationCost: durationMs / 1000 // 以秒为单位保存耗时
                             });
                             // 清理任务映射
                             storyboardTaskMapRef.current.delete(taskId);
@@ -10186,7 +10186,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                 if (status === 'FAILED' || status === 'ERROR' || status === 'CANCELLED') {
                     setHistory(prev => prev.map(hItem => hItem.id === taskId ? { ...hItem, status: 'failed', errorMsg: `任务失败: ${status}` } : hItem));
 
-                    // V3.7.33: Save duration even on failure for storyboard
+                    // V3.7.33：分镜任务失败时也保存执行时长
                     const endTime = Date.now();
                     const historyItem = historyMap.get(taskId);
                     const durationMs = endTime - (historyItem?.startTime || endTime);
@@ -10712,7 +10712,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
 
                         if (isFailedStatus) {
                             // 任务失败
-                            // V3.7.33: Handle failure duration for storyboard
+                            // V3.7.33：处理分镜任务失败时的执行时长
                             const endTime = Date.now();
                             const durationMs = endTime - (hItem.startTime || endTime);
                             const failedStatusMsg = errorMsg || `任务失败: ${status}`;
@@ -11886,7 +11886,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
             // 使用 ref 获取最新黑名单，过滤已黑名单的 key
             const currentBlacklist = apiBlacklistRef.current || {};
 
-            // V3.5.1 Debug: 详细日志输出
+            // V3.5.1 调试：输出详细日志
 
             const availableKeys = allKeys.filter(k => !currentBlacklist[k]);
 
@@ -11900,7 +11900,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
             }
         }
 
-        // [Debug] Log selected API key (masked)
+        // [调试] 记录选中的 API 密钥，输出时进行脱敏
         if (apiKey) {
             console.log(`[API Select] Using Key ending in ...${apiKey.slice(-4)}`);
         }
@@ -11945,12 +11945,12 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         }
         let { sizeStr, w, h } = getModelParams(modelId, ratio, resolutionForCalc);
 
-        // Auto Resolution Logic (Direct Source, No Scaling, Just Alignment)
-        // Fix: Only use source dimensions if Ratio is ALSO Auto. If user picks a ratio (e.g. 1:1), respect that.
+        // 自动分辨率逻辑：直接使用源尺寸，不缩放，仅做对齐
+        // 修复：仅当比例同样为自动时才使用源尺寸；用户指定比例（如 1:1）时应尊重该设置
         if (resolution === 'Auto' && ratio === 'Auto' && sourceImage) {
             try {
                 const dims = await getImageDimensions(sourceImage);
-                // Force original size (aligned to 64) without downscaling
+                // 强制使用原始尺寸并按 64 对齐，不进行缩小
                 const safeW = Math.round(dims.w / 64) * 64;
                 const safeH = Math.round(dims.h / 64) * 64;
 
@@ -12033,7 +12033,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         const useProxy = !!credentials.useProxy;
         const shouldInsertHistoryItem = !options._isRetry && !options._skipHistoryInsert;
 
-        // V3.5.31: Skip history creation on retry to prevent duplicate tasks
+        // V3.5.31：重试时跳过历史记录创建，防止产生重复任务
         if (shouldInsertHistoryItem) {
             setHistory((prev) => [{
                 id: taskId, type, url: '',
@@ -12094,7 +12094,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
             }
         }
 
-        // V3.5.31: Skip opening history panel on retry
+        // V3.5.31：重试时不重复打开历史面板
         if (shouldInsertHistoryItem) {
             // 优化：延迟打开历史面板，避免与 setHistory 同时触发造成卡顿
             requestAnimationFrame(() => {
@@ -12396,7 +12396,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                     };
                     if (aspect) payload.aspect_ratio = aspect;
                 }
-                // 0.5 Gemini Native (Yunwu/VibeCoding)
+                // 0.5 Gemini 原生模式（Yunwu/VibeCoding）
                 else if (isGeminiNative) {
                     const modelName = config?.modelName || 'gemini-3-pro-image-preview';
                     const parts = [];
@@ -12445,7 +12445,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                     const keyParam = apiKey ? `?key=${encodeURIComponent(apiKey)}` : '';
                     endpoint = `${baseUrl}/v1beta/models/${modelName}:generateContent${keyParam}`;
                 }
-                // 0.6 Antigravity Gemini-3-Pro-Image (OpenAI Compatible)
+                // 0.6 Antigravity Gemini-3-Pro-Image（兼容 OpenAI）
                 else if (isAntigravityImage) {
                     const modelName = config?.modelName || modelId || 'gemini-3-pro-image';
                     const antigravityQuality = getAntigravityQualityByResolution(resolution);
@@ -12518,7 +12518,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
 
                     payload = formData;
                 }
-                // 2. Flux Kontext
+                // 2. Flux Kontext 模型
                 else if (isFluxKontext) {
                     endpoint = `${baseUrl}/v1/images/edits`;
                     useMultipart = true;
@@ -12539,7 +12539,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                     }
                     payload = formData;
                 }
-                // 3. OpenAI Image
+                // 3. OpenAI 图像模型
                 else if (isOpenAIImage) {
                     let finalPrompt = prompt || '';
                     const jsonBody = {
@@ -13018,7 +13018,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                 // --- 发送请求逻辑 (通用) (Supports Failover) ---
                 // --- 发送请求逻辑 (通用) (Supports Failover) ---
 
-                // Helper to perform fetch
+                // 执行 fetch 请求的辅助函数
                 const performFetch = async (currentApiKey, currentBaseUrl) => {
                     const overrideUrl = requestOverride?.url || endpoint;
                     const overrideMethod = (requestOverride?.method || 'POST').toString().toUpperCase();
@@ -13095,8 +13095,8 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                 if (baseUrlsList.length > 1) shuffleArray(baseUrlsList);
 
                 let resp;
-                let data; // Store parsed data directly
-                let text; // Store text body
+                let data; // 直接存储解析后的数据
+                let text; // 存储文本正文
                 let lastError;
                 let success = false;
 
@@ -13131,7 +13131,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                     try {
                         resp = await performFetch(combo.key, combo.url);
 
-                        // Strict Network Level Failures (401/402/403)
+                        // 需要严格处理的网络层错误（401/402/403）
                         if (resp.status === 401 || resp.status === 402 || resp.status === 403) {
                             const reason = resp.status === 402 ? '积分耗尽 (402)' : (resp.status === 401 ? '认证失效 (401)' : '访问被拒绝 (403)');
                             console.warn(`[API Failover] Key ending in ...${combo.key.slice(-4)} failed with status ${resp.status}. Trying next...`);
@@ -13140,17 +13140,17 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                             continue;
                         }
 
-                        // Business Logic Level Failures (Jimeng 1006, etc)
-                        // Note: resp.text() consumes the body, so we must store it.
+                        // 业务逻辑层错误（如即梦 1006）
+                        // 注意：resp.text() 会消耗响应体，因此必须保存读取结果
                         text = await resp.text();
                         try {
                             data = JSON.parse(text);
                         } catch (e) {
-                            // If JSON parse fails but status was 200, it's a critical error, likely invalid response.
-                            // But usually we just throw error later.
+                            // 状态码为 200 但 JSON 解析失败时，通常说明响应内容无效
+                            // 一般在后续流程中统一抛出错误
                         }
 
-                        // Debug: 检查响应数据
+                        // 调试：检查响应数据
                         if (isJimeng && data) {
                         }
 
@@ -13192,7 +13192,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                             console.warn(`🚫 [API Blacklist] Key ending in ...${combo.key.slice(-4)} 积分耗尽 (1006)`);
                             addToBlacklist(combo.key, reason);
                             lastError = new Error(`Jimeng Error: ${data.message || 'Not enough credits'}`);
-                            continue; // Failover!
+                            continue; // 故障转移
                         }
 
                         success = true;
@@ -13213,12 +13213,12 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                     throw new Error(errorMsg);
                 }
 
-                // If success, we already have `text` and `data`.
-                // BUT logic below expects `resp.text()` to be called or `text` to be available.
-                // We shouldn't call resp.text() again.
-                // Let's ensure the variables match what follows.
+                // 请求成功时已经取得 `text` 和 `data`
+                // 下方逻辑要求已经调用 `resp.text()` 或存在可用的 `text`
+                // 此处不能再次调用 resp.text()
+                // 确保变量与后续逻辑保持一致
 
-                // Data is already parsed inside the loop if success=true
+                // success=true 时，数据已在循环内部完成解析
                 if (!data && text) {
                     try { data = JSON.parse(text); } catch (e) { throw new Error(`响应解析失败: ${text.substring(0, 100)}`); }
                 }
@@ -13588,10 +13588,10 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                     return updated;
                 });
                 return;
-            } // Close if (type === 'image')
+            } // type === 'image' 分支结束
 
             if (type === 'video') {
-                // V3.4.20: Explicitly define config for video generation block
+                // V3.4.20：为视频生成分支显式定义配置
                 const config = getApiConfigByKey(modelId);
                 const customParams = Array.isArray(config?.customParams) ? config.customParams : [];
                 const providerKey = config?.provider || credentials.provider;
@@ -13837,7 +13837,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                     return Number.isFinite(parsed) && parsed > 0 ? parsed : 8;
                 })();
 
-                // --- Grok-3 Video Logic (Pure JSON Strategy to fix Int type error, align spec /v2/videos/generations) ---
+                // --- Grok-3 视频逻辑：使用纯 JSON 修复整数类型错误，并对齐 /v2/videos/generations 规范 ---
                 if (isGrokVideo) {
                     const endpoint = `${baseUrl}/v2/videos/generations`;
                     // 1. 强制转换为整数 (解决 Go 后端类型错误)
@@ -13929,7 +13929,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                     return; // 阻断后续代码执行
                 }
 
-                // Generic Video Logic (Sora/Kling/etc) - Force Multipart for Image Input with correct field names
+                // 通用视频逻辑（Sora、可灵等）：图像输入强制使用 Multipart 并传递正确字段名
                 if (isJimengVideo) {
                     endpoint = `${baseUrl}/v1/videos/generations`;
                     const allowedDurations = Array.isArray(config?.durations)
@@ -14079,7 +14079,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                         if (config?.supportsHD && (options.isHD || node?.settings?.isHD)) {
                             formData.append('quality', 'hd');
                         }
-                        // Sora sometimes uses input_reference or image, append both for safety
+                        // Sora 可能使用 input_reference 或 image 字段，为兼容性同时附加两者
                         formData.append('input_reference', blob, 'ref.png');
                         formData.append('image', blob, 'ref.png');
                     } else if (isGrokVideo) {
@@ -14094,7 +14094,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                         formData.append('model', config?.modelName);
                         formData.append('prompt', prompt);
                         formData.append('image', blob, 'input.png');
-                        if (!omitRatioOnSubmit && !omitResolutionOnSubmit) formData.append('size', sizeStr); // Ensure size is passed for generic
+                        if (!omitRatioOnSubmit && !omitResolutionOnSubmit) formData.append('size', sizeStr); // 确保通用接口能够收到尺寸参数
                     }
                     applyVideoCustomParams(formData);
                     body = formData;
@@ -14349,7 +14349,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                 const is1006Error = realErrorCode === 1006;
                 const isLoginError = errorCode === -2001 && errorMessage.includes('34010105');
 
-                // V3.5.31: Handle Jimeng API generation failure (code -2008, status 30, error 2060)
+                // V3.5.31：处理即梦 API 生成失败（code -2008、status 30、error 2060）
                 const isGenerationError = errorCode === -2008 || errorMessage.includes('2060');
                 if (isGenerationError) {
                     // 提取更详细的错误信息
@@ -14367,13 +14367,13 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                     const reason = is1006Error ? '积分耗尽 (1006)' : '登录失效 (34010105)';
                     console.warn(`🚫 [Video API] Key ending in ...${apiKey.slice(-4)} failed: ${reason}. Adding to blacklist.`);
                     addToBlacklist(apiKey, reason);
-                    // Throw with special marker for retry
+                    // 抛出带特殊标记的错误，以便触发重试
                     const retryError = new Error(`RETRY_WITH_NEW_KEY: ${errorMessage}`);
                     retryError.shouldRetry = true;
                     throw retryError;
                 }
 
-                // V3.4.26: Support data.data array format (e.g., [{"url": "..."}])
+                // V3.4.26：支持 data.data 数组格式（如 [{"url": "..."}]）
                 const immediateUrl = data?.video_url || data?.url || data?.data?.video_url || data?.data?.url || (Array.isArray(data?.data) && data.data[0]?.url);
                 if (immediateUrl) {
                     const endTime = Date.now();
@@ -14390,7 +14390,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                             updateShot(storyboardTask.nodeId, storyboardTask.shotId, {
                                 video_url: immediateUrl,
                                 status: 'done',
-                                durationCost: durationMs / 1000 // Save duration in seconds
+                                durationCost: durationMs / 1000 // 以秒为单位保存耗时
                             });
                             // 清理任务映射
                             storyboardTaskMapRef.current.delete(taskId);
@@ -14414,9 +14414,9 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
 
                 if (modelId.includes('veo')) pollVeoJob(jobId, taskId, baseUrl, apiKey, w, h);
                 else pollSoraJob(jobId, taskId, baseUrl, apiKey, w, h, modelId);
-            } // Close if (type === 'video')
+            } // type === 'video' 分支结束
         } catch (err) {
-            // V3.5.12: If error has shouldRetry flag, recursively retry with new key
+            // V3.5.12：错误包含 shouldRetry 标记时，使用新密钥递归重试
             if (err.shouldRetry) {
                 if (type === 'image') {
                     const retryMessage = err?.message || '重试中';
@@ -14439,7 +14439,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                         await waitForMilliseconds(requestedDispatchIntervalMs);
                     }
                 }
-                // V3.5.31: Pass _isRetry and _existingTaskId to prevent duplicate history items
+                // V3.5.31：传递 _isRetry 和 _existingTaskId，防止生成重复历史项
                 return startGeneration(prompt, type, sourceImages, nodeId, { ...options, _isRetry: true, _existingTaskId: taskId });
             }
             if (
@@ -14501,7 +14501,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
             }
 
             console.error('[CONSOLE_ERROR]', err);
-            // V3.5.12: Calculate duration for timer stop
+            // V3.5.12：计算执行时长并停止计时器
             const endTime = Date.now();
             const currentItem = history.find(h => h.id === taskId);
             const durationMs = currentItem?.startTime ? endTime - currentItem.startTime : 0;
@@ -14592,7 +14592,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                     return;
                 }
             }
-            // V3.5.12: Include durationMs to stop timer when failed
+            // V3.5.12：失败时也传入 durationMs 以停止计时器
             setHistory((prev) => prev.map((hItem) => {
                 if (hItem.id !== taskId) return hItem;
                 return attachHistoryThrottleStats({
@@ -16118,7 +16118,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                 // 完成
                 setProgressState(prev => ({ ...prev, progress: 100, status: 'FINALIZING...' }));
 
-                // 批量更新 State
+                // 批量更新状态
                 setTimeout(() => {
                     applyLoadedProjectState(tempState);
                     setProgressState(prev => ({ ...prev, visible: false }));
@@ -17626,7 +17626,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                 isSameShotId(shot.id, shotId) ? { ...shot, ...finalUpdates } : shot
             );
 
-            // [Cleaned Log] updateShot info removed
+            // [日志清理] 已移除 updateShot 信息
 
 
             // 返回更新后的节点数组
@@ -17845,10 +17845,10 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
     };
 
     // 分镜表任务映射：用于追踪从分镜表触发的生成任务
-    const storyboardTaskMapRef = useRef(new Map()); // taskId -> { storyboardNodeId, shotId }
-    const storyboardHistoryMapRef = useRef(new Map()); // historyId -> { nodeId, shotId, isImageMode }
-    const storyboardHistorySyncRef = useRef(new Set()); // historyId -> synced
-    const imageBatchTaskMapRef = useRef(new Map()); // taskId -> { total, completed, failed, intervalMs }
+    const storyboardTaskMapRef = useRef(new Map()); // 映射关系：taskId -> { storyboardNodeId, shotId }
+    const storyboardHistoryMapRef = useRef(new Map()); // 映射关系：historyId -> { nodeId, shotId, isImageMode }
+    const storyboardHistorySyncRef = useRef(new Set()); // 映射关系：historyId -> synced
+    const imageBatchTaskMapRef = useRef(new Map()); // 映射关系：taskId -> { total, completed, failed, intervalMs }
 
     const mergeHistoryImageUrlsForBatch = useCallback((historyItem, incomingUrls) => {
         const incoming = Array.isArray(incomingUrls)
@@ -18205,7 +18205,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         if (shot.image_url) {
             sourceImages.push(shot.image_url);
         }
-        // V3.7.5: Support lastFrame (Video End Frame)
+        // V3.7.5：支持 lastFrame（视频尾帧）
         if (shot.useFirstLastFrame && shot.lastFrame) {
             sourceImages.push(shot.lastFrame);
         }
@@ -19689,7 +19689,7 @@ ${inputText.substring(0, 15000)} ... (截断)
         const targetNodeIds = new Set(nodesToArrange.map(n => n.id));
 
         // 2. 构建图结构
-        // map: id -> graphNode
+        // 映射关系：id -> graphNode
         const graph = {};
         nodesToArrange.forEach(n => {
             graph[n.id] = {
@@ -19745,7 +19745,7 @@ ${inputText.substring(0, 15000)} ... (截断)
         calcLevels();
 
         // 4. 构建层级数组
-        // layers: [ [node, node], [node], ... ]
+        // 层级结构：[[node, node], [node], ...]
         const maxLevel = Math.max(...Object.values(graph).map(n => n.level));
         const layers = Array.from({ length: maxLevel + 1 }, () => []);
 
@@ -19932,25 +19932,25 @@ ${inputText.substring(0, 15000)} ... (截断)
 
         const files = Array.from(e.dataTransfer.files);
 
-        // V3.5.17: Handle video files
+        // V3.5.17：处理视频文件
         const videoFile = files.find(file => file.type.startsWith('video/'));
         if (videoFile) {
             handleVideoFileUpload(nodeId, videoFile);
             return;
         }
 
-        // V3.5.17: Handle image files - add as keyframes for keyframe organizer
+        // V3.5.17：处理图像文件，将其作为关键帧加入关键帧整理器
         const imageFiles = files.filter(file => file.type.startsWith('image/'));
-        // V3.5.19: Sort by filename naturally (1, 2, 10)
+        // V3.5.19：按文件名自然排序（1、2、10）
         imageFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
 
         if (imageFiles.length > 0) {
-            // Get existing data from node
+            // 从节点中取得现有数据
             const existingNode = nodesMap.get(nodeId);
             const existingFrames = existingNode?.frames || [];
             const existingKeyframes = existingNode?.selectedKeyframes || [];
 
-            // Read all images and save to IndexedDB to avoid localStorage quota
+            // 读取全部图像并保存到 IndexedDB，避免超出 localStorage 配额
             let loadedCount = 0;
             const newKeyframes = [];
 
@@ -19959,25 +19959,25 @@ ${inputText.substring(0, 15000)} ... (截断)
                 reader.onload = async (ev) => {
                     const base64Data = ev.target.result;
 
-                    // Save to IndexedDB and get img_id
+                    // 保存到 IndexedDB 并取得 img_id
                     const imgId = await LocalImageManager.saveImage(base64Data);
 
                     newKeyframes[idx] = {
-                        time: existingFrames.length + idx,  // Use frames count for time
-                        url: imgId,  // Store img_id instead of base64
+                        time: existingFrames.length + idx,  // 使用帧数量作为时间值
+                        url: imgId,  // 存储 img_id 而不是 base64
                         filename: file.name
                     };
                     loadedCount++;
 
-                    // When all images loaded, update node once
+                    // 所有图像加载完成后一次性更新节点
                     if (loadedCount === imageFiles.length) {
                         const validKeyframes = newKeyframes.filter(Boolean);
                         setNodes(prev => prev.map(n =>
                             n.id === nodeId
                                 ? {
                                     ...n,
-                                    frames: [...existingFrames, ...validKeyframes],  // Add to frames for display
-                                    selectedKeyframes: [...existingKeyframes, ...validKeyframes]  // Also pre-select
+                                    frames: [...existingFrames, ...validKeyframes],  // 添加到帧列表用于展示
+                                    selectedKeyframes: [...existingKeyframes, ...validKeyframes]  // 同时设为预选状态
                                 }
                                 : n
                         ));
@@ -19988,11 +19988,11 @@ ${inputText.substring(0, 15000)} ... (截断)
         }
     };
 
-    // V3.5.20: Drag & Drop Insert Logic Handlers
+    // V3.5.20：拖放插入逻辑处理器
     const handleKeyframeItemDragOver = (e, nodeId, idx) => {
         e.preventDefault(); e.stopPropagation();
         const rect = e.currentTarget.getBoundingClientRect();
-        // Determine insertion point: left half = before, right half = after
+        // 判断插入位置：左半区域插到前面，右半区域插到后面
         const isRightHalf = (e.clientX - rect.left) > (rect.width / 2);
         const insertIdx = isRightHalf ? idx + 1 : idx;
 
@@ -20004,7 +20004,7 @@ ${inputText.substring(0, 15000)} ... (截断)
 
     const handleKeyframeContainerDragOver = (e, nodeId, length) => {
         e.preventDefault(); e.stopPropagation();
-        // If hovering directly over empty space in container, default to append
+        // 悬停在容器空白区域时默认追加到末尾
         if (e.target === e.currentTarget) {
             if (dragInsertIndex !== length || dragInsertNodeId !== nodeId) {
                 setDragInsertIndex(length);
@@ -20017,12 +20017,12 @@ ${inputText.substring(0, 15000)} ... (截断)
         e.preventDefault();
         e.stopPropagation();
 
-        // Calculate insertion index
+        // 计算插入索引
         let insertIdx = (dragInsertNodeId === nodeId && dragInsertIndex !== null)
             ? dragInsertIndex
             : (nodesMap.get(nodeId)?.frames || []).length;
 
-        // Reset drag state
+        // 重置拖拽状态
         setDragInsertNodeId(null);
         setDragInsertIndex(null);
 
@@ -20044,7 +20044,7 @@ ${inputText.substring(0, 15000)} ... (截断)
         const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
         if (files.length === 0) return;
 
-        // Sort files by name
+        // 按文件名排序
         files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
 
         const existingNode = nodesMap.get(nodeId);
@@ -20060,8 +20060,8 @@ ${inputText.substring(0, 15000)} ... (截断)
                 const base64Data = ev.target.result;
                 const imgId = await LocalImageManager.saveImage(base64Data);
 
-                // V3.7.6: Create blob URL immediately so it can be displayed
-                let displayUrl = base64Data; // Fallback to base64
+                // V3.7.6：立即创建 Blob URL 以便显示
+                let displayUrl = base64Data; // 回退为 base64
                 try {
                     const blob = await LocalImageManager.getImage(imgId);
                     if (blob) displayUrl = URL.createObjectURL(blob);
@@ -20072,7 +20072,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                 newKeyframes[idx] = {
                     time: Date.now() + idx,
                     url: displayUrl,
-                    imgId: imgId, // Keep ID for persistence
+                    imgId: imgId, // 保留 ID 用于持久化
                     filename: file.name
                 };
                 loadedCount++;
@@ -20080,7 +20080,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                 if (loadedCount === files.length) {
                     const validNewFrames = newKeyframes.filter(Boolean);
 
-                    // Insert into frames array
+                    // 插入帧数组
                     const updatedFrames = [
                         ...existingFrames.slice(0, insertIdx),
                         ...validNewFrames,
@@ -20879,10 +20879,10 @@ ${inputText.substring(0, 15000)} ... (截断)
         const resolvedUrl = resolveHistoryUrl(item, item?.url || item?.originalUrl || item?.mjOriginalUrl || null);
         if (!resolvedUrl) return;
 
-        // Fix: Mark video content so input-image node knows to display it properly
+        // 修复：标记视频内容，使 input-image 节点能够正确显示
         let content = resolvedUrl;
         if (item.type === 'video' && !isVideoUrl(content)) {
-            // Append helper param so isVideoUrl returns true
+            // 追加辅助参数，使 isVideoUrl 返回 true
             content += (content.includes('?') ? '&' : '?') + 'force_video_display=true';
         }
 
@@ -21376,7 +21376,7 @@ ${inputText.substring(0, 15000)} ... (截断)
 
     // 使用 useMemo 缓存节点的连接状态，避免每次渲染时重复计算
     const nodeConnectedStatus = useMemo(() => {
-        const status = new Map(); // nodeId -> boolean
+        const status = new Map(); // 映射关系：nodeId -> boolean
         connections.forEach(conn => {
             if (!conn.inputType || conn.inputType === 'default') {
                 status.set(conn.to, true);
@@ -21843,7 +21843,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                 onMouseLeave={() => { if ((connectingSource || connectingTarget) && hoverTargetId === node.id) setHoverTargetId(null); }}
                 onMouseUp={(e) => handleNodeMouseUp(node.id, e)}
                 onDoubleClick={(e) => {
-                    // V3.5.26: Prevent canvas double-click menu for ALL nodes
+                    // V3.5.26：阻止所有节点触发画布双击菜单
                     e.stopPropagation();
 
                     // 功能6：双击图片或视频节点显示预览弹窗
@@ -21944,7 +21944,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                     className={`overflow-hidden rounded-xl flex-1 flex flex-col pointer-events-none h-full w-full relative ${theme === 'dark' ? 'bg-[#18181b]' : theme === 'solarized' ? 'bg-[#eee8d5]' : 'bg-white'
                         }`}
                 >
-                    {/* V2.6.1 Feature: New Node Types Rendering */}
+                    {/* V2.6.1：渲染新增节点类型 */}
                     {node.type === 'novel-input' && (
                         <div className={`relative w-full h-full flex flex-col transition-colors pointer-events-auto ${theme === 'dark' ? 'bg-zinc-900/80' : theme === 'solarized' ? 'bg-[#fdf6e3]' : 'bg-zinc-100'}`}>
                             <div className="flex items-center gap-1.5 px-3 py-2 border-b text-xs font-semibold shrink-0">
@@ -22000,7 +22000,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                                 <div className="flex flex-col gap-3">
                                     <div className="flex flex-col gap-1.5">
                                         <label className="text-[10px] font-medium opacity-70">分析模型</label>
-                                        {/* V3.4.10: 双层模型选择器 Provider -> Model */}
+                                        {/* V3.4.10：供应商 -> 模型双层选择器 */}
                                         <div className="relative">
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); setActiveDropdown(activeDropdown?.nodeId === node.id && activeDropdown.type === 'extract-model' ? null : { nodeId: node.id, type: 'extract-model' }); }}
@@ -22022,7 +22022,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                                                     onMouseDown={(e) => e.stopPropagation()}
                                                     onMouseLeave={() => setHoveredProvider(null)}
                                                 >
-                                                    {/* Provider 列表 */}
+                                                    {/* 供应商列表 */}
                                                     <div className={`w-24 border-r pr-1 max-h-80 overflow-y-auto custom-scrollbar flex flex-col ${theme === 'dark' ? 'border-zinc-700' : 'border-zinc-200'}`}>
                                                         {Object.entries(groupedApiConfigs)
                                                             .filter(([, group]) => group.models.some(m => isChatModelType(m.type)))
@@ -23602,8 +23602,8 @@ ${inputText.substring(0, 15000)} ... (截断)
                                 ? 'bg-[#eee8d5]'
                                     : 'bg-zinc-100'
                                 }`}
-                            /* V3.5.20: Remove global onDrop from container to separate zones */
-                            /* onDrop={(e) => handleVideoDrop(node.id, e)} */
+                            /* V3.5.20：移除容器的全局 onDrop，以区分不同投放区域 */
+                            /* 旧的容器级 onDrop：onDrop={(e) => handleVideoDrop(node.id, e)} */
                             onDragOver={handleDragOver}
                             onDragLeave={handleDragLeave}
                         >
@@ -23616,23 +23616,23 @@ ${inputText.substring(0, 15000)} ... (截断)
                                             e.stopPropagation();
                                             const isExpanding = node.settings?.videoExpanded === false;
 
-                                            // V3.5.36: Adjusted column split threshold (threshold ~290 for wider node)
+                                            // V3.5.36：调整分栏阈值，较宽节点使用约 290 的阈值
                                             const framesCount = (node.frames || []).length;
                                             const cols = isExpanding ? Math.max(1, Math.floor(node.width / 290)) : 1;
                                             const rows = Math.max(1, Math.ceil(framesCount / cols));
 
-                                            const headerAreaH = 72; // Banner(44) + MetaRow(28)
+                                            const headerAreaH = 72; // 横幅（44）+ 元数据行（28）
                                             const videoAreaH = isExpanding ? (node.content ? 230 : 190) : 0;
                                             const controlsH = (node.content && isExpanding) ? 48 : 0;
                                             const thumbnailsTitleH = 36;
                                             const flexPaddingH = 30;
 
-                                            const rowH = isExpanding ? 158 : 106; // card + gap + borders + buffer
+                                            const rowH = isExpanding ? 158 : 106; // 卡片 + 间距 + 边框 + 缓冲空间
 
-                                            // Calculate new height to fit all content perfectly
+                                            // 计算新高度以完整容纳全部内容
                                             const calculatedH = headerAreaH + videoAreaH + controlsH + thumbnailsTitleH + (rows * rowH) + flexPaddingH;
 
-                                            // Update node root height property directly to trigger "Manual Resize" effect
+                                            // 直接更新节点根元素高度，以触发“手动调整尺寸”效果
                                             setNodes(prev => prev.map(n => n.id === node.id ? {
                                                 ...n,
                                                 height: Math.max(isExpanding ? 500 : 220, calculatedH),
@@ -23658,7 +23658,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                                         {node.settings?.videoExpanded !== false && (
                                             <div
                                                 className="relative w-full max-w-[360px] aspect-video bg-black rounded-lg overflow-hidden flex items-center justify-center mx-auto"
-                                                onDrop={(e) => handleVideoDrop(node.id, e)} /* V3.5.20: Explicit drop zone */
+                                                onDrop={(e) => handleVideoDrop(node.id, e)} /* V3.5.20：明确的放置区域 */
                                             >
                                                 <ResolvedVideo
                                                     src={node.content}
@@ -23707,13 +23707,13 @@ ${inputText.substring(0, 15000)} ... (截断)
                                         </div>
                                     </div>
                                 ) : (
-                                    /* Fix: Allow folding upload box when empty */
+                                    /* 修复：上传框为空时也允许折叠 */
                                     (node.settings?.videoExpanded !== false) && (
                                         <div className="flex flex-col items-center justify-center gap-3 w-full px-4 mx-auto shrink-0 transition-colors border-2 border-transparent hover:border-blue-500/30 rounded-lg p-4"
-                                            onDrop={(e) => handleVideoDrop(node.id, e)} /* V3.5.20: Explicit drop zone */
+                                            onDrop={(e) => handleVideoDrop(node.id, e)} /* V3.5.20：明确的放置区域 */
                                         >
                                             <div className="flex flex-col gap-2 items-center justify-center shrink-0 w-full">
-                                                {/* V3.5.21 Layout Fix: Enforce Fixed Size Container */}
+                                                {/* V3.5.21 布局修复：强制使用固定尺寸容器 */}
                                                 <div className={`relative w-full h-64 flex flex-col items-center justify-center border-2 border-dashed rounded-lg transition-colors ${dragOverNodeId === node.id && !dragInsertNodeId
                                                     ? 'border-blue-500 bg-blue-500/10'
                                                     : theme === 'dark' ? 'border-zinc-700 hover:border-zinc-500' : 'border-zinc-300 hover:border-zinc-400'
@@ -23754,11 +23754,11 @@ ${inputText.substring(0, 15000)} ... (截断)
                                                         let newSelected = [];
 
                                                         if (currentSelected.length === 0) {
-                                                            // Select All
-                                                            // Select All - FIX: Store Ref Objects, not Indices
+                                                            // 全选
+                                                            // 全选修复：保存引用对象而不是索引
                                                             newSelected = frames.map(f => ({ url: f.url, time: f.time, filename: f.filename }));
                                                         } else {
-                                                            // Deselect All (if any selected)
+                                                            // 已有选中项时取消全选
                                                             newSelected = [];
                                                         }
 
@@ -23804,13 +23804,13 @@ ${inputText.substring(0, 15000)} ... (截断)
                                         gridTemplateColumns: node.settings?.videoExpanded === false ? '1fr' : 'repeat(auto-fill, minmax(260px, 1fr))',
                                         gridAutoRows: 'auto'
                                     }}
-                                    /* V3.5.20: Insert keyframe drop zone */
+                                    /* V3.5.20：关键帧插入投放区域 */
                                     onDrop={(e) => handleKeyframeListDrop(node.id, e)}
-                                    // Pass length to indicate "append" if dropped on empty space
+                                    // 在空白处投放时传入数组长度，表示追加到末尾
                                     onDragOver={(e) => handleKeyframeContainerDragOver(e, node.id, (node.frames || []).length)}
-                                    /* V3.5.31: Clear insert line when drag leaves container */
+                                    /* V3.5.31：拖拽离开容器时清除插入指示线 */
                                     onDragLeave={(e) => {
-                                        // Only clear if leaving the container entirely (not entering a child)
+                                        // 仅在完全离开容器时清除，进入子元素时不清除
                                         if (!e.currentTarget.contains(e.relatedTarget)) {
                                             setDragInsertNodeId(null);
                                             setDragInsertIndex(null);
@@ -23826,13 +23826,13 @@ ${inputText.substring(0, 15000)} ... (截断)
                                     ) : (
                                         (node.frames || []).map((frame, idx) => {
                                             const selected = (node.selectedKeyframes || []).some(f => f.url === frame.url && f.time === frame.time);
-                                            // V3.5.20: Insert visualization
+                                            // V3.5.20：插入位置可视化
                                             const showInsertLineBefore = dragInsertNodeId === node.id && dragInsertIndex === idx;
                                             const showInsertLineAfter = dragInsertNodeId === node.id && dragInsertIndex === (node.frames || []).length && idx === (node.frames || []).length - 1;
 
                                             return (
                                                 <div key={`${frame.url}-${idx}`} className="relative">
-                                                    {/* V3.5.31: Insertion Line Before - outside button */}
+                                                    {/* V3.5.31：位于按钮外侧的前置插入线 */}
                                                     {showInsertLineBefore && (
                                                         <div className="absolute -top-1.5 left-0 right-0 h-1 bg-red-500 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.8)] z-50" />
                                                     )}
@@ -23843,7 +23843,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                                                         onMouseDown={(e) => e.stopPropagation()}
                                                         onClick={(e) => handleToggleKeyframe(node.id, frame, idx, e)}
                                                         onContextMenu={(e) => openFrameContextMenu(e, node.id, frame)}
-                                                        /* V3.5.20: Item drag over for insert position */
+                                                        /* V3.5.20：拖过条目时计算插入位置 */
                                                         onDragOver={(e) => handleKeyframeItemDragOver(e, node.id, idx)}
                                                     >
 
@@ -23855,7 +23855,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                                                         <div className="absolute left-1 top-1 text-[10px] px-1 py-0.5 rounded bg-black/60 text-white">
                                                             {typeof frame.time === 'number' ? frame.time.toFixed(2) : frame.time}s
                                                         </div>
-                                                        {/* V3.5.30: Show filename in tooltip */}
+                                                        {/* V3.5.30：在提示框中显示文件名 */}
                                                         {frame.filename && (
                                                             <div
                                                                 className="absolute left-0 bottom-0 right-0 bg-black/80 text-white text-[9px] px-1 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity truncate"
@@ -23864,15 +23864,15 @@ ${inputText.substring(0, 15000)} ... (截断)
                                                                 {frame.filename}
                                                             </div>
                                                         )}
-                                                        {/* Right Vertical Control Strip */}
+                                                        {/* 右侧垂直控制条 */}
                                                         <div className="absolute top-1 bottom-1 right-1 flex flex-col justify-between items-center z-20 pointer-events-none">
-                                                            {/* Top: Selection */}
+                                                            {/* 顶部：选择按钮 */}
                                                             <div className="pointer-events-auto w-5 h-5 rounded-full border border-white/80 bg-black/40 flex items-center justify-center shrink-0 mb-auto">
                                                                 {selected ? <CheckCircle2 size={12} className="text-white" /> : null}
                                                             </div>
 
-                                                            {/* Middle: Delete (Visible on Hover) */}
-                                                            {/* V3.5.18: Delete button */}
+                                                            {/* 中部：悬停时显示删除按钮 */}
+                                                            {/* V3.5.18：删除按钮 */}
                                                             <button
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
@@ -23889,19 +23889,19 @@ ${inputText.substring(0, 15000)} ... (截断)
                                                                 <X size={12} />
                                                             </button>
 
-                                                            {/* Bottom: Sort Buttons (Visible on Hover) */}
-                                                            {/* V3.5.17: Reorder buttons */}
+                                                            {/* 底部：悬停时显示排序按钮 */}
+                                                            {/* V3.5.17：重新排序按钮 */}
                                                             <div className="pointer-events-auto flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-auto">
                                                                 {idx > 0 && (
                                                                     <button
                                                                         onClick={(e) => {
                                                                             e.stopPropagation();
-                                                                            // Swap with previous
+                                                                            // 与前一项交换
                                                                             setNodes(prev => prev.map(n => {
                                                                                 if (n.id !== node.id) return n;
                                                                                 const newFrames = [...(n.frames || [])];
                                                                                 [newFrames[idx - 1], newFrames[idx]] = [newFrames[idx], newFrames[idx - 1]];
-                                                                                // Also update selectedKeyframes order
+                                                                                // 同时更新 selectedKeyframes 的顺序
                                                                                 const newSelected = [...(n.selectedKeyframes || [])];
                                                                                 const selIdx = newSelected.findIndex(f => f.url === frame.url);
                                                                                 if (selIdx > 0) {
@@ -23920,12 +23920,12 @@ ${inputText.substring(0, 15000)} ... (截断)
                                                                     <button
                                                                         onClick={(e) => {
                                                                             e.stopPropagation();
-                                                                            // Swap with next
+                                                                            // 与后一项交换
                                                                             setNodes(prev => prev.map(n => {
                                                                                 if (n.id !== node.id) return n;
                                                                                 const newFrames = [...(n.frames || [])];
                                                                                 [newFrames[idx], newFrames[idx + 1]] = [newFrames[idx + 1], newFrames[idx]];
-                                                                                // Also update selectedKeyframes order
+                                                                                // 同时更新 selectedKeyframes 的顺序
                                                                                 const newSelected = [...(n.selectedKeyframes || [])];
                                                                                 const selIdx = newSelected.findIndex(f => f.url === frame.url);
                                                                                 if (selIdx >= 0 && selIdx < newSelected.length - 1) {
@@ -23943,7 +23943,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                                                             </div>
                                                         </div>
                                                     </button>
-                                                    {/* V3.5.31: Insertion Line After - for last item */}
+                                                    {/* V3.5.31：最后一项之后的插入线 */}
                                                     {showInsertLineAfter && (
                                                         <div className="absolute -bottom-1.5 left-0 right-0 h-1 bg-red-500 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.8)] z-50" />
                                                     )}
@@ -24109,7 +24109,7 @@ ${inputText.substring(0, 15000)} ... (截断)
 
                                                         <div className="flex items-center gap-2">
                                                             <label className="text-[11px] text-zinc-500">模型:</label>
-                                                            {/* V3.4.10: 双层模型选择器 Provider -> Model */}
+                                                            {/* V3.4.10：供应商 -> 模型双层选择器 */}
                                                             <div className="relative flex-1">
                                                                 <button
                                                                     onClick={(e) => { e.stopPropagation(); setActiveDropdown(activeDropdown?.nodeId === node.id && activeDropdown.type === 'analyze-model' ? null : { nodeId: node.id, type: 'analyze-model' }); }}
@@ -24131,7 +24131,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                                                                         onMouseDown={(e) => e.stopPropagation()}
                                                                         onMouseLeave={() => setHoveredProvider(null)}
                                                                     >
-                                                                        {/* Provider 列表 */}
+                                                                        {/* 供应商列表 */}
                                                                         <div className={`w-24 border-r pr-1 max-h-80 overflow-y-auto custom-scrollbar ${theme === 'dark' ? 'border-zinc-700' : 'border-zinc-200'}`}>
                                                                             {Object.entries(groupedApiConfigs)
                                                                                 .filter(([, group]) => group.models.some(m => isChatModelType(m.type)))
@@ -24219,7 +24219,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                                                 )}
                                             </div>
 
-                                            {/* 结果展示区 (Auto 模式) */}
+                                            {/* 结果展示区（自动模式） */}
                                             {node.settings?.analysisMode === 'auto' && node.settings?.analysisResults?.length > 0 && (
                                                 <div className="flex-1 overflow-y-auto custom-scrollbar pt-2">
                                                     {/* 口播文案 (Voiceover) */}
@@ -24291,7 +24291,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                                                                         </div>
                                                                     )}
 
-                                                                    {/* MJ Prompt */}
+                                                                    {/* Midjourney 提示词 */}
                                                                     {scene.keyframes?.[0]?.mj_prompt && (
                                                                         <div className={`p-2 rounded ${theme === 'dark' ? 'bg-zinc-700 border border-zinc-600' : 'bg-zinc-50 border border-gray-300'}`}>
                                                                             <h6 className={`text-[10px] font-semibold mb-1 flex items-center gap-1 ${theme === 'dark' ? 'text-green-300' : 'text-green-700'}`}><Code size={10} /> MJ Prompt</h6>
@@ -24727,7 +24727,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                                                             console.warn('[Preview] Image load error');
                                                         }}
                                                     />
-                                                    {/* V3.7.8: Filename Overlay */}
+                                                    {/* V3.7.8：文件名浮层 */}
                                                     {node.previewFilename && (
                                                         <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[10px] px-2 py-1 truncate opacity-0 group-hover/preview:opacity-100 transition-opacity backdrop-blur-sm" title={node.previewFilename}>
                                                             {node.previewFilename}
@@ -24946,7 +24946,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                         ? 'bg-[#fdf6e3]'
                         : 'bg-zinc-100'
                     }`}>
-                    {/* Sidebar */}
+                    {/* 侧边栏 */}
                     <div
                         className={`w-14 border-r flex flex-col items-center py-3 gap-3 z-40 shrink-0 transition-colors duration-300 ${theme === 'dark'
                             ? 'bg-[#09090b] border-zinc-800'
@@ -25035,7 +25035,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                         </button>
                     </div>
 
-                    {/* History Panel */}
+                    {/* 历史记录面板 */}
                     {historyOpen && (
                         <div
                             className={`w-72 z-30 flex flex-col animate-in slide-in-from-left border-r transition-colors duration-300 ${theme === 'dark'
@@ -25124,14 +25124,14 @@ ${inputText.substring(0, 15000)} ... (截断)
                                     {/* V3.5.8: 全选/取消全选按钮 */}
                                     <button
                                         onClick={() => {
-                                            // V3.5.18 Fix: Smart Select All logic
-                                            // If any filters (search/favorites) are active, select filtered items
-                                            // If no filters, select ALL completed items (ignore 24h session logic which was confusing users)
+                                            // V3.5.18 修复：智能全选逻辑
+                                            // 存在搜索或收藏筛选时，仅选择筛选后的条目
+                                            // 没有筛选条件时，选择全部已完成条目，不再采用容易造成困惑的 24 小时会话逻辑
 
-                                            // Determine current visible/filtered list (simplified logic here as filtering is done in render)
-                                            // Since we don't have direct access to the filtered list variable 'filteredHistory' inside this scope easily without refactoring,
-                                            // We will assume the user wants to select ALL completed items in the history list if they click Select All.
-                                            // TODO: Ideally we should select only currently VISIBLE items if search/filter is active.
+                                            // 确定当前可见或筛选后的列表；筛选已在渲染阶段完成，此处采用简化逻辑
+                                            // 若不重构就难以在当前作用域直接访问 filteredHistory
+                                            // 因此点击全选时，暂按用户希望选择历史列表中全部已完成条目处理
+                                            // 待办：搜索或筛选生效时，理想行为应仅选择当前可见条目
 
                                             const allCompletedItems = history.filter(h => h.status === 'completed');
                                             const targetItems = allCompletedItems;
@@ -25510,7 +25510,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                         </div>
                     )}
 
-                    {/* Characters Panel */}
+                    {/* 角色面板 */}
                     {charactersOpen && (
                         <div
                             className={`w-72 z-30 flex flex-col animate-in slide-in-from-left border-r transition-colors duration-300 ${theme === 'dark'
@@ -25649,7 +25649,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                         </div>
                     )}
 
-                    {/* Create Character Modal */}
+                    {/* 创建角色弹窗 */}
                     {createCharacterOpen && (
                         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center" onClick={() => setCreateCharacterOpen(false)}>
                             <div
@@ -25924,7 +25924,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                         </div>
                     )}
 
-                    {/* Main Canvas Area */}
+                    {/* 主画布区域 */}
                     <div className="flex-1 relative overflow-hidden flex">
                         <div ref={canvasRef} id="canvas-bg" className="flex-1 h-full cursor-default relative"
                             onMouseDown={handleMouseDown} onClick={handleBackgroundClick} onDoubleClick={handleDoubleClick} onContextMenu={handleCanvasContextMenu}
@@ -26026,7 +26026,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                             )}
                         </div>
 
-                        {/* Chat Sidebar Panel */}
+                        {/* 聊天侧边栏面板 */}
                         <div
                             className={`fixed right-0 top-12 bottom-0 border-l shadow-2xl flex flex-col z-50 transition-transform duration-300 ease-in-out select-text ${theme === 'dark'
                                 ? 'bg-[#121214] border-zinc-800'
@@ -26084,7 +26084,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                                                     : theme === 'solarized' ? 'bg-[#eee8d5] border-[#d7cfb2]' : 'bg-white border-zinc-200'}`}
                                                 onMouseLeave={() => setChatHoveredProvider(null)}
                                             >
-                                                {/* Provider 列表 */}
+                                                {/* 供应商列表 */}
                                                 <div className={`w-24 border-r pr-1 max-h-64 overflow-y-auto custom-scrollbar flex flex-col ${theme === 'dark' ? 'border-zinc-700' : 'border-zinc-200'}`}>
                                                     {Object.entries(groupedApiConfigs)
                                                         .filter(([, group]) => group.models.some(m => isChatModelType(m.type)))
@@ -27588,7 +27588,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                                 <div className="flex items-center gap-2">
                                     <button
                                         onClick={() => {
-                                            // Toggle all: if any expanded, collapse all; otherwise expand all
+                                            // 切换全部：存在展开项时全部折叠，否则全部展开
                                             const hasExpanded = Object.values(expandedProviders).some(v => v);
                                             const newExpanded = {};
                                             if (!hasExpanded) {
@@ -27612,7 +27612,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                                 </div>
                             </div>
                                     <div className="space-y-2 max-h-[50vh] overflow-y-auto custom-scrollbar pr-1">
-                                        {/* V3.4.7: 按 Provider 分组显示模型 */}
+                                        {/* V3.4.7：按供应商分组显示模型 */}
                                         {Object.entries(groupedApiConfigs).map(([providerKey, group]) => (
                                             <div key={providerKey} className={`group rounded-lg border ${theme === 'dark'
                                                 ? 'bg-[#18181b] border-zinc-800'
@@ -27620,7 +27620,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                                                     ? 'bg-[#fdf6e3] border-[#d7cfb2]'
                                                     : theme === 'solarized' ? 'bg-[#fdf6e3] border-[#eee8d5]' : 'bg-zinc-50 border-zinc-200'
                                                 }`}>
-                                        {/* Provider 标题行 (可折叠) */}
+                                        {/* 可折叠的供应商标题行 */}
                                         <button
                                             onClick={() => setExpandedProviders(prev => ({ ...prev, [providerKey]: !prev[providerKey] }))}
                                             className={`w-full flex items-center justify-between px-3 py-2.5 text-left transition-colors ${theme === 'dark'
@@ -27639,7 +27639,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                // Delete provider
+                                                                // 删除供应商
                                                                 setProviders(prev => {
                                                                     const next = { ...prev };
                                                                     delete next[providerKey];
@@ -27739,10 +27739,10 @@ ${inputText.substring(0, 15000)} ... (截断)
                                             )}
                                         </button>
 
-                                        {/* Provider 展开内容 */}
+                                        {/* 供应商展开内容 */}
                                         {expandedProviders[providerKey] && (
                                             <div className={`px-3 pb-3 border-t ${theme === 'dark' ? 'border-zinc-800' : 'border-zinc-200'}`}>
-                                                {/* Provider 级别设置 */}
+                                                {/* 供应商级别设置 */}
                                                 <div className="pt-3 pb-2 space-y-2">
                                                     <div className="grid grid-cols-4 items-center gap-2">
                                                         <label className={`text-[10px] font-medium uppercase tracking-wider text-right ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-600'}`}>{t('接口类型')}</label>
@@ -27818,7 +27818,7 @@ ${inputText.substring(0, 15000)} ... (截断)
                                                     </div>
                                                 </div>
 
-                                                {/* 该 Provider 下的模型列表 */}
+                                                {/* 该供应商下的模型列表 */}
                                                 <div className={`mt-2 pt-2 border-t ${theme === 'dark' ? 'border-zinc-800/50' : 'border-zinc-200'}`}>
 
                                                     <div className="flex items-center justify-between mb-2">

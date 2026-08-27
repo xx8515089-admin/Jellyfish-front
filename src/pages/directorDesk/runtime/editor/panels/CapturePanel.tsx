@@ -4,8 +4,10 @@ import { serializeProject } from "../io/exportProjectJson";
 import { parseProject } from "../io/importProjectJson";
 import { downloadCaptureResults } from "../io/screenshotExport";
 import { useDirectorStore } from "../store/directorStore";
+import { useDirectorDeskText } from "../../useDirectorDeskText";
 
 export function CapturePanel() {
+  const text = useDirectorDeskText();
   const [captureStatus, setCaptureStatus] = useState<string | null>(null);
   const project = useDirectorStore((state) => state.project);
   const replaceProject = useDirectorStore((state) => state.replaceProject);
@@ -19,23 +21,23 @@ export function CapturePanel() {
         source: "capture-panel",
       });
       const count = downloadCaptureResults(results);
-      setCaptureStatus(`已导出 ${count} 张截图`);
+      setCaptureStatus(text(`已导出 ${count} 张截图`, `Exported ${count} screenshot${count === 1 ? "" : "s"}`));
     } catch (error) {
-      setCaptureStatus(error instanceof Error ? error.message : "截图失败");
+      setCaptureStatus(error instanceof Error ? error.message : text("截图失败", "Screenshot failed"));
     }
   }
 
   return (
     <section className="panel-card">
-      <h2>截图</h2>
+      <h2>{text("截图", "Screenshots")}</h2>
       <button className="capture-action" type="button" onClick={() => void handleCapture("current")}>
-        当前视角截图
+        {text("当前视角截图", "Current view")}
       </button>
       <button className="capture-action" type="button" onClick={() => void handleCapture("four")}>
-        四方位截图
+        {text("四方位截图", "Four views")}
       </button>
       <button className="capture-action" type="button" onClick={() => void handleCapture("twelve")}>
-        十二方位截图
+        {text("十二方位截图", "Twelve views")}
       </button>
       {captureStatus ? <p className="capture-status">{captureStatus}</p> : null}
       <button
@@ -47,11 +49,11 @@ export function CapturePanel() {
           window.open(url, "_blank");
         }}
       >
-        导出工程 JSON
+        {text("导出工程 JSON", "Export project JSON")}
       </button>
       <input
         className="ui-field"
-        aria-label="导入工程 JSON"
+        aria-label={text("导入工程 JSON", "Import project JSON")}
         accept="application/json"
         type="file"
         onChange={async (event) => {
@@ -61,10 +63,10 @@ export function CapturePanel() {
         }}
       />
       <button className="capture-action" type="button" onClick={saveLatestSnapshot}>
-        保存最近工程
+        {text("保存最近工程", "Save latest project")}
       </button>
       <button className="capture-action" type="button" onClick={restoreLatestSnapshot}>
-        恢复最近工程
+        {text("恢复最近工程", "Restore latest project")}
       </button>
     </section>
   );

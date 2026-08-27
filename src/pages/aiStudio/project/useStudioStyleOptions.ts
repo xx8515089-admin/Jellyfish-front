@@ -14,7 +14,7 @@ const EMPTY_OPTIONS: StudioStyleOptionGroups = {
 
 let loadingOptionsPromise: Promise<StudioStyleOptionGroups> | null = null
 
-/** Loads both categories while deduplicating concurrent requests. */
+/** 加载两个类别，同时对并发请求去重。 */
 async function loadStudioStyleOptions(): Promise<StudioStyleOptionGroups> {
   if (loadingOptionsPromise) return loadingOptionsPromise
 
@@ -28,7 +28,7 @@ async function loadStudioStyleOptions(): Promise<StudioStyleOptionGroups> {
   return loadingOptionsPromise
 }
 
-/** Exposes both online style lists and a refresh used after custom style creation. */
+/** 暴露两类在线风格列表，以及创建自定义风格后使用的刷新方法。 */
 export function useStudioStyleOptions() {
   const [options, setOptions] = useState<StudioStyleOptionGroups>(EMPTY_OPTIONS)
   const [loading, setLoading] = useState(true)

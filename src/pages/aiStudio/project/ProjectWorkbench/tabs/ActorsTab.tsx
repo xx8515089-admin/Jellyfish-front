@@ -232,7 +232,7 @@ export function ActorsTab() {
           return Array.from(map.values())
         })
       } catch {
-        // ignore
+        // 忽略该错误
       }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps

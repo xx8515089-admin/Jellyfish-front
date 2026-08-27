@@ -16,7 +16,7 @@ export interface GroundMaterialPreset {
   readonly roughness: number;
   readonly metalness: number;
   readonly textureType: GroundTextureType;
-  /** World-space metres covered by one texture tile. */
+  /** 单个纹理图块在世界空间中覆盖的米数。 */
   readonly tileWorldSize: readonly [number, number];
   readonly textureSize: number;
 }

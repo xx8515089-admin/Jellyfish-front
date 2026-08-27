@@ -32,14 +32,54 @@ import {
 import { getBenchmarkPerformanceProfile } from "./editor/performance/performanceProfiles";
 import { PerformanceSettings } from "./editor/performance/PerformanceSettings";
 import { getDirectorDeskEventTarget } from "./editor/io/directorDeskDom";
+import { useDirectorDeskText } from "./useDirectorDeskText";
 
 type AppScreen = "home" | "editor";
 
 const HOME_DESK_PAGE_SIZE = 6;
 
+const PERFORMANCE_BENCHMARK_LABELS_EN = {
+  standard: "Historical load",
+  light: "Light",
+  medium: "Medium",
+  heavy: "Heavy",
+} as const;
+
+type HomePaginationItem = number | "start-ellipsis" | "end-ellipsis";
+
+function createHomePaginationItems(currentPage: number, pageCount: number): HomePaginationItem[] {
+  if (pageCount <= 7) {
+    return Array.from({ length: pageCount }, (_, index) => index + 1);
+  }
+
+  const visiblePages = new Set([1, pageCount, currentPage - 1, currentPage, currentPage + 1]);
+  if (currentPage <= 4) {
+    [2, 3, 4, 5].forEach((page) => visiblePages.add(page));
+  }
+  if (currentPage >= pageCount - 3) {
+    [pageCount - 4, pageCount - 3, pageCount - 2, pageCount - 1].forEach((page) => visiblePages.add(page));
+  }
+
+  const pages = [...visiblePages]
+    .filter((page) => page > 0 && page <= pageCount)
+    .sort((left, right) => left - right);
+  const items: HomePaginationItem[] = [];
+
+  pages.forEach((page, index) => {
+    const previousPage = pages[index - 1];
+    if (previousPage && page - previousPage > 1) {
+      items.push(previousPage === 1 ? "start-ellipsis" : "end-ellipsis");
+    }
+    items.push(page);
+  });
+
+  return items;
+}
+
 interface DirectorDeskAppProps {
   initialInstanceId?: string;
   initialInstanceName?: string;
+  onBackHome?: () => void;
   onClose?: () => void;
   onOpenDesk?: (id: string) => void;
 }
@@ -62,13 +102,14 @@ function updateUrlDirectorDeskInstanceId(id: string | null) {
     }
     window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
   } catch {
-    // Navigation state remains usable even if the embedding host blocks History API writes.
+    // 即使嵌入宿主阻止写入 History API，也要保证导航状态可用。
   }
 }
 
 function createInitialDirectorDeskViewState(
   initialInstanceId?: string,
-  initialInstanceName?: string
+  initialInstanceName?: string,
+  language: "zh-CN" | "en-US" = "zh-CN"
 ) {
   let records = ensureDirectorDeskRecords();
   const urlInstanceId = initialInstanceId?.trim() ?? getUrlDirectorDeskInstanceId() ?? null;
@@ -87,9 +128,14 @@ function createInitialDirectorDeskViewState(
   if (benchmarkMode) {
     const timestamp = new Date().toISOString();
     const benchmarkId = urlInstanceId ?? "benchmark_standard";
+    const benchmarkLabel = language === "en-US"
+      ? PERFORMANCE_BENCHMARK_LABELS_EN[benchmarkMode]
+      : getPerformanceBenchmarkSceneConfig(benchmarkMode).label;
     const benchmarkRecord: DirectorDeskRecord = {
       id: benchmarkId,
-      name: `${getPerformanceBenchmarkSceneConfig(benchmarkMode).label}性能基准（临时）`,
+      name: language === "en-US"
+        ? `${benchmarkLabel} performance benchmark (temporary)`
+        : `${benchmarkLabel}性能基准（临时）`,
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -130,8 +176,9 @@ function isEditableShortcutTarget(target: EventTarget | null) {
   return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
 }
 
-export default function DirectorDeskApp({ initialInstanceId, initialInstanceName, onClose, onOpenDesk }: DirectorDeskAppProps) {
+export default function DirectorDeskApp({ initialInstanceId, initialInstanceName, onBackHome, onClose, onOpenDesk }: DirectorDeskAppProps) {
   const language = useAppStore((state) => state.language);
+  const text = useDirectorDeskText();
   const homeCopy = directorHomeCopy[language];
   const benchmarkMode = getPerformanceBenchmarkMode(window.location.search);
   const viewMode = useDirectorStore((state) => state.viewMode);
@@ -139,7 +186,7 @@ export default function DirectorDeskApp({ initialInstanceId, initialInstanceName
   const motionStudioOpen = useDirectorStore((state) => state.motionStudioOpen);
   const setMotionStudioOpen = useDirectorStore((state) => state.setMotionStudioOpen);
   const [directorDeskView, setDirectorDeskView] = useState(() => (
-    createInitialDirectorDeskViewState(initialInstanceId, initialInstanceName)
+    createInitialDirectorDeskViewState(initialInstanceId, initialInstanceName, language)
   ));
   const [deleteDeskCandidate, setDeleteDeskCandidate] = useState<DirectorDeskRecord | null>(null);
   const [homePage, setHomePage] = useState(1);
@@ -149,6 +196,7 @@ export default function DirectorDeskApp({ initialInstanceId, initialInstanceName
   const activeDirectorDesk = directorDesks.find((desk) => desk.id === activeDeskId) ?? directorDesks[0];
   const homePageCount = Math.max(1, Math.ceil(directorDesks.length / HOME_DESK_PAGE_SIZE));
   const currentHomePage = Math.min(homePage, homePageCount);
+  const homePaginationItems = createHomePaginationItems(currentHomePage, homePageCount);
   const visibleDirectorDesks = directorDesks.slice(
     (currentHomePage - 1) * HOME_DESK_PAGE_SIZE,
     currentHomePage * HOME_DESK_PAGE_SIZE
@@ -178,6 +226,11 @@ export default function DirectorDeskApp({ initialInstanceId, initialInstanceName
   }
 
   function backToHome() {
+    if (onBackHome) {
+      onBackHome();
+      return;
+    }
+
     const records = ensureDirectorDeskRecords();
     setDirectorDeskView({ records, activeDeskId, screen: "home" });
     updateUrlDirectorDeskInstanceId(null);
@@ -361,109 +414,113 @@ export default function DirectorDeskApp({ initialInstanceId, initialInstanceName
     return (
       <>
         <main className="director-home-shell">
-        <section className="director-home-workspace">
-          <aside className="director-home-hero">
-            <div>
-              <p className="director-home-kicker">Standalone 3D Director Desk</p>
-              <h1>{homeCopy.heroTitle}</h1>
-              <p>{homeCopy.heroDescription}</p>
-            </div>
-            <div className="director-home-overview">
-              <span>{homeCopy.deskLabel}</span>
-              <strong>{directorDesks.length}</strong>
-            </div>
-            <a className="director-home-scroll-hint" href="#director-home-guide-title">
-              {homeCopy.scrollHint}
-              <ArrowDown aria-hidden="true" size={14} />
-            </a>
-          </aside>
-
-          <section className="director-home-list-panel" aria-labelledby="director-home-list-title">
-            <header className="director-home-list-header">
+          <section className="director-home-workspace">
+            <header className="director-home-hero">
               <div>
-                <h2 id="director-home-list-title">{homeCopy.myDesks}</h2>
-                <p>{homeCopy.deskCount(directorDesks.length)}</p>
+                <p className="director-home-kicker">Standalone 3D Director Desk</p>
+                <h1>{homeCopy.heroTitle}</h1>
+                <p>{homeCopy.heroDescription}</p>
               </div>
-              <button className="director-home-primary-button" type="button" onClick={handleCreateDesk}>
-                <Plus aria-hidden="true" size={17} />
-                {homeCopy.createDesk}
-              </button>
+              <div className="director-home-hero-actions">
+                <button className="director-home-primary-button" type="button" onClick={handleCreateDesk}>
+                  <Plus aria-hidden="true" size={17} />
+                  {homeCopy.createDesk}
+                </button>
+                <a className="director-home-scroll-hint" href="#director-home-guide-title">
+                  {homeCopy.scrollHint}
+                  <ArrowDown aria-hidden="true" size={14} />
+                </a>
+              </div>
             </header>
 
-            {directorDesks.length ? (
-              <div className="director-home-grid" aria-label={homeCopy.deskListAria}>
-                {visibleDirectorDesks.map((desk, index) => {
-                  const absoluteIndex = (currentHomePage - 1) * HOME_DESK_PAGE_SIZE + index;
-                  return (
-                    <article
-                      key={desk.id}
-                      className={`director-home-card ${desk.id === activeDeskId ? "is-active" : ""}`}
-                    >
-                      <button className="director-home-card-main" type="button" onClick={() => openDirectorDesk(desk.id)}>
-                        <span className="director-home-card-icon">
-                          <Boxes aria-hidden="true" size={21} strokeWidth={1.8} />
-                        </span>
-                        <span className="director-home-card-content">
-                          <span className="director-home-card-title">{desk.name}</span>
-                          <span className="director-home-card-meta">
-                            <Clock3 aria-hidden="true" size={13} />
-                            {formatDirectorDeskUpdatedAt(desk.updatedAt, language)}
-                          </span>
-                        </span>
-                        <span className="director-home-card-index">{String(absoluteIndex + 1).padStart(2, "0")}</span>
-                        <ArrowRight className="director-home-card-arrow" aria-hidden="true" size={18} />
-                      </button>
-                      <button
-                        className="director-home-card-delete"
-                        type="button"
-                        aria-label={homeCopy.deleteDeskAria(desk.name)}
-                        onClick={() => setDeleteDeskCandidate(desk)}
+            <section className="director-home-list-panel" aria-label={homeCopy.myDesks}>
+              {directorDesks.length ? (
+                <div className="director-home-grid" aria-label={homeCopy.deskListAria}>
+                  {visibleDirectorDesks.map((desk, index) => {
+                    const absoluteIndex = (currentHomePage - 1) * HOME_DESK_PAGE_SIZE + index;
+                    return (
+                      <article
+                        key={desk.id}
+                        className={`director-home-card ${desk.id === activeDeskId ? "is-active" : ""}`}
                       >
-                        <Trash2 aria-hidden="true" size={15} strokeWidth={1.9} />
-                      </button>
-                    </article>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="director-home-empty" aria-label={homeCopy.emptyListAria}>
-                <Boxes aria-hidden="true" size={28} strokeWidth={1.6} />
-                <h2>{homeCopy.emptyTitle}</h2>
-                <p>{homeCopy.emptyDescription}</p>
-              </div>
-            )}
-
-            {homePageCount > 1 ? (
-              <footer className="director-home-pagination" aria-label={homeCopy.paginationAria}>
-                <span>{homeCopy.deskCount(directorDesks.length)}</span>
-                <div>
-                  <button
-                    type="button"
-                    aria-label={homeCopy.previousPage}
-                    disabled={currentHomePage <= 1}
-                    onClick={() => setHomePage((page) => Math.max(1, page - 1))}
-                  >
-                    <ChevronLeft aria-hidden="true" size={17} />
-                  </button>
-                  <span className="director-home-page-number" aria-current="page">
-                    {currentHomePage}
-                  </span>
-                  <span className="director-home-page-total">/ {homePageCount}</span>
-                  <button
-                    type="button"
-                    aria-label={homeCopy.nextPage}
-                    disabled={currentHomePage >= homePageCount}
-                    onClick={() => setHomePage((page) => Math.min(homePageCount, page + 1))}
-                  >
-                    <ChevronRight aria-hidden="true" size={17} />
-                  </button>
+                        <button className="director-home-card-main" type="button" onClick={() => openDirectorDesk(desk.id)}>
+                          <span className="director-home-card-icon">
+                            <Boxes aria-hidden="true" size={21} strokeWidth={1.8} />
+                          </span>
+                          <span className="director-home-card-content">
+                            <span className="director-home-card-title">{desk.name}</span>
+                            <span className="director-home-card-meta">
+                              <Clock3 aria-hidden="true" size={13} />
+                              {formatDirectorDeskUpdatedAt(desk.updatedAt, language)}
+                            </span>
+                          </span>
+                          <span className="director-home-card-index">{String(absoluteIndex + 1).padStart(2, "0")}</span>
+                          <ArrowRight className="director-home-card-arrow" aria-hidden="true" size={18} />
+                        </button>
+                        <button
+                          className="director-home-card-delete"
+                          type="button"
+                          aria-label={homeCopy.deleteDeskAria(desk.name)}
+                          onClick={() => setDeleteDeskCandidate(desk)}
+                        >
+                          <Trash2 aria-hidden="true" size={15} strokeWidth={1.9} />
+                        </button>
+                      </article>
+                    );
+                  })}
                 </div>
-              </footer>
-            ) : null}
-          </section>
-        </section>
+              ) : (
+                <div className="director-home-empty" aria-label={homeCopy.emptyListAria}>
+                  <Boxes aria-hidden="true" size={28} strokeWidth={1.6} />
+                  <h2>{homeCopy.emptyTitle}</h2>
+                  <p>{homeCopy.emptyDescription}</p>
+                </div>
+              )}
 
-        <section className="director-home-guide" aria-labelledby="director-home-guide-title">
+              {homePageCount > 1 ? (
+                <footer className="director-home-pagination" aria-label={homeCopy.paginationAria}>
+                  <span>{homeCopy.deskCount(directorDesks.length)}</span>
+                  <div className="director-home-pagination-controls">
+                    <button
+                      className="director-home-pagination-nav"
+                      type="button"
+                      aria-label={homeCopy.previousPage}
+                      disabled={currentHomePage <= 1}
+                      onClick={() => setHomePage((page) => Math.max(1, page - 1))}
+                    >
+                      <ChevronLeft aria-hidden="true" size={17} />
+                    </button>
+                    {homePaginationItems.map((item) => (
+                      typeof item === "number" ? (
+                        <button
+                          className={`director-home-page-number${item === currentHomePage ? " is-active" : ""}`}
+                          type="button"
+                          aria-current={item === currentHomePage ? "page" : undefined}
+                          key={item}
+                          onClick={() => setHomePage(item)}
+                        >
+                          {item}
+                        </button>
+                      ) : (
+                        <span className="director-home-page-ellipsis" aria-hidden="true" key={item}>...</span>
+                      )
+                    ))}
+                    <button
+                      className="director-home-pagination-nav"
+                      type="button"
+                      aria-label={homeCopy.nextPage}
+                      disabled={currentHomePage >= homePageCount}
+                      onClick={() => setHomePage((page) => Math.min(homePageCount, page + 1))}
+                    >
+                      <ChevronRight aria-hidden="true" size={17} />
+                    </button>
+                  </div>
+                </footer>
+              ) : null}
+            </section>
+          </section>
+
+          <section className="director-home-guide" aria-labelledby="director-home-guide-title">
           <header className="director-home-section-heading">
             <span><BookOpen aria-hidden="true" size={16} />{homeCopy.quickStartBadge}</span>
             <div>
@@ -487,9 +544,9 @@ export default function DirectorDeskApp({ initialInstanceId, initialInstanceName
             <kbd>Space</kbd>{homeCopy.playPause}
             <kbd>Esc</kbd>{homeCopy.exitCamera}
           </p>
-        </section>
+          </section>
 
-        <section className="director-home-release" aria-labelledby="director-home-release-title">
+          <section className="director-home-release" aria-labelledby="director-home-release-title">
           <header className="director-home-section-heading">
             <span><Sparkles aria-hidden="true" size={16} />{homeCopy.releaseBadge}</span>
             <div>
@@ -502,9 +559,9 @@ export default function DirectorDeskApp({ initialInstanceId, initialInstanceName
               <li key={note}><Check aria-hidden="true" size={15} /><span>{note}</span></li>
             ))}
           </ul>
-        </section>
+          </section>
 
-        <section className="director-home-controls" aria-labelledby="director-home-controls-title">
+          <section className="director-home-controls" aria-labelledby="director-home-controls-title">
           <header className="director-home-section-heading">
             <span><Keyboard aria-hidden="true" size={16} />{homeCopy.controlsBadge}</span>
             <div>
@@ -543,7 +600,7 @@ export default function DirectorDeskApp({ initialInstanceId, initialInstanceName
               ))}
             </dl>
           </article>
-        </section>
+          </section>
         </main>
 
         {deleteDeskCandidate && (
@@ -596,7 +653,7 @@ export default function DirectorDeskApp({ initialInstanceId, initialInstanceName
           <button className="top-bar-title top-bar-home-button" type="button" onClick={backToHome}>
             {language === 'en-US' ? '3D Director Desk' : '3D导演台'}
           </button>
-          <span className="top-bar-version" aria-label={`当前版本 v${__APP_VERSION__}`}>v{__APP_VERSION__}</span>
+          <span className="top-bar-version" aria-label={`${text("当前版本", "Current version")} v${__APP_VERSION__}`}>v{__APP_VERSION__}</span>
           <button className="top-bar-home-nav-button" type="button" aria-label={homeCopy.backHome} onClick={backToHome}>
             <House aria-hidden="true" size={14} strokeWidth={1.9} />
             {homeCopy.home}
@@ -656,30 +713,32 @@ export default function DirectorDeskApp({ initialInstanceId, initialInstanceName
           </div>
         </div>
         <div className="top-bar-center">
-          <div className="mode-toggle ui-segmented" role="group" aria-label="视角切换">
+          <div className="mode-toggle ui-segmented" role="group" aria-label={text("视角切换", "View switcher")}>
             <button
               className={`mode-toggle-button ui-segmented-item ${viewMode === "director" ? "ui-segmented-item-active" : ""}`}
               aria-pressed={viewMode === "director"}
               type="button"
               onClick={() => setViewMode("director")}
             >
-              导演视角
+              {text("导演视角", "Director view")}
             </button>
             <button
               className={`mode-toggle-button ui-segmented-item ${viewMode === "camera" ? "ui-segmented-item-active" : ""}`}
-              aria-label="第一视角"
+              aria-label={text("第一视角", "Camera view")}
               aria-pressed={viewMode === "camera"}
-              title="查看摄影机最终画面"
+              title={text("查看摄影机最终画面", "View the final camera frame")}
               type="button"
               onClick={() => setViewMode("camera")}
             >
-              第一视角
+              {text("第一视角", "Camera view")}
             </button>
           </div>
           <button
             className={`top-bar-motion-button${motionStudioOpen ? " is-active" : ""}`}
             type="button"
-            aria-label={motionStudioOpen ? "关闭运镜工作台" : "打开运镜工作台"}
+            aria-label={motionStudioOpen
+              ? text("关闭运镜工作台", "Close camera motion studio")
+              : text("打开运镜工作台", "Open camera motion studio")}
             aria-pressed={motionStudioOpen}
             onClick={() => {
               setViewMode("director");
@@ -687,7 +746,7 @@ export default function DirectorDeskApp({ initialInstanceId, initialInstanceName
             }}
           >
             <Route aria-hidden="true" size={15} />
-            运镜
+            {text("运镜", "Camera motion")}
           </button>
           <ViewportSensitivitySettings />
           <PerformanceSettings />
@@ -696,8 +755,8 @@ export default function DirectorDeskApp({ initialInstanceId, initialInstanceName
           <button
             className="top-bar-action-button"
             type="button"
-            aria-label="关闭"
-            title="关闭"
+            aria-label={text("关闭", "Close")}
+            title={text("关闭", "Close")}
             onClick={handleClose}
           >
             <X aria-hidden="true" size={16} strokeWidth={1.8} />

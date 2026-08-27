@@ -125,7 +125,13 @@ export interface DirectorInternalState {
   cameraMotionProgress: number;
   cameraMotionPlaying: boolean;
   cameraMotionPlaybackRevision: number;
-  characterActionPreview: { objectId: string; actionPresetId: string } | null;
+  characterActionPreview: {
+    objectId: string;
+    objectIds?: string[];
+    actionPresetId: string;
+    durationSeconds?: number;
+    restoreProgress?: number;
+  } | null;
   cameraPilotMode: CameraPilotMode;
   cameraPilotEditKeyframeId: string | null;
   cameraPilotHoveredTargetId: string | null;
@@ -232,8 +238,21 @@ export interface DirectorActions {
   updateCameraMotionPath: (cameraId: string, patch: Partial<DirectorCameraMotionPath>) => void;
   setCameraMotionProgress: (progress: number) => void;
   setCameraMotionPlaying: (playing: boolean) => void;
-  restartCameraMotionPlayback: () => void;
-  setCharacterActionPreview: (preview: { objectId: string; actionPresetId: string } | null) => void;
+  restartCameraMotionPlayback: (
+    characterActionPreview?: {
+      objectId: string;
+      objectIds?: string[];
+      actionPresetId: string;
+      durationSeconds?: number;
+    } | null
+  ) => void;
+  setCharacterActionPreview: (preview: {
+    objectId: string;
+    objectIds?: string[];
+    actionPresetId: string;
+    durationSeconds?: number;
+    restoreProgress?: number;
+  } | null) => void;
   setMotionStudioOpen: (open: boolean) => void;
   startCameraPilot: (mode?: Exclude<CameraPilotMode, "idle">, editKeyframeId?: string | null) => void;
   stopCameraPilot: () => void;

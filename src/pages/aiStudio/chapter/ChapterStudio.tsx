@@ -614,7 +614,7 @@ const ChapterStudio: React.FC = () => {
     try {
       window.localStorage.setItem(hiddenKey, JSON.stringify(Array.from(next)))
     } catch {
-      // ignore
+      // 忽略该错误
     }
   }
 
@@ -1165,7 +1165,7 @@ const ChapterStudio: React.FC = () => {
             const m = url.pathname.match(/\/api\/v1\/studio\/files\/([^/]+)\/download\/?$/)
             if (m?.[1]) return decodeURIComponent(m[1])
           } catch {
-            // ignore
+            // 忽略该错误
           }
           return null
         }
@@ -1342,7 +1342,7 @@ const ChapterStudio: React.FC = () => {
           const m = url.pathname.match(/\/api\/v1\/studio\/files\/([^/]+)\/download\/?$/)
           if (m?.[1]) return decodeURIComponent(m[1])
         } catch {
-          // ignore
+          // 忽略该错误
         }
         return null
       }
@@ -1505,7 +1505,7 @@ const ChapterStudio: React.FC = () => {
       }
       assignIfChanged('scene_id')
       // 镜头语言字段（camera_shot/angle/movement/duration）走即时更新，不在此处防抖提交
-      // array / object fields
+      // 数组或对象字段
       if (JSON.stringify(prev?.mood_tags ?? null) !== JSON.stringify(next.mood_tags ?? null)) patch.mood_tags = next.mood_tags ?? null
       assignIfChanged('atmosphere')
       assignIfChanged('follow_atmosphere')
@@ -3725,7 +3725,7 @@ function Inspector(props: {
       const m = url.pathname.match(/\/api\/v1\/studio\/files\/([^/]+)\/download\/?$/)
       if (m?.[1]) return decodeURIComponent(m[1])
     } catch {
-      // ignore
+      // 忽略该错误
     }
     return null
   }, [])

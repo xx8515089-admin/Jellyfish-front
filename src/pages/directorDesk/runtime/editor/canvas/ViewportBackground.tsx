@@ -14,6 +14,7 @@ import {
 import type { DirectorAssetRef, PanoramaProjectionMode } from "../schema/directorProject";
 import { useResolvedLocalAssetUrl } from "../loaders/useResolvedLocalAssetUrl";
 import { getPanoramaRotationRadians } from "./panoramaMath";
+import { useDirectorDeskText } from "../../useDirectorDeskText";
 
 type PanoramaTextureState =
   | { status: "idle" }
@@ -102,6 +103,7 @@ export function ViewportBackground({
   panoramaRadius: number;
   panoramaYaw: number;
 }) {
+  const text = useDirectorDeskText();
   const { gl, scene } = useThree();
   const projectionMode = panoramaAsset?.projectionMode ?? "equirectangular";
   const resolvedPanoramaUrl = useResolvedLocalAssetUrl(panoramaAsset ?? undefined);
@@ -150,8 +152,8 @@ export function ViewportBackground({
       {textureState.status === "error" ? (
         <Html center>
           <div className="viewport-error-card" role="status">
-            <strong>全景图加载失败</strong>
-            <span>请重新导入 JPG / PNG / WEBP 图片</span>
+            <strong>{text("全景图加载失败", "Failed to load panorama")}</strong>
+            <span>{text("请重新导入 JPG / PNG / WEBP 图片", "Please import the JPG, PNG, or WEBP image again")}</span>
           </div>
         </Html>
       ) : null}

@@ -1,10 +1,11 @@
 import { Component, type ReactNode } from "react";
-import type { CharacterRigState, DirectorModelFormat, DirectorObject } from "../schema/directorProject";
+import type { CharacterRigState, DirectorModelFormat } from "../schema/directorProject";
 import type { DirectorCharacterBoneMap } from "../schema/semanticBody";
 import { PrimitiveMannequin } from "./PrimitiveMannequin";
 import { UE4MannequinModel } from "./UE4MannequinModel";
 import type { CharacterBodyType } from "./mannequin/bodyTypes";
 import { MixamoCharacterModel, type ExternalCharacterAnimation } from "./MixamoCharacterModel";
+import type { CharacterRuntimeMotion } from "./characterRuntimeMotion";
 
 interface CharacterModelProps {
   actionPresetId?: string | null;
@@ -13,13 +14,13 @@ interface CharacterModelProps {
   color?: string;
   onLabelAnchorYChange?: (anchorY: number) => void;
   rigState?: CharacterRigState;
-  /** Signals that the parent has applied an automatic locomotion pose. */
+  /** 表示父级已应用自动移动姿态。 */
   motionWalking?: boolean;
   assetUrl?: string;
   assetFormat?: DirectorModelFormat;
   externalAnimation?: ExternalCharacterAnimation | null;
   orientationCorrection?: [number, number, number];
-  runtimeMotion?: { duration: number; object: DirectorObject };
+  runtimeMotion?: CharacterRuntimeMotion;
   boneMap?: DirectorCharacterBoneMap;
 }
 

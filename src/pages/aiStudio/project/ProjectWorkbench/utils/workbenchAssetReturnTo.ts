@@ -11,7 +11,7 @@ export function decodeAssetEditReturnTo(searchReturnTo: string | null, fallback:
     const decoded = decodeURIComponent(searchReturnTo.trim())
     if (decoded.startsWith('/projects/')) return decoded
   } catch {
-    // ignore malformed encoding
+    // 忽略格式错误的编码
   }
   return fallback
 }

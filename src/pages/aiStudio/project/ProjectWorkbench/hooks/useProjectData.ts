@@ -32,7 +32,7 @@ export type Chapter = {
   updatedAt: string
 }
 
-/** Creates a client-side id only for request bodies that require a caller-provided id. */
+/** 仅为要求调用方提供 ID 的请求体创建客户端 ID。 */
 function newId(prefix: string): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
@@ -40,7 +40,7 @@ function newId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`
 }
 
-/** Maps the generated project DTO into the UI shape consumed by the workbench. */
+/** 将生成的项目 DTO 映射为工作台使用的 UI 数据结构。 */
 function toUIProject(p: ProjectRead): Project {
   const stats = (p.stats ?? {}) as Record<string, unknown>
   const getNum = (key: string) => {
@@ -88,7 +88,7 @@ export type ProjectCharacter = {
   linked_shot_count?: number | null
 }
 
-/** Maps the generated chapter DTO into the UI shape consumed by chapter tabs and summaries. */
+/** 将生成的章节 DTO 映射为章节标签页和摘要使用的 UI 数据结构。 */
 function toUIChapter(c: ChapterRead): Chapter {
   return {
     id: c.id,

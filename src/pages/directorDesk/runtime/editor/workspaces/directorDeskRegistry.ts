@@ -82,7 +82,7 @@ export function writeDirectorDeskRecords(records: DirectorDeskRecord[]) {
   try {
     storage.setItem(DIRECTOR_DESK_REGISTRY_KEY, JSON.stringify(dedupeRecords(records)));
   } catch {
-    // Keep the editor usable if localStorage quota is exceeded.
+    // 即使超出 localStorage 配额，也要保证编辑器可用。
   }
 }
 
@@ -103,7 +103,7 @@ export function writeActiveDirectorDeskId(id: string) {
   try {
     storage.setItem(ACTIVE_DIRECTOR_DESK_ID_KEY, id);
   } catch {
-    // Keep the editor usable if localStorage is unavailable or full.
+    // 即使 localStorage 不可用或已满，也要保证编辑器可用。
   }
 }
 
@@ -113,7 +113,7 @@ function clearActiveDirectorDeskId() {
   try {
     storage.removeItem(ACTIVE_DIRECTOR_DESK_ID_KEY);
   } catch {
-    // Keep the editor usable if localStorage is unavailable.
+    // 即使 localStorage 不可用，也要保证编辑器可用。
   }
 }
 
@@ -139,7 +139,7 @@ function removeDirectorDeskScene(id: string) {
       storage.removeItem(LEGACY_DIRECTOR_SCENE_STORAGE_KEY);
     }
   } catch {
-    // Keep the editor usable if localStorage is unavailable.
+    // 即使 localStorage 不可用，也要保证编辑器可用。
   }
 }
 
@@ -167,7 +167,7 @@ export function ensureDirectorDeskRecords() {
     try {
       storage.setItem(firstSceneKey, legacyScene);
     } catch {
-      // Ignore quota errors; a new empty first desk will still be created.
+      // 忽略配额错误，仍会创建一个新的空白初始导演台。
     }
   }
   writeDirectorDeskRecords([first]);
@@ -181,7 +181,7 @@ export function getInitialDirectorDeskId(records: DirectorDeskRecord[]) {
     const instanceId = params.get("instanceId")?.trim();
     if (instanceId) return instanceId;
   } catch {
-    // Ignore malformed URL state.
+    // 忽略格式错误的 URL 状态。
   }
 
   const activeId = readActiveDirectorDeskId();

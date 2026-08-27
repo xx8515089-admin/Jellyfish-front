@@ -808,7 +808,7 @@ export function ChapterShotEditPage() {
         setSkipExtractionUpdating(false)
       }
     },
-    [applyPreparationState, loadPreparationState, shotId],
+    [applyPreparationState, l, loadPreparationState, shotId],
   )
 
   const extractAssets = useCallback(async () => {
@@ -989,7 +989,7 @@ export function ChapterShotEditPage() {
         const thumb = resolveAssetUrl(data?.thumbnail ?? data?.images?.[0]?.thumbnail ?? '')
         setLinkingThumb(thumb || undefined)
       } catch {
-        // ignore
+        // 忽略该错误
       } finally {
         setLinkingLoading(false)
       }

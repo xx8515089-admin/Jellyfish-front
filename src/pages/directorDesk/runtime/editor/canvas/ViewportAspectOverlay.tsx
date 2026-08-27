@@ -1,5 +1,6 @@
 import { Grid3X3 } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useDirectorDeskText } from "../../useDirectorDeskText";
 import type { ViewportAspectRatio } from "../schema/viewportAspectRatio";
 import {
   FRAME_TOP_PADDING,
@@ -20,6 +21,7 @@ export function ViewportAspectOverlay({
   onToggleRuleOfThirds?: (enabled: boolean) => void;
   safeAreaInsets?: ViewportSafeAreaInsets;
 }) {
+  const text = useDirectorDeskText();
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const [overlaySize, setOverlaySize] = useState({ width: 0, height: 0 });
 
@@ -111,14 +113,16 @@ export function ViewportAspectOverlay({
 
   if (!shellStyle || !frameRect) return null;
 
-  const guideToggleLabel = showRuleOfThirds ? "关闭九宫格辅助线" : "开启九宫格辅助线";
+  const guideToggleLabel = showRuleOfThirds
+    ? text("关闭九宫格辅助线", "Hide rule-of-thirds grid")
+    : text("开启九宫格辅助线", "Show rule-of-thirds grid");
 
   return (
     <div className="viewport-aspect-overlay" ref={overlayRef}>
       {maskStyle ? (
-        <div className="viewport-aspect-mask" aria-label="视口画幅遮罩" aria-hidden="true" style={maskStyle} />
+        <div className="viewport-aspect-mask" aria-label={text("视口画幅遮罩", "Viewport aspect mask")} aria-hidden="true" style={maskStyle} />
       ) : null}
-      <div className="viewport-aspect-frame-shell" aria-label="视口画幅框" data-aspect-ratio={ratio} style={shellStyle}>
+      <div className="viewport-aspect-frame-shell" aria-label={text("视口画幅框", "Viewport aspect frame")} data-aspect-ratio={ratio} style={shellStyle}>
         <button
           aria-label={guideToggleLabel}
           aria-pressed={showRuleOfThirds}
@@ -129,24 +133,24 @@ export function ViewportAspectOverlay({
           <Grid3X3 aria-hidden="true" size={15} strokeWidth={1.8} />
         </button>
         {showRuleOfThirds ? (
-          <div className="viewport-rule-of-thirds" aria-label="九宫格辅助线">
+          <div className="viewport-rule-of-thirds" aria-label={text("九宫格辅助线", "Rule-of-thirds grid")}>
             <div
-              aria-label="九宫格辅助线-竖线"
+              aria-label={text("九宫格辅助线-竖线", "Rule-of-thirds vertical line")}
               aria-hidden="true"
               className="viewport-rule-of-thirds-line is-vertical is-one-third"
             />
             <div
-              aria-label="九宫格辅助线-竖线"
+              aria-label={text("九宫格辅助线-竖线", "Rule-of-thirds vertical line")}
               aria-hidden="true"
               className="viewport-rule-of-thirds-line is-vertical is-two-thirds"
             />
             <div
-              aria-label="九宫格辅助线-横线"
+              aria-label={text("九宫格辅助线-横线", "Rule-of-thirds horizontal line")}
               aria-hidden="true"
               className="viewport-rule-of-thirds-line is-horizontal is-one-third"
             />
             <div
-              aria-label="九宫格辅助线-横线"
+              aria-label={text("九宫格辅助线-横线", "Rule-of-thirds horizontal line")}
               aria-hidden="true"
               className="viewport-rule-of-thirds-line is-horizontal is-two-thirds"
             />

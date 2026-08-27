@@ -4,7 +4,7 @@ import { OpenAPI } from './generated'
 
 type RequestLanguage = 'cn' | 'en'
 
-/** Resolves the backend language code from the current persisted UI locale. */
+/** 根据当前持久化的 UI 语言设置解析后端语言代码。 */
 function getRequestLanguage(): RequestLanguage {
   const storedLanguage = window.localStorage.getItem('jellyfish_language')
   if (storedLanguage === 'en-US') return 'en'

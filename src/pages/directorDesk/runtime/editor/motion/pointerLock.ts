@@ -4,9 +4,9 @@ type PointerLockRequest = (this: HTMLElement) => MaybeAsyncVoid;
 type PointerLockExit = (this: Document) => MaybeAsyncVoid;
 
 /**
- * Requests Pointer Lock without leaking browser or embedded-host failures.
- * `true` means that the host accepted the invocation; callers can listen for
- * `pointerlockchange` or use `isPointerLockedTo` when they need confirmed state.
+ * 请求 Pointer Lock，同时屏蔽浏览器或嵌入宿主产生的失败。
+ * 返回 `true` 表示宿主已接受调用；调用方需要确认状态时，可以监听
+ * `pointerlockchange`，或使用 `isPointerLockedTo`。
  */
 export async function requestPointerLockSafely(element: HTMLElement): Promise<boolean> {
   const request = element.requestPointerLock as unknown as PointerLockRequest | undefined;
@@ -20,7 +20,7 @@ export async function requestPointerLockSafely(element: HTMLElement): Promise<bo
   }
 }
 
-/** Safely releases Pointer Lock, including hosts that return a Promise. */
+/** 安全释放 Pointer Lock，并兼容返回 Promise 的宿主。 */
 export async function exitPointerLockSafely(): Promise<boolean> {
   if (typeof document === "undefined") return false;
 
@@ -35,7 +35,7 @@ export async function exitPointerLockSafely(): Promise<boolean> {
   }
 }
 
-/** Returns whether the specified element currently owns Pointer Lock. */
+/** 判断指定元素当前是否持有 Pointer Lock。 */
 export function isPointerLockedTo(element: HTMLElement): boolean {
   if (typeof document === "undefined") return false;
   if (document.pointerLockElement === element) return true;

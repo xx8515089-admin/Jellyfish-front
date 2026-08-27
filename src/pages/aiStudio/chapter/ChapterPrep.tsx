@@ -313,7 +313,7 @@ const ChapterPrep: React.FC = () => {
         })
       }
     } catch {
-      // ignore
+      // 忽略该错误
     }
   }, [projectId])
 
@@ -322,7 +322,7 @@ const ChapterPrep: React.FC = () => {
     try {
       window.localStorage.setItem(entitiesStorageKey(projectId), JSON.stringify(existingEntities))
     } catch {
-      // ignore
+      // 忽略该错误
     }
   }, [projectId, existingEntities])
 

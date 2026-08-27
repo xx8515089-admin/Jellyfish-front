@@ -72,6 +72,7 @@ import {
 } from "../performance/automaticPerformanceRuntime";
 import { getRuntimePlaybackProgress, setRuntimePlaybackProgress } from "../runtime/playbackRuntime";
 import { restoreMediaExportPlayback } from "../io/mediaExportPlayback";
+import { useDirectorDeskText } from "../../useDirectorDeskText";
 import {
   getViewportGizmoHitButtonStyle,
   getViewportSnapshotFromGizmoDirection,
@@ -106,15 +107,16 @@ const VIEWPORT_GRID_ELEVATION = 0.002;
 const DIRECTOR_SNAPSHOT_UI_INTERVAL_MS = 80;
 const GIZMO_AXIS_HIT_TARGETS: Array<{
   label: string;
+  labelEn: string;
   className: string;
   direction: [number, number, number];
 }> = [
-  { label: "切换到 X 正向视图", className: "is-x-positive", direction: [1, 0, 0] },
-  { label: "切换到 Y 正向视图", className: "is-y-positive", direction: [0, 1, 0] },
-  { label: "切换到 Z 正向视图", className: "is-z-positive", direction: [0, 0, 1] },
-  { label: "切换到 X 反向视图", className: "is-x-negative", direction: [-1, 0, 0] },
-  { label: "切换到 Y 反向视图", className: "is-y-negative", direction: [0, -1, 0] },
-  { label: "切换到 Z 反向视图", className: "is-z-negative", direction: [0, 0, -1] },
+  { label: "切换到 X 正向视图", labelEn: "Switch to positive X view", className: "is-x-positive", direction: [1, 0, 0] },
+  { label: "切换到 Y 正向视图", labelEn: "Switch to positive Y view", className: "is-y-positive", direction: [0, 1, 0] },
+  { label: "切换到 Z 正向视图", labelEn: "Switch to positive Z view", className: "is-z-positive", direction: [0, 0, 1] },
+  { label: "切换到 X 反向视图", labelEn: "Switch to negative X view", className: "is-x-negative", direction: [-1, 0, 0] },
+  { label: "切换到 Y 反向视图", labelEn: "Switch to negative Y view", className: "is-y-negative", direction: [0, -1, 0] },
+  { label: "切换到 Z 反向视图", labelEn: "Switch to negative Z view", className: "is-z-negative", direction: [0, 0, -1] },
 ];
 type ViewportCaptureLabel = {
   text: string;
@@ -404,6 +406,7 @@ function CanvasCaptureBridge({
   viewportAspectRatio: ReturnType<typeof useDirectorStore.getState>["viewportAspectRatio"];
   viewMode: "director" | "camera";
 }) {
+  const text = useDirectorDeskText();
   const { camera, gl, scene } = useThree();
 
   useEffect(() => {
@@ -450,11 +453,15 @@ function CanvasCaptureBridge({
       };
 
       if (preset === "current") {
-        return [snapshot(source === "camera-panel" ? "当前机位" : "当前视角")];
+        return [snapshot(source === "camera-panel"
+          ? text("当前机位", "Current camera")
+          : text("当前视角", "Current view"))];
       }
 
       const count = preset === "four" ? 4 : 12;
-      const labelPrefix = preset === "four" ? "四方位" : "十二方位";
+      const labelPrefix = preset === "four"
+        ? text("四方位", "Four-angle")
+        : text("十二方位", "Twelve-angle");
       const offset = originalPosition.clone().sub(target);
       const spherical = new Spherical().setFromVector3(offset.lengthSq() === 0 ? new Vector3(0, 0, 6) : offset);
       const phi = Math.min(Math.max(spherical.phi, 0.35), Math.PI - 0.35);
@@ -482,7 +489,7 @@ function CanvasCaptureBridge({
 
     setViewportCaptureHandler(capture);
     return () => clearViewportCaptureHandler();
-  }, [activeCamera, bottomPadding, camera, controlsRef, gl, safeAreaInsets, scene, viewMode, viewportAspectRatio]);
+  }, [activeCamera, bottomPadding, camera, controlsRef, gl, safeAreaInsets, scene, text, viewMode, viewportAspectRatio]);
 
   return null;
 }
@@ -655,12 +662,13 @@ function ViewportGizmoOverlay({
   rightOffset?: number;
   snapshot: CameraShotSnapshot;
 }) {
+  const text = useDirectorDeskText();
   function selectAxisDirection(direction: [number, number, number]) {
     onSnapshotChange(getViewportSnapshotFromGizmoDirection(snapshot, new Vector3(...direction)));
   }
 
   return (
-    <div className="viewport-gizmo-overlay" aria-label="3D视口原生坐标控件" style={{ right: `${rightOffset}px` }}>
+    <div className="viewport-gizmo-overlay" aria-label={text("3D 视口原生坐标控件", "3D viewport axis controls")} style={{ right: `${rightOffset}px` }}>
       <Canvas
         key={`gizmo-${antialias ? "aa" : "no-aa"}`}
         className="viewport-gizmo-canvas"
@@ -670,11 +678,11 @@ function ViewportGizmoOverlay({
       >
         <ViewportGizmoContent onSnapshotChange={onSnapshotChange} snapshot={snapshot} />
       </Canvas>
-      <div className="viewport-gizmo-hit-layer" aria-label="3D视口坐标切换按钮">
+      <div className="viewport-gizmo-hit-layer" aria-label={text("3D 视口坐标切换按钮", "3D viewport axis buttons")}>
         {GIZMO_AXIS_HIT_TARGETS.map((target) => (
           <button
             key={target.label}
-            aria-label={target.label}
+            aria-label={text(target.label, target.labelEn)}
             className={`viewport-gizmo-hit-button ${target.className}`}
             style={getViewportGizmoHitButtonStyle(snapshot, target.direction)}
             type="button"
@@ -709,6 +717,7 @@ function MotionMonitor({
   onMonitorFovChange: (fov: number | null) => void;
   renderDpr: number | [number, number];
 }) {
+  const text = useDirectorDeskText();
   const monitorScene = useDirectorStore((state) => state.project.scene);
   const monitorPanoramaAsset = useDirectorStore((state) =>
     state.project.assets.find((asset) => asset.id === state.project.panoramaAssetId) ?? null
@@ -750,18 +759,20 @@ function MotionMonitor({
   return (
     <aside
       className="motion-monitor"
-      aria-label={mainViewMode === "director" ? "成片实时监看" : "路线实时监看"}
+      aria-label={mainViewMode === "director"
+        ? text("成片实时监看", "Live final-shot monitor")
+        : text("路线实时监看", "Live route monitor")}
       style={{ left: `${position.x}px`, top: `${position.y}px` }}
     >
       <header
-        aria-label="拖动监看窗口"
+        aria-label={text("拖动监看窗口", "Drag monitor window")}
         onPointerDown={(event) => {
           event.preventDefault();
           dragRef.current = { pointerX: event.clientX, pointerY: event.clientY, startX: position.x, startY: position.y };
         }}
       >
-        <span>{mainViewMode === "director" ? "成片监看" : "路线监看"}</span>
-        <small><Move aria-hidden="true" size={11} />拖动</small>
+        <span>{mainViewMode === "director" ? text("成片监看", "Final shot") : text("路线监看", "Route view")}</span>
+        <small><Move aria-hidden="true" size={11} />{text("拖动", "Drag")}</small>
       </header>
       <div className="motion-monitor-canvas-wrap" style={{ aspectRatio }}>
         <Canvas
@@ -796,11 +807,11 @@ function MotionMonitor({
           </Suspense>
         </Canvas>
       </div>
-      <div className="motion-monitor-fov" aria-label="看成片 FOV 设置">
+      <div className="motion-monitor-fov" aria-label={text("看成片 FOV 设置", "Final-shot FOV settings")}>
         <label>
-          <span>看成片</span>
+          <span>{text("看成片", "Final shot")}</span>
           <input
-            aria-label="看成片 FOV"
+            aria-label={text("看成片 FOV", "Final-shot FOV")}
             type="range"
             min="10"
             max="120"
@@ -811,14 +822,14 @@ function MotionMonitor({
           <output>{Math.round(finishedShotFov ?? cameraSnapshot?.fov ?? 50)}°</output>
         </label>
         <button type="button" disabled={finishedShotFov === null} onClick={() => onFinishedShotFovChange(null)}>
-          跟随轨迹
+          {text("跟随轨迹", "Follow route")}
         </button>
       </div>
-      <div className="motion-monitor-fov motion-monitor-fov--secondary" aria-label="小窗 FOV 设置">
+      <div className="motion-monitor-fov motion-monitor-fov--secondary" aria-label={text("小窗 FOV 设置", "Monitor FOV settings")}>
         <label>
-          <span>小窗</span>
+          <span>{text("小窗", "Monitor")}</span>
           <input
-            aria-label="小窗 FOV"
+            aria-label={text("小窗 FOV", "Monitor FOV")}
             type="range"
             min="10"
             max="120"
@@ -829,7 +840,7 @@ function MotionMonitor({
           <output>{Math.round(monitorFov ?? monitorCameraBase?.fov ?? 50)}°</output>
         </label>
         <button type="button" disabled={monitorFov === null} onClick={() => onMonitorFovChange(null)}>
-          跟随原视角
+          {text("跟随原视角", "Follow source view")}
         </button>
       </div>
     </aside>
@@ -928,6 +939,7 @@ function AutomaticPerformanceController({
 }
 
 export function DirectorCanvas() {
+  const text = useDirectorDeskText();
   const benchmarkMode = getPerformanceBenchmarkMode(window.location.search);
   const performanceProfile = useDirectorStore((state) => state.performanceProfile);
   const detectedPerformanceProfile = getEffectivePerformanceProfile("auto").id;
@@ -946,6 +958,7 @@ export function DirectorCanvas() {
   );
   const cameraMotionPlaying = useDirectorStore((state) => state.cameraMotionPlaying);
   const cameraMotionPlaybackRevision = useDirectorStore((state) => state.cameraMotionPlaybackRevision);
+  const characterActionPreview = useDirectorStore((state) => state.characterActionPreview);
   const motionStudioOpen = useDirectorStore((state) => state.motionStudioOpen);
   const setCameraMotionProgress = useDirectorStore((state) => state.setCameraMotionProgress);
   const setCameraMotionPlaying = useDirectorStore((state) => state.setCameraMotionPlaying);
@@ -994,8 +1007,12 @@ export function DirectorCanvas() {
     ),
     [sceneObjects]
   );
-  const hasPlayableMotion = (activeCameraMotionPath?.keyframes.length ?? 0) >= 2 || hasObjectMotion;
-  const activeMotionDuration = activeCameraMotionPath?.duration ?? DEFAULT_CAMERA_MOTION_PATH.duration;
+  const hasPlayableMotion = Boolean(characterActionPreview)
+    || (activeCameraMotionPath?.keyframes.length ?? 0) >= 2
+    || hasObjectMotion;
+  const activeMotionDuration = characterActionPreview?.durationSeconds
+    ?? activeCameraMotionPath?.duration
+    ?? DEFAULT_CAMERA_MOTION_PATH.duration;
   const viewportAspectRatio = useDirectorStore((state) => state.viewportAspectRatio);
   const finishedShotFov = useDirectorStore((state) => state.finishedShotFov);
   const motionMonitorFov = useDirectorStore((state) => state.motionMonitorFov);
@@ -1038,7 +1055,7 @@ export function DirectorCanvas() {
   const lockedPilotTargetName = cameraPilotLockedTargetId
     ? sceneObjects.find((item) => item.id === cameraPilotLockedTargetId)?.name ?? null
     : cameraPilotLockedPoint
-      ? "空间点"
+      ? text("空间点", "World point")
       : null;
 
   useEffect(() => {
@@ -1078,7 +1095,7 @@ export function DirectorCanvas() {
     const tick = (now: number) => {
       const elapsed = (now - cycleStartedAt) / (activeMotionDuration * 1000);
       if (elapsed >= 1) {
-        if (activeCameraMotionPath?.loop) {
+        if (!characterActionPreview && activeCameraMotionPath?.loop) {
           cycleStartedAt = now;
           setRuntimePlaybackProgress(0);
           setCameraMotionProgress(0);
@@ -1104,6 +1121,7 @@ export function DirectorCanvas() {
     activeMotionDuration,
     cameraMotionPlaying,
     cameraMotionPlaybackRevision,
+    characterActionPreview,
     hasPlayableMotion,
     setCameraMotionPlaying,
     setCameraMotionProgress,
@@ -1160,7 +1178,7 @@ export function DirectorCanvas() {
 
   useEffect(() => {
     setReferenceVideoExportHandler(async ({ fileName, fps, quality }) => {
-      if (mediaExportInProgressRef.current) throw new Error("已有导出任务正在进行，请稍后再试");
+      if (mediaExportInProgressRef.current) throw new Error(text("已有导出任务正在进行，请稍后再试", "An export is already in progress. Please try again shortly."));
       mediaExportInProgressRef.current = true;
       const originalProgress = getRuntimePlaybackProgress();
       const originalPlaying = useDirectorStore.getState().cameraMotionPlaying;
@@ -1176,7 +1194,7 @@ export function DirectorCanvas() {
         const canvas = referenceVideoCanvasRef.current;
         const mimeType = getSupportedReferenceVideoMimeType();
         if (!canvas || !mimeType || !activeCamera || !activeCameraMotionPath || activeCameraMotionPath.keyframes.length < 2) {
-          throw new Error("当前浏览器无法导出参考视频");
+          throw new Error(text("当前浏览器无法导出参考视频", "This browser cannot export the reference video."));
         }
 
         const stream = canvas.captureStream(fps);
@@ -1187,7 +1205,7 @@ export function DirectorCanvas() {
         const recordedMimeType = recorder.mimeType || mimeType;
         if (!recordedMimeType.toLowerCase().startsWith("video/mp4")) {
           stream.getTracks().forEach((track) => track.stop());
-          throw new Error("当前浏览器不支持 MP4 导出，请使用最新版 Chrome 或 Edge");
+          throw new Error(text("当前浏览器不支持 MP4 导出，请使用最新版 Chrome 或 Edge", "This browser does not support MP4 export. Please use the latest Chrome or Edge."));
         }
         const chunks: Blob[] = [];
         recorder.addEventListener("dataavailable", (event) => {
@@ -1195,7 +1213,7 @@ export function DirectorCanvas() {
         });
         const stopped = new Promise<void>((resolve, reject) => {
           recorder.addEventListener("stop", () => resolve(), { once: true });
-          recorder.addEventListener("error", () => reject(new Error("参考视频录制失败")), { once: true });
+          recorder.addEventListener("error", () => reject(new Error(text("参考视频录制失败", "Failed to record the reference video."))), { once: true });
         });
 
         setCameraMotionPlaying(false);
@@ -1212,7 +1230,7 @@ export function DirectorCanvas() {
         stream.getTracks().forEach((track) => track.stop());
 
         const blob = new Blob(chunks, { type: recordedMimeType });
-        if (blob.size === 0) throw new Error("MP4 录制结果为空，请重新导出");
+        if (blob.size === 0) throw new Error(text("MP4 录制结果为空，请重新导出", "The MP4 recording is empty. Please export again."));
         return {
           blob,
           durationSeconds: activeMotionDuration,
@@ -1233,12 +1251,12 @@ export function DirectorCanvas() {
       }
     });
     return () => clearReferenceVideoExportHandler();
-  }, [activeCamera, activeCameraMotionPath, activeMotionDuration, setCameraMotionPlaying, setCameraMotionProgress]);
+  }, [activeCamera, activeCameraMotionPath, activeMotionDuration, setCameraMotionPlaying, setCameraMotionProgress, text]);
 
   useEffect(() => {
     setCleanFrameExportHandler(async ({ fileName, position, quality }) => {
-      if (!activeCamera) throw new Error("当前没有可导出的活动相机");
-      if (mediaExportInProgressRef.current) throw new Error("已有导出任务正在进行，请稍后再试");
+      if (!activeCamera) throw new Error(text("当前没有可导出的活动相机", "There is no active camera to export."));
+      if (mediaExportInProgressRef.current) throw new Error(text("已有导出任务正在进行，请稍后再试", "An export is already in progress. Please try again shortly."));
       mediaExportInProgressRef.current = true;
       const originalProgress = getRuntimePlaybackProgress();
       const originalPlaying = useDirectorStore.getState().cameraMotionPlaying;
@@ -1256,7 +1274,7 @@ export function DirectorCanvas() {
         }
         await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
         const canvas = referenceVideoCanvasRef.current;
-        if (!canvas) throw new Error("当前浏览器无法导出成片帧");
+        if (!canvas) throw new Error(text("当前浏览器无法导出成片帧", "This browser cannot export final-shot frames."));
         return {
           dataUrl: canvas.toDataURL("image/png"),
           fileName,
@@ -1278,7 +1296,7 @@ export function DirectorCanvas() {
       }
     });
     return () => clearCleanFrameExportHandler();
-  }, [activeCamera, setCameraMotionPlaying, setCameraMotionProgress]);
+  }, [activeCamera, setCameraMotionPlaying, setCameraMotionProgress, text]);
 
   function getViewportCameraSnapshot(): CameraShotSnapshot {
     return viewportCameraSnapshotRef.current;

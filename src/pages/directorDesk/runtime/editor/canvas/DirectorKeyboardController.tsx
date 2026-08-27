@@ -30,12 +30,12 @@ export interface DirectorKeyboardControllerProps {
   moveSpeed?: number;
 }
 
-/** Returns whether a physical key participates in director-view navigation. */
+/** 判断物理按键是否用于导演视图导航。 */
 export function isDirectorMovementCode(code: string) {
   return DIRECTOR_MOVEMENT_CODES.has(code);
 }
 
-/** Converts the current pressed-key set into a normalized, axis-based intent. */
+/** 将当前按键集合转换为基于坐标轴的归一化操作意图。 */
 export function getDirectorMovementIntent(pressedCodes: ReadonlySet<string>): DirectorMovementIntent {
   return {
     forward: Number(pressedCodes.has("KeyW")) - Number(pressedCodes.has("KeyS")),
@@ -47,9 +47,9 @@ export function getDirectorMovementIntent(pressedCodes: ReadonlySet<string>): Di
 }
 
 /**
- * Builds a world-space movement direction without mutating either input.
- * Forward is projected onto the ground plane so looking up/down never makes
- * W/S change altitude. Diagonal movement is normalized to avoid a speed boost.
+ * 在不修改任一输入值的情况下构建世界空间移动方向。
+ * 前进方向会投影到地面平面，因此抬头或低头不会使 W/S 改变高度。
+ * 对斜向移动做归一化处理，避免产生额外的速度增益。
  */
 export function getDirectorMovementDirection(
   intent: DirectorMovementIntent,
@@ -75,7 +75,7 @@ export function getDirectorMovementDirection(
   return movement;
 }
 
-/** True for text controls, buttons, and any node inside editable content. */
+/** 文本控件、按钮以及可编辑内容中的任意节点均返回 true。 */
 export function isEditableDirectorEventTarget(target: EventTarget | null) {
   if (typeof Element === "undefined" || !(target instanceof Element)) return false;
 
@@ -95,8 +95,8 @@ export function isEditableDirectorEventTarget(target: EventTarget | null) {
 }
 
 /**
- * Keyboard fly-through controls for the regular director view. This component
- * must be mounted inside an R3F Canvas next to the corresponding OrbitControls.
+ * 常规导演视图的键盘飞行控制器。
+ * 此组件必须挂载在 R3F Canvas 内，并与对应的 OrbitControls 相邻。
  */
 export function DirectorKeyboardController({
   active,
