@@ -8,6 +8,7 @@ import {
   VIEWPORT_SENSITIVITY_STEP,
 } from "../schema/viewportSensitivity";
 import { useDirectorStore } from "../store/directorStore";
+import { useDirectorInteractionBatch } from "../store/useDirectorInteractionBatch";
 import { isDirectorDeskEventInside } from "../io/directorDeskDom";
 import { useDirectorDeskText, type DirectorDeskText } from "../../useDirectorDeskText";
 
@@ -34,6 +35,7 @@ export function ViewportSensitivitySettings() {
   const setRotateSensitivity = useDirectorStore((state) => state.setViewportRotateSensitivity);
   const setZoomSensitivity = useDirectorStore((state) => state.setViewportZoomSensitivity);
   const resetSensitivity = useDirectorStore((state) => state.resetViewportSensitivity);
+  const { beginInteraction, endInteraction } = useDirectorInteractionBatch();
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -112,6 +114,10 @@ export function ViewportSensitivitySettings() {
               max={SENSITIVITY_PERCENT_MAX}
               step={SENSITIVITY_PERCENT_STEP}
               value={toPercent(rotateSensitivity)}
+              onPointerDown={beginInteraction}
+              onPointerUp={endInteraction}
+              onPointerCancel={endInteraction}
+              onBlur={endInteraction}
               onChange={(event) => setRotateSensitivity(Number(event.currentTarget.value) / 100)}
             />
             <div className="viewport-sensitivity-scale" aria-hidden="true"><span>{text("慢", "Slow")}</span><span>{text("快", "Fast")}</span></div>
@@ -132,6 +138,10 @@ export function ViewportSensitivitySettings() {
               max={SENSITIVITY_PERCENT_MAX}
               step={SENSITIVITY_PERCENT_STEP}
               value={toPercent(zoomSensitivity)}
+              onPointerDown={beginInteraction}
+              onPointerUp={endInteraction}
+              onPointerCancel={endInteraction}
+              onBlur={endInteraction}
               onChange={(event) => setZoomSensitivity(Number(event.currentTarget.value) / 100)}
             />
             <div className="viewport-sensitivity-scale" aria-hidden="true"><span>{text("慢", "Slow")}</span><span>{text("快", "Fast")}</span></div>

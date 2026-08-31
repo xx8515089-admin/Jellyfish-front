@@ -29,6 +29,7 @@ import {
 } from "../io/cleanFrameExport";
 import { buildScreenshotMeta, type ScreenshotResult } from "../io/screenshotExport";
 import { useDirectorStore, type CameraShotSnapshot } from "../store/directorStore";
+import { useDirectorInteractionBatch } from "../store/useDirectorInteractionBatch";
 import { DEFAULT_DIRECTOR_CAMERA_VIEW_SNAPSHOT } from "../schema/cameraGeometry";
 import { DEFAULT_CAMERA_MOTION_PATH, getCameraMotionPath } from "../schema/cameraMotion";
 import type { DirectorAssetRef, DirectorObject, DirectorTransform, SceneSettings } from "../schema/directorProject";
@@ -718,6 +719,8 @@ function MotionMonitor({
   renderDpr: number | [number, number];
 }) {
   const text = useDirectorDeskText();
+  const finishedShotFovInteraction = useDirectorInteractionBatch();
+  const monitorFovInteraction = useDirectorInteractionBatch();
   const monitorScene = useDirectorStore((state) => state.project.scene);
   const monitorPanoramaAsset = useDirectorStore((state) =>
     state.project.assets.find((asset) => asset.id === state.project.panoramaAssetId) ?? null
@@ -817,6 +820,10 @@ function MotionMonitor({
             max="120"
             step="1"
             value={finishedShotFov ?? cameraSnapshot?.fov ?? 50}
+            onPointerDown={finishedShotFovInteraction.beginInteraction}
+            onPointerUp={finishedShotFovInteraction.endInteraction}
+            onPointerCancel={finishedShotFovInteraction.endInteraction}
+            onBlur={finishedShotFovInteraction.endInteraction}
             onChange={(event) => onFinishedShotFovChange(Number(event.currentTarget.value))}
           />
           <output>{Math.round(finishedShotFov ?? cameraSnapshot?.fov ?? 50)}°</output>
@@ -835,6 +842,10 @@ function MotionMonitor({
             max="120"
             step="1"
             value={monitorFov ?? monitorCameraBase?.fov ?? 50}
+            onPointerDown={monitorFovInteraction.beginInteraction}
+            onPointerUp={monitorFovInteraction.endInteraction}
+            onPointerCancel={monitorFovInteraction.endInteraction}
+            onBlur={monitorFovInteraction.endInteraction}
             onChange={(event) => onMonitorFovChange(Number(event.currentTarget.value))}
           />
           <output>{Math.round(monitorFov ?? monitorCameraBase?.fov ?? 50)}°</output>

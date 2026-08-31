@@ -33,6 +33,7 @@ import {
 import { getObjectMotionSnapshot } from "../schema/objectMotion";
 import type { CameraShotSnapshot } from "../store/directorStore";
 import { useDirectorStore } from "../store/directorStore";
+import { useDirectorInteractionBatch } from "../store/useDirectorInteractionBatch";
 import {
   CAMERA_MOTION_PRESETS,
   findMatchingCameraMotionPreset,
@@ -152,8 +153,7 @@ export function MotionStudio({
   const moveCameraMotionKeyframe = useDirectorStore((state) => state.moveCameraMotionKeyframe);
   const insertCameraMotionKeyframeAfter = useDirectorStore((state) => state.insertCameraMotionKeyframeAfter);
   const setCameraPilotFollowTarget = useDirectorStore((state) => state.setCameraPilotFollowTarget);
-  const beginUndoBatch = useDirectorStore((state) => state.beginUndoBatch);
-  const endUndoBatch = useDirectorStore((state) => state.endUndoBatch);
+  const { beginInteraction, endInteraction } = useDirectorInteractionBatch();
   const [batchSelectionEnabled, setBatchSelectionEnabled] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportFps, setExportFps] = useState(30);
@@ -570,10 +570,10 @@ export function MotionStudio({
                 max="3"
                 step="0.25"
                 value={templateScale}
-                onPointerDown={beginUndoBatch}
-                onPointerUp={endUndoBatch}
-                onPointerCancel={endUndoBatch}
-                onBlur={endUndoBatch}
+                onPointerDown={beginInteraction}
+                onPointerUp={endInteraction}
+                onPointerCancel={endInteraction}
+                onBlur={endInteraction}
                 onChange={(event) => updateTemplateScale(Number(event.currentTarget.value))}
               />
               <output>{Math.round(templateScale * 100)}%</output>
@@ -822,10 +822,10 @@ export function MotionStudio({
               max="30"
               step="0.5"
               value={motionPath.duration}
-              onPointerDown={beginUndoBatch}
-              onPointerUp={endUndoBatch}
-              onPointerCancel={endUndoBatch}
-              onBlur={endUndoBatch}
+              onPointerDown={beginInteraction}
+              onPointerUp={endInteraction}
+              onPointerCancel={endInteraction}
+              onBlur={endInteraction}
               onChange={(event) => updateCameraMotionPath(activeCamera.id, { duration: Number(event.currentTarget.value) })}
             />
             <output>{motionPath.duration.toFixed(1)}s</output>
@@ -908,10 +908,10 @@ export function MotionStudio({
                 max={motionPath.duration}
                 step="0.1"
                 value={selectedKeyframe.holdSeconds ?? 1}
-                onPointerDown={beginUndoBatch}
-                onPointerUp={endUndoBatch}
-                onPointerCancel={endUndoBatch}
-                onBlur={endUndoBatch}
+                onPointerDown={beginInteraction}
+                onPointerUp={endInteraction}
+                onPointerCancel={endInteraction}
+                onBlur={endInteraction}
                 onChange={(event) => updateCameraMotionKeyframe(activeCamera.id, selectedKeyframe.id, { holdSeconds: Number(event.currentTarget.value) })}
               />
               <output>{(selectedKeyframe.holdSeconds ?? 1).toFixed(1)}s</output>

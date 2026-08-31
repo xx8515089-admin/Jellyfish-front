@@ -119,6 +119,7 @@ export interface DirectorInternalState {
   undoBatchDepth: number;
   undoBatchSnapshot: DirectorState | null;
   undoBatchHasTrackedChanges: boolean;
+  undoBatchNeedsPersist: boolean;
   selectedCameraKeyframeId: string | null;
   selectedCameraKeyframeIds: string[];
   selectedObjectMotionKeyframeId: string | null;

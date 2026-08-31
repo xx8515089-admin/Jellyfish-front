@@ -1,7 +1,6 @@
 import {
   Children,
   isValidElement,
-  useCallback,
   useEffect,
   useRef,
   useState,
@@ -10,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { ChevronDown } from "lucide-react";
-import { useDirectorStore } from "../store/directorStore";
+import { useDirectorInteractionBatch } from "../store/useDirectorInteractionBatch";
 import { isDirectorDeskEventInside } from "../io/directorDeskDom";
 import { useDirectorDeskText } from "../../useDirectorDeskText";
 
@@ -123,30 +122,6 @@ function parseSelectOptions(children: ReactNode): InspectorSelectOption[] {
   });
 }
 
-function useUndoBatchInteraction() {
-  const beginUndoBatch = useDirectorStore((state) => state.beginUndoBatch);
-  const endUndoBatch = useDirectorStore((state) => state.endUndoBatch);
-  const isBatchActiveRef = useRef(false);
-
-  const beginInteraction = useCallback(() => {
-    if (isBatchActiveRef.current) return;
-
-    isBatchActiveRef.current = true;
-    beginUndoBatch();
-  }, [beginUndoBatch]);
-
-  const endInteraction = useCallback(() => {
-    if (!isBatchActiveRef.current) return;
-
-    isBatchActiveRef.current = false;
-    endUndoBatch();
-  }, [endUndoBatch]);
-
-  useEffect(() => endInteraction, [endInteraction]);
-
-  return { beginInteraction, endInteraction };
-}
-
 export function InspectorPanel({
   title,
   ariaLabel,
@@ -200,7 +175,7 @@ export function InspectorTextField({
   min,
   max,
 }: TextFieldProps) {
-  const { beginInteraction, endInteraction } = useUndoBatchInteraction();
+  const { beginInteraction, endInteraction } = useDirectorInteractionBatch();
 
   return (
     <label className="inspector-field">
@@ -339,7 +314,7 @@ function InspectorAxisInput({ control }: { control: AxisControl }) {
   const text = useDirectorDeskText();
   const [isDragging, setIsDragging] = useState(false);
   const cleanupDragRef = useRef<(() => void) | null>(null);
-  const { beginInteraction, endInteraction } = useUndoBatchInteraction();
+  const { beginInteraction, endInteraction } = useDirectorInteractionBatch();
 
   useEffect(() => () => cleanupDragRef.current?.(), []);
 
@@ -446,7 +421,7 @@ export function InspectorRangeNumberField({
   disabled = false,
 }: RangeNumberFieldProps) {
   const rangeDragCleanupRef = useRef<(() => void) | null>(null);
-  const { beginInteraction, endInteraction } = useUndoBatchInteraction();
+  const { beginInteraction, endInteraction } = useDirectorInteractionBatch();
 
   useEffect(() => () => rangeDragCleanupRef.current?.(), []);
 
@@ -519,7 +494,7 @@ export function InspectorColorField({
   onColorChange: (value: string) => void;
   onHexChange: (value: string) => void;
 }) {
-  const { beginInteraction, endInteraction } = useUndoBatchInteraction();
+  const { beginInteraction, endInteraction } = useDirectorInteractionBatch();
 
   return (
     <label className="inspector-field">

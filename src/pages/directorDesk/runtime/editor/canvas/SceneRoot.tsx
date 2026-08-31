@@ -41,6 +41,7 @@ import {
 } from "../schema/cameraGeometry";
 import type { TransformMode } from "../store/directorStore";
 import { useDirectorStore } from "../store/directorStore";
+import { useDirectorInteractionBatch } from "../store/useDirectorInteractionBatch";
 import { CharacterModel } from "../runtime/CharacterModel";
 import { sampleCharacterActionControls } from "../presets/characterActionPresets";
 import {
@@ -127,12 +128,12 @@ function ViewportObjectLabel({
 function ViewportTransformControls({
   mode,
   object,
-  onObjectChange,
+  onCommit,
   translationSnap,
 }: {
   mode: TransformMode;
   object: TransformControlsProps["object"];
-  onObjectChange: TransformControlsProps["onObjectChange"];
+  onCommit: () => void;
   translationSnap?: number | null;
 }) {
   const controlsRef = useRef<TransformControlsImpl | null>(null);
@@ -160,17 +161,15 @@ function ViewportTransformControls({
       hideTranslatePlanes();
     }
   }, []);
-  const beginUndoBatch = useDirectorStore((state) => state.beginUndoBatch);
-  const endUndoBatch = useDirectorStore((state) => state.endUndoBatch);
+  const { beginInteraction, endInteraction } = useDirectorInteractionBatch(onCommit);
 
   return (
     <TransformControls
       ref={setControlsRef}
       mode={mode}
       object={object}
-      onMouseDown={beginUndoBatch}
-      onMouseUp={endUndoBatch}
-      onObjectChange={onObjectChange}
+      onMouseDown={beginInteraction}
+      onMouseUp={endInteraction}
       translationSnap={translationSnap ?? undefined}
       userData={{ [HIDE_FROM_VIEWPORT_CAPTURE_KEY]: true }}
     />
@@ -588,7 +587,7 @@ function ObjectSceneNode({
       <ViewportTransformControls
         mode={transformMode}
         object={groupRef}
-        onObjectChange={commitTransformFromViewport}
+        onCommit={commitTransformFromViewport}
         translationSnap={transformMode === "translate" ? translationSnap : null}
       />
     </>
@@ -638,7 +637,7 @@ function CrowdTransformRig({
       <ViewportTransformControls
         mode={transformMode}
         object={groupRef}
-        onObjectChange={commitCrowdTransformFromViewport}
+        onCommit={commitCrowdTransformFromViewport}
         translationSnap={transformMode === "translate" ? translationSnap : null}
       />
     </>
@@ -779,7 +778,7 @@ function ViewportCameraRig({
       <ViewportTransformControls
         mode={transformMode}
         object={groupRef}
-        onObjectChange={commitCameraTransformFromViewport}
+        onCommit={commitCameraTransformFromViewport}
         translationSnap={transformMode === "translate" ? translationSnap : null}
       />
     </>
@@ -861,7 +860,7 @@ function CameraMotionKeyframeHandle({
       <ViewportTransformControls
         mode="translate"
         object={groupRef}
-        onObjectChange={commitKeyframePosition}
+        onCommit={commitKeyframePosition}
         translationSnap={translationSnap}
       />
     </>
@@ -933,7 +932,7 @@ function CameraMotionSelectionTransform({
       <ViewportTransformControls
         mode="translate"
         object={groupRef}
-        onObjectChange={commitSelectionPosition}
+        onCommit={commitSelectionPosition}
         translationSnap={translationSnap}
       />
     </>
@@ -1227,7 +1226,7 @@ function CharacterRoutePointHandle({
       <ViewportTransformControls
         mode={transformMode}
         object={groupRef}
-        onObjectChange={commitTransform}
+        onCommit={commitTransform}
         translationSnap={translationSnap}
       />
     </>

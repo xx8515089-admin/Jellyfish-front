@@ -442,6 +442,7 @@ function createRuntimeStateFromPersistedState(state: DirectorState): DirectorRun
     undoBatchDepth: 0,
     undoBatchSnapshot: null,
     undoBatchHasTrackedChanges: false,
+    undoBatchNeedsPersist: false,
     selectedCameraKeyframeId: null,
     selectedCameraKeyframeIds: [],
     selectedObjectMotionKeyframeId: null,
@@ -1074,10 +1075,33 @@ export const useDirectorStore = create<DirectorStore>((set, get) => {
 
     set((state) => {
       const currentState = state as DirectorRuntimeState;
-      const previousSnapshot = createUndoStackEntry(currentState);
+      const isInsideUndoBatch = currentState.undoBatchDepth > 0;
+      const shouldCaptureBatchSnapshot =
+        isInsideUndoBatch &&
+        currentState.undoBatchSnapshot === null &&
+        (trackUndo || persist);
+      const previousSnapshot = !isInsideUndoBatch || shouldCaptureBatchSnapshot
+        ? createUndoStackEntry(currentState)
+        : null;
       const nextState = updater(currentState);
+
+      // 连续交互期间只更新内存状态，完整快照、比较和持久化统一延迟到事务结束。
+      if (isInsideUndoBatch) {
+        if (nextState === currentState) return currentState;
+
+        return {
+          ...nextState,
+          undoStack: currentState.undoStack,
+          undoBatchSnapshot: shouldCaptureBatchSnapshot
+            ? previousSnapshot
+            : currentState.undoBatchSnapshot,
+          undoBatchHasTrackedChanges: currentState.undoBatchHasTrackedChanges || trackUndo,
+          undoBatchNeedsPersist: currentState.undoBatchNeedsPersist || persist,
+        };
+      }
+
       const nextSnapshot = extractPersistedDirectorState(nextState);
-      const didChange = !isSameDirectorState(previousSnapshot, nextSnapshot);
+      const didChange = previousSnapshot !== null && !isSameDirectorState(previousSnapshot, nextSnapshot);
 
       if (!didChange) {
         return {
@@ -1086,21 +1110,17 @@ export const useDirectorStore = create<DirectorStore>((set, get) => {
           undoBatchDepth: nextState.undoBatchDepth,
           undoBatchSnapshot: nextState.undoBatchSnapshot,
           undoBatchHasTrackedChanges: nextState.undoBatchHasTrackedChanges,
+          undoBatchNeedsPersist: nextState.undoBatchNeedsPersist,
         };
       }
 
-      const shouldCaptureUndoBatchSnapshot =
-        trackUndo && currentState.undoBatchDepth > 0 && currentState.undoBatchSnapshot === null;
       const nextUndoStack =
-        trackUndo && currentState.undoBatchDepth === 0
+        trackUndo && previousSnapshot
           ? trimUndoStack([...currentState.undoStack, previousSnapshot])
           : nextState.undoStack;
       const runtimeState: DirectorRuntimeState = {
         ...nextState,
         undoStack: nextUndoStack,
-        undoBatchSnapshot: shouldCaptureUndoBatchSnapshot ? previousSnapshot : nextState.undoBatchSnapshot,
-        undoBatchHasTrackedChanges:
-          trackUndo && currentState.undoBatchDepth > 0 ? true : nextState.undoBatchHasTrackedChanges,
       };
 
       if (persist) {
@@ -1124,8 +1144,9 @@ export const useDirectorStore = create<DirectorStore>((set, get) => {
         return {
           ...currentState,
           undoBatchDepth: currentState.undoBatchDepth + 1,
-          undoBatchSnapshot: currentState.undoBatchDepth === 0 ? createUndoStackEntry(currentState) : currentState.undoBatchSnapshot,
+          undoBatchSnapshot: currentState.undoBatchDepth === 0 ? null : currentState.undoBatchSnapshot,
           undoBatchHasTrackedChanges: currentState.undoBatchDepth === 0 ? false : currentState.undoBatchHasTrackedChanges,
+          undoBatchNeedsPersist: currentState.undoBatchDepth === 0 ? false : currentState.undoBatchNeedsPersist,
         };
       });
     },
@@ -1142,20 +1163,29 @@ export const useDirectorStore = create<DirectorStore>((set, get) => {
           };
         }
 
-        const currentSnapshot = extractPersistedDirectorState(currentState);
+        const batchSnapshot = currentState.undoBatchSnapshot;
+        const currentSnapshot = batchSnapshot ? extractPersistedDirectorState(currentState) : null;
+        const didChange =
+          batchSnapshot !== null &&
+          currentSnapshot !== null &&
+          !isSameDirectorState(batchSnapshot, currentSnapshot);
         const shouldPushUndoEntry =
           currentState.undoBatchHasTrackedChanges &&
-          currentState.undoBatchSnapshot !== null &&
-          !isSameDirectorState(currentState.undoBatchSnapshot, currentSnapshot);
+          didChange;
+
+        if (currentState.undoBatchNeedsPersist && didChange && currentSnapshot) {
+          writePersistedDirectorState(currentSnapshot);
+        }
 
         return {
           ...currentState,
-          undoStack: shouldPushUndoEntry
-            ? trimUndoStack([...currentState.undoStack, currentState.undoBatchSnapshot!])
+          undoStack: shouldPushUndoEntry && batchSnapshot
+            ? trimUndoStack([...currentState.undoStack, batchSnapshot])
             : currentState.undoStack,
           undoBatchDepth: 0,
           undoBatchSnapshot: null,
           undoBatchHasTrackedChanges: false,
+          undoBatchNeedsPersist: false,
         };
       });
     },
@@ -2997,6 +3027,7 @@ export const useDirectorStore = create<DirectorStore>((set, get) => {
           undoBatchDepth: 0,
           undoBatchSnapshot: null,
           undoBatchHasTrackedChanges: false,
+          undoBatchNeedsPersist: false,
         });
         writePersistedDirectorState(currentState.undoBatchSnapshot);
         return;
