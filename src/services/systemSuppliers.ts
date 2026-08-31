@@ -70,17 +70,49 @@ export type SystemSupplierVideoCapabilities = {
   queryPathTemplate: string
 }
 
-export type SystemSupplierModelCreateRequest = {
+export type SystemSupplierTextCapabilities = {
+  apiProtocol: string
+  memorySupported: boolean
+  defaultMemoryEnabled: boolean
+  reasoningEfforts: string[]
+  defaultReasoningEffort: string
+}
+
+type SystemSupplierModelCreateBase = {
   supplierId: number
-  type: SystemSupplierModelType
   name: string
   modelCode: string
   requestUrl: string
   description: string
   active: boolean
-  imageCapabilities?: SystemSupplierImageCapabilities
-  videoCapabilities?: SystemSupplierVideoCapabilities
+  defaultModel: boolean
 }
+
+export type SystemSupplierTextModelCreateRequest = SystemSupplierModelCreateBase & {
+  type: 1
+  textCapabilities: SystemSupplierTextCapabilities
+  imageCapabilities?: never
+  videoCapabilities?: never
+}
+
+export type SystemSupplierImageModelCreateRequest = SystemSupplierModelCreateBase & {
+  type: 2
+  textCapabilities?: never
+  imageCapabilities: SystemSupplierImageCapabilities
+  videoCapabilities?: never
+}
+
+export type SystemSupplierVideoModelCreateRequest = SystemSupplierModelCreateBase & {
+  type: 3
+  textCapabilities?: never
+  imageCapabilities?: never
+  videoCapabilities: SystemSupplierVideoCapabilities
+}
+
+export type SystemSupplierModelCreateRequest =
+  | SystemSupplierTextModelCreateRequest
+  | SystemSupplierImageModelCreateRequest
+  | SystemSupplierVideoModelCreateRequest
 
 type SystemSupplierModelUpdateBase = {
   modelId: number

@@ -42,8 +42,8 @@ import {
   SystemSuppliersApi,
   type SystemSupplierImageCapabilities,
   type SystemSupplierModelRead,
-  type SystemSupplierModelType,
   type SystemSupplierRead,
+  type SystemSupplierTextCapabilities,
   type SystemSupplierVideoCapabilities,
 } from '../../../services/systemSuppliers'
 import '../../system/MenuManagement.css'
@@ -103,12 +103,6 @@ type ModelListItem = ModelRead & {
   videoReferenceTokenStyle?: string
   videoSubmitPath?: string
   videoQueryPathTemplate?: string
-}
-
-const MODEL_TYPE_BY_CATEGORY: Record<ModelCategoryKey, SystemSupplierModelType> = {
-  text: 1,
-  image: 2,
-  video: 3,
 }
 
 const CATEGORY_BY_MODEL_TYPE: Partial<Record<number, ModelCategoryKey>> = {
@@ -207,6 +201,16 @@ function buildVideoCapabilities(values: ModelFormValues): SystemSupplierVideoCap
     referenceTokenStyle: (values.video_reference_token_style ?? '').trim(),
     submitPath: (values.video_submit_path ?? '').trim(),
     queryPathTemplate: (values.video_query_path_template ?? '').trim(),
+  }
+}
+
+function buildTextCapabilities(): SystemSupplierTextCapabilities {
+  return {
+    apiProtocol: 'responses',
+    memorySupported: true,
+    defaultMemoryEnabled: true,
+    reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+    defaultReasoningEffort: 'high',
   }
 }
 
@@ -334,21 +338,31 @@ export default function ModelsTab() {
           return
         }
 
-        await SystemSuppliersApi.createModel({
-          supplierId,
-          type: MODEL_TYPE_BY_CATEGORY[values.category],
-          ...modelFields,
-          ...(values.category === 'image'
-            ? {
-                imageCapabilities: buildImageCapabilities(values),
-              }
-            : {}),
-          ...(values.category === 'video'
-            ? {
-                videoCapabilities: buildVideoCapabilities(values),
-              }
-            : {}),
-        })
+        if (values.category === 'text') {
+          await SystemSuppliersApi.createModel({
+            supplierId,
+            type: 1,
+            ...modelFields,
+            defaultModel: true,
+            textCapabilities: buildTextCapabilities(),
+          })
+        } else if (values.category === 'image') {
+          await SystemSuppliersApi.createModel({
+            supplierId,
+            type: 2,
+            ...modelFields,
+            defaultModel: true,
+            imageCapabilities: buildImageCapabilities(values),
+          })
+        } else {
+          await SystemSuppliersApi.createModel({
+            supplierId,
+            type: 3,
+            ...modelFields,
+            defaultModel: true,
+            videoCapabilities: buildVideoCapabilities(values),
+          })
+        }
         message.success(l('模型已添加', 'Model added'))
       }
       setModelModalOpen(false)

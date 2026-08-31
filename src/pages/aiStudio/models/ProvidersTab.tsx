@@ -42,6 +42,7 @@ import {
   type SystemSupplierModelRead,
   type SystemSupplierModelType,
   type SystemSupplierRead,
+  type SystemSupplierTextCapabilities,
   type SystemSupplierUpdateRequest,
   type SystemSupplierVideoCapabilities,
 } from '../../../services/systemSuppliers'
@@ -68,6 +69,12 @@ type ModelFormValues = {
   request_url?: string
   description?: string
   active?: boolean
+  default_model?: boolean
+  text_api_protocol?: string
+  text_memory_supported?: boolean
+  text_default_memory_enabled?: boolean
+  text_reasoning_efforts?: string[]
+  text_default_reasoning_effort?: string
   image_aspect_ratios?: string[]
   image_qualities?: number[]
   image_resolutions?: number[]
@@ -115,12 +122,6 @@ const DEFAULT_PROVIDER_BALANCE_STATE: ProviderBalanceState = {
   error: false,
 }
 
-const MODEL_TYPE_BY_CATEGORY: Record<ModelCategoryKey, SystemSupplierModelType> = {
-  text: 1,
-  image: 2,
-  video: 3,
-}
-
 const CATEGORY_BY_MODEL_TYPE: Partial<Record<number, ModelCategoryKey>> = {
   1: 'text',
   2: 'image',
@@ -143,6 +144,13 @@ const IMAGE_QUALITY_OPTIONS = [
 ]
 
 const VIDEO_RESOLUTION_OPTIONS = ['480p', '720p'].map((value) => ({
+  label: value,
+  value,
+}))
+
+const TEXT_API_PROTOCOL_OPTIONS = [{ label: 'Responses API', value: 'responses' }]
+
+const TEXT_REASONING_EFFORT_OPTIONS = ['low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({
   label: value,
   value,
 }))
@@ -190,6 +198,17 @@ function buildVideoCapabilities(values: ModelFormValues): SystemSupplierVideoCap
   }
 }
 
+function buildTextCapabilities(values: ModelFormValues): SystemSupplierTextCapabilities {
+  const memorySupported = values.text_memory_supported ?? true
+  return {
+    apiProtocol: values.text_api_protocol ?? 'responses',
+    memorySupported,
+    defaultMemoryEnabled: memorySupported && (values.text_default_memory_enabled ?? true),
+    reasoningEfforts: values.text_reasoning_efforts ?? [],
+    defaultReasoningEffort: values.text_default_reasoning_effort ?? '',
+  }
+}
+
 /** 展示由后端托管的模型供应商，并提供安全的新增入口。 */
 export default function ProvidersTab() {
   const l = useBilingualText()
@@ -224,6 +243,7 @@ export default function ProvidersTab() {
   const [modelSaving, setModelSaving] = useState(false)
   const [modelForm] = Form.useForm<ModelFormValues>()
   const selectedFormCategory = Form.useWatch<ModelCategoryKey | undefined>('category', modelForm)
+  const textMemorySupported = Form.useWatch<boolean | undefined>('text_memory_supported', modelForm)
   const balanceRequestId = useRef(0)
 
   /** 将后端状态枚举转换为当前页面展示文案。 */
@@ -513,7 +533,13 @@ export default function ProvidersTab() {
         category: currentCategory,
         provider_id: selectedProvider.id,
         active: true,
+        default_model: true,
         description: '',
+        text_api_protocol: 'responses',
+        text_memory_supported: true,
+        text_default_memory_enabled: true,
+        text_reasoning_efforts: TEXT_REASONING_EFFORT_OPTIONS.map((option) => option.value),
+        text_default_reasoning_effort: 'high',
         image_aspect_ratios: IMAGE_ASPECT_RATIO_OPTIONS.map((option) => option.value),
         image_qualities: [],
         image_resolutions: IMAGE_RESOLUTION_OPTIONS.map((option) => option.value),
@@ -602,21 +628,31 @@ export default function ProvidersTab() {
         }
         message.success(l('模型已更新', 'Model updated'))
       } else {
-        await SystemSuppliersApi.createModel({
-          supplierId,
-          type: MODEL_TYPE_BY_CATEGORY[values.category],
-          ...modelFields,
-          ...(values.category === 'image'
-            ? {
-                imageCapabilities: buildImageCapabilities(values),
-              }
-            : {}),
-          ...(values.category === 'video'
-            ? {
-                videoCapabilities: buildVideoCapabilities(values),
-              }
-            : {}),
-        })
+        if (values.category === 'text') {
+          await SystemSuppliersApi.createModel({
+            supplierId,
+            type: 1,
+            ...modelFields,
+            defaultModel: values.default_model ?? true,
+            textCapabilities: buildTextCapabilities(values),
+          })
+        } else if (values.category === 'image') {
+          await SystemSuppliersApi.createModel({
+            supplierId,
+            type: 2,
+            ...modelFields,
+            defaultModel: values.default_model ?? true,
+            imageCapabilities: buildImageCapabilities(values),
+          })
+        } else {
+          await SystemSuppliersApi.createModel({
+            supplierId,
+            type: 3,
+            ...modelFields,
+            defaultModel: values.default_model ?? true,
+            videoCapabilities: buildVideoCapabilities(values),
+          })
+        }
         message.success(l('模型已添加', 'Model added'))
       }
 
@@ -931,7 +967,7 @@ export default function ProvidersTab() {
                     autoComplete="new-password"
                   />
                 </Form.Item>
-                <Form.Item label={l('启用状态', 'Active status')} className="menu-editor__switch-item menu-editor__wide">
+                <Form.Item label={l('启用状态', 'Active status')} className="menu-editor__switch-item">
                   <div className="menu-editor__switch-row">
                     <Form.Item name="active" valuePropName="checked" noStyle>
                       <Switch />
@@ -1039,7 +1075,7 @@ export default function ProvidersTab() {
                 >
                   <Input placeholder="https://api.example.com/api/v1/jobs/createTask" />
                 </Form.Item>
-                <Form.Item label={l('启用状态', 'Active status')} className="menu-editor__switch-item menu-editor__wide">
+                <Form.Item label={l('启用状态', 'Active status')} className="menu-editor__switch-item">
                   <div className="menu-editor__switch-row">
                     <Form.Item name="active" valuePropName="checked" noStyle>
                       <Switch />
@@ -1047,8 +1083,80 @@ export default function ProvidersTab() {
                     <span>{l('启用后模型可参与任务调度', 'Available for task dispatch when active')}</span>
                   </div>
                 </Form.Item>
+                {!modelEditing && (
+                  <Form.Item label={l('默认模型', 'Default model')} className="menu-editor__switch-item">
+                    <div className="menu-editor__switch-row">
+                      <Form.Item name="default_model" valuePropName="checked" noStyle>
+                        <Switch />
+                      </Form.Item>
+                      <span>{l('新增后作为该类型的默认调用模型', 'Use as the default model for this type')}</span>
+                    </div>
+                  </Form.Item>
+                )}
               </div>
             </div>
+
+            {selectedFormCategory === 'text' && !modelEditing && (
+              <div className="menu-editor__section">
+                <div className="menu-editor__section-title">{l('文本能力', 'Text capabilities')}</div>
+                <div className="menu-editor__grid">
+                  <Form.Item
+                    name="text_api_protocol"
+                    label={l('接口协议', 'API protocol')}
+                    rules={[{ required: true, message: l('请选择接口协议', 'Select an API protocol') }]}
+                  >
+                    <Select options={TEXT_API_PROTOCOL_OPTIONS} />
+                  </Form.Item>
+                  <Form.Item
+                    name="text_default_reasoning_effort"
+                    label={l('默认推理强度', 'Default reasoning effort')}
+                    dependencies={['text_reasoning_efforts']}
+                    rules={[
+                      { required: true, message: l('请选择默认推理强度', 'Select a default reasoning effort') },
+                      ({ getFieldValue }) => ({
+                        validator(_, value) {
+                          const efforts = getFieldValue('text_reasoning_efforts') as string[] | undefined
+                          if (!value || efforts?.includes(value)) return Promise.resolve()
+                          return Promise.reject(
+                            new Error(l('默认推理强度必须包含在支持列表中', 'The default effort must be in the supported list')),
+                          )
+                        },
+                      }),
+                    ]}
+                  >
+                    <Select options={TEXT_REASONING_EFFORT_OPTIONS} />
+                  </Form.Item>
+                  <Form.Item
+                    name="text_reasoning_efforts"
+                    label={l('支持的推理强度', 'Supported reasoning efforts')}
+                    className="menu-editor__wide"
+                    rules={[{ required: true, message: l('请选择至少一个推理强度', 'Select at least one reasoning effort') }]}
+                  >
+                    <Select mode="multiple" options={TEXT_REASONING_EFFORT_OPTIONS} />
+                  </Form.Item>
+                  <Form.Item label={l('记忆能力', 'Memory capability')} className="menu-editor__switch-item">
+                    <div className="menu-editor__switch-row">
+                      <Form.Item name="text_memory_supported" valuePropName="checked" noStyle>
+                        <Switch
+                          onChange={(checked) => {
+                            if (!checked) modelForm.setFieldValue('text_default_memory_enabled', false)
+                          }}
+                        />
+                      </Form.Item>
+                      <span>{l('模型支持跨请求记忆', 'The model supports memory across requests')}</span>
+                    </div>
+                  </Form.Item>
+                  <Form.Item label={l('默认启用记忆', 'Memory enabled by default')} className="menu-editor__switch-item">
+                    <div className="menu-editor__switch-row">
+                      <Form.Item name="text_default_memory_enabled" valuePropName="checked" noStyle>
+                        <Switch disabled={!textMemorySupported} />
+                      </Form.Item>
+                      <span>{l('新任务默认启用记忆', 'Enable memory for new tasks by default')}</span>
+                    </div>
+                  </Form.Item>
+                </div>
+              </div>
+            )}
 
             {selectedFormCategory === 'image' && (
               <div className="menu-editor__section">
