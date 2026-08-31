@@ -738,6 +738,9 @@ export function ViewportToolbar({
           name: asset.name ?? asset.fileName.replace(/\.(fbx|obj|glb)$/i, ""),
           thumbUrl: undefined,
           url: asset.url,
+          characterRigProfile: asset.characterRigProfile,
+          characterImportReadiness: asset.characterImportReadiness,
+          characterOrientationCorrection: asset.characterOrientationCorrection,
         }) satisfies ModelLibraryItem
     );
 

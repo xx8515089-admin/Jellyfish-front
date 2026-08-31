@@ -1,10 +1,3 @@
-const GUO_CHARACTER_LIBRARY_PATH = /\/guo-3d-assets\/guo-skeleton-models\//i;
-
-const PROCEDURAL_FALLBACK_PRESET_IDS = new Set([
-  "crouch-cycle",
-  "jump-cycle",
-]);
-
 const ONE_SHOT_ACTION_PRESET_IDS = new Set([
   "robot-scan",
   "robot-approve",
@@ -22,12 +15,8 @@ export function getCharacterActionPlaybackMode(
 }
 
 export function shouldUseProceduralBuiltInAction(
-  characterUrl: string,
-  actionPresetId?: string | null,
+  _characterUrl: string,
+  _actionPresetId?: string | null,
 ) {
-  return Boolean(
-    actionPresetId
-      && GUO_CHARACTER_LIBRARY_PATH.test(characterUrl.replace(/\\/g, "/"))
-      && PROCEDURAL_FALLBACK_PRESET_IDS.has(actionPresetId),
-  );
+  return false;
 }

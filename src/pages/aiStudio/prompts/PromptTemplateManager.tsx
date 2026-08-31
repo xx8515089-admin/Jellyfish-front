@@ -268,7 +268,7 @@ const PromptTemplateManager: FC = () => {
     {
       title: l('名称', 'Name'),
       dataIndex: 'name',
-      width: 260,
+      width: 230,
       render: (_, record) => (
         <div className="prompt-template-management__table-name">
           <strong>{record.name}</strong>
@@ -279,7 +279,7 @@ const PromptTemplateManager: FC = () => {
     {
       title: l('编码', 'Category'),
       dataIndex: 'category',
-      width: 170,
+      width: 165,
       render: (category: string) => (
         <span className="prompt-template-management__category">{formatCategory(category)}</span>
       ),
@@ -287,6 +287,7 @@ const PromptTemplateManager: FC = () => {
     {
       title: l('预览', 'Preview'),
       dataIndex: 'preview',
+      width: 200,
       ellipsis: true,
       render: (preview: string | null | undefined) => preview || '--',
     },
@@ -375,6 +376,8 @@ const PromptTemplateManager: FC = () => {
               loading={loading}
               columns={columns}
               dataSource={pagedTemplates}
+              tableLayout="fixed"
+              scroll={{ x: 880 }}
               pagination={false}
               className="prompt-template-management__table"
               rowClassName={(record) =>

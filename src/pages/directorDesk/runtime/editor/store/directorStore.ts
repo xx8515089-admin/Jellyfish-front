@@ -2393,6 +2393,8 @@ export const useDirectorStore = create<DirectorStore>((set, get) => {
             characterRig: item.characterRig
               ? {
                   ...item.characterRig,
+                  posePresetId: null,
+                  actionPresetId: null,
                   controls: {
                     ...item.characterRig.controls,
                     [key]: value,
@@ -2414,6 +2416,8 @@ export const useDirectorStore = create<DirectorStore>((set, get) => {
                   characterRig: item.characterRig
                     ? {
                         ...item.characterRig,
+                        posePresetId: null,
+                        actionPresetId: null,
                         controls: {
                           ...item.characterRig.controls,
                           [key]: value,

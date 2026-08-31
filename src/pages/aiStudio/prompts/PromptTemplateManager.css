@@ -94,6 +94,11 @@
   min-height: 0;
 }
 
+.prompt-template-management__table .ant-table-content {
+  overflow-x: auto !important;
+  overscroll-behavior-inline: contain;
+}
+
 .prompt-template-management__table .ant-table,
 .prompt-template-management__table .ant-table-container {
   background: transparent !important;
@@ -183,7 +188,9 @@
 
 .prompt-template-management__actions {
   display: inline-flex;
+  flex-wrap: nowrap;
   align-items: center;
+  white-space: nowrap;
   gap: 12px;
 }
 
@@ -592,13 +599,21 @@
   font-weight: 500;
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 1560px) {
   .prompt-template-management__surface {
     min-height: auto;
   }
 
   .prompt-template-management__workspace {
     grid-template-columns: 1fr;
+  }
+
+  .prompt-template-management__list-panel {
+    min-height: 380px;
+  }
+
+  .prompt-template-management__detail-panel {
+    min-height: 500px;
   }
 }
 

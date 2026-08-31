@@ -2,10 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { createServer } from "vite";
+import { AnimationMixer, Box3, Quaternion, Vector3 } from "three";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 const root = process.cwd();
+const auditRetargetMode = process.env.DIRECTOR_RETARGET_MODE ?? "skeleton";
 const publicRoot = path.join(root, "public");
 const guoModelRoot = path.join(
   publicRoot,
@@ -36,6 +38,174 @@ function normalizePublicUrl(url) {
 
 function toArrayBuffer(buffer) {
   return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+}
+
+const POSE_PARTS = [
+  "head",
+  "chest",
+  "waist",
+  "leftUpperArm",
+  "leftForearm",
+  "leftHand",
+  "rightUpperArm",
+  "rightForearm",
+  "rightHand",
+  "leftThigh",
+  "leftCalf",
+  "leftFoot",
+  "rightThigh",
+  "rightCalf",
+  "rightFoot",
+];
+
+const POSE_SEGMENTS = [
+  ["torso", "waist", "chest"],
+  ["neck", "chest", "head"],
+  ["leftUpperArm", "leftUpperArm", "leftForearm"],
+  ["leftForearm", "leftForearm", "leftHand"],
+  ["rightUpperArm", "rightUpperArm", "rightForearm"],
+  ["rightForearm", "rightForearm", "rightHand"],
+  ["leftThigh", "leftThigh", "leftCalf"],
+  ["leftCalf", "leftCalf", "leftFoot"],
+  ["rightThigh", "rightThigh", "rightCalf"],
+  ["rightCalf", "rightCalf", "rightFoot"],
+];
+
+const POSE_JOINTS = [
+  ["leftElbow", "leftUpperArm", "leftForearm", "leftHand"],
+  ["rightElbow", "rightUpperArm", "rightForearm", "rightHand"],
+  ["leftKnee", "leftThigh", "leftCalf", "leftFoot"],
+  ["rightKnee", "rightThigh", "rightCalf", "rightFoot"],
+];
+
+function radiansToDegrees(value) {
+  return value * 180 / Math.PI;
+}
+
+function createBodyFrame(points) {
+  const waist = points.get("waist");
+  const chest = points.get("chest");
+  const leftShoulder = points.get("leftUpperArm");
+  const rightShoulder = points.get("rightUpperArm");
+  if (!waist || !chest || !leftShoulder || !rightShoulder) return null;
+
+  const up = chest.clone().sub(waist).normalize();
+  const right = rightShoulder.clone().sub(leftShoulder).normalize();
+  const forward = new Vector3().crossVectors(right, up).normalize();
+  if (up.lengthSq() < 0.5 || right.lengthSq() < 0.5 || forward.lengthSq() < 0.5) return null;
+  right.crossVectors(up, forward).normalize();
+  return { forward, right, up };
+}
+
+function vectorInBodyFrame(vector, frame) {
+  return new Vector3(
+    vector.dot(frame.right),
+    vector.dot(frame.up),
+    vector.dot(frame.forward),
+  );
+}
+
+function capturePose(scene, findSemanticBodyPartNode) {
+  scene.updateMatrixWorld(true);
+  const points = new Map();
+  POSE_PARTS.forEach((part) => {
+    const node = findSemanticBodyPartNode(scene, part);
+    if (node) points.set(part, node.getWorldPosition(new Vector3()));
+  });
+  const frame = createBodyFrame(points);
+  if (!frame) return null;
+
+  const segmentDirections = new Map();
+  POSE_SEGMENTS.forEach(([name, startPart, endPart]) => {
+    const start = points.get(startPart);
+    const end = points.get(endPart);
+    if (!start || !end) return;
+    segmentDirections.set(name, vectorInBodyFrame(end.clone().sub(start).normalize(), frame));
+  });
+
+  const jointAngles = new Map();
+  const jointBendSigns = new Map();
+  POSE_JOINTS.forEach(([name, firstPart, jointPart, lastPart]) => {
+    const first = points.get(firstPart);
+    const joint = points.get(jointPart);
+    const last = points.get(lastPart);
+    if (!first || !joint || !last) return;
+    const incoming = first.clone().sub(joint).normalize();
+    const outgoing = last.clone().sub(joint).normalize();
+    jointAngles.set(name, radiansToDegrees(incoming.angleTo(outgoing)));
+    const bendNormal = vectorInBodyFrame(new Vector3().crossVectors(incoming, outgoing).normalize(), frame);
+    jointBendSigns.set(name, Math.sign(bendNormal.z));
+  });
+
+  return {
+    bounds: new Box3().setFromObject(scene),
+    jointAngles,
+    jointBendSigns,
+    segmentDirections,
+  };
+}
+
+function compareRetargetedPose(sourceRest, sourcePose, targetRest, targetPose) {
+  const segmentErrors = [];
+  for (const [segmentName, sourceDirection] of sourcePose.segmentDirections) {
+    const sourceRestDirection = sourceRest.segmentDirections.get(segmentName);
+    const targetDirection = targetPose.segmentDirections.get(segmentName);
+    const targetRestDirection = targetRest.segmentDirections.get(segmentName);
+    if (!sourceRestDirection || !targetDirection || !targetRestDirection) continue;
+    const sourceDelta = new Quaternion().setFromUnitVectors(sourceRestDirection, sourceDirection);
+    const targetDelta = new Quaternion().setFromUnitVectors(targetRestDirection, targetDirection);
+    const relativeDelta = targetDelta.clone().invert().multiply(sourceDelta).normalize();
+    segmentErrors.push(radiansToDegrees(relativeDelta.angleTo(new Quaternion())));
+  }
+
+  const jointErrors = [];
+  let reversedJointCount = 0;
+  const reversedJoints = [];
+  const reversedJointDetails = [];
+  for (const [jointName, sourceAngle] of sourcePose.jointAngles) {
+    const targetAngle = targetPose.jointAngles.get(jointName);
+    if (targetAngle === undefined) continue;
+    jointErrors.push(Math.abs(sourceAngle - targetAngle));
+    const sourceBend = 180 - sourceAngle;
+    const targetBend = 180 - targetAngle;
+    const sourceSign = sourcePose.jointBendSigns.get(jointName) ?? 0;
+    const targetSign = targetPose.jointBendSigns.get(jointName) ?? 0;
+    if (
+      sourceBend > 20
+      && targetBend > 20
+      && Math.abs(sourceAngle - targetAngle) > 20
+      && sourceSign
+      && targetSign
+      && sourceSign !== targetSign
+    ) {
+      reversedJointCount += 1;
+      reversedJoints.push(jointName);
+      reversedJointDetails.push(
+        `${jointName}: 源角 ${sourceAngle.toFixed(1)}° / 目标角 ${targetAngle.toFixed(1)}° / 弯曲符号 ${sourceSign}→${targetSign}`,
+      );
+    }
+  }
+
+  const restSize = targetRest.bounds.getSize(new Vector3());
+  const poseSize = targetPose.bounds.getSize(new Vector3());
+  const boundsRatios = [
+    poseSize.x / Math.max(restSize.x, 0.0001),
+    poseSize.y / Math.max(restSize.y, 0.0001),
+    poseSize.z / Math.max(restSize.z, 0.0001),
+  ];
+
+  return {
+    averageSegmentError: segmentErrors.length
+      ? segmentErrors.reduce((sum, value) => sum + value, 0) / segmentErrors.length
+      : Number.POSITIVE_INFINITY,
+    maxBoundsRatio: Math.max(...boundsRatios),
+    maxJointError: jointErrors.length ? Math.max(...jointErrors) : Number.POSITIVE_INFINITY,
+    maxSegmentError: segmentErrors.length ? Math.max(...segmentErrors) : Number.POSITIVE_INFINITY,
+    minBoundsRatio: Math.min(...boundsRatios),
+    reversedJointCount,
+    reversedJointDetails,
+    reversedJoints,
+  };
 }
 
 async function loadCharacterModel(filePath) {
@@ -187,12 +357,14 @@ try {
     compatibilityModule,
     playbackPolicyModule,
     characterModelModule,
+    semanticBodyTrackingModule,
   ] = await Promise.all([
     server.ssrLoadModule("/src/pages/directorDesk/runtime/editor/presets/characterActionPresets.ts"),
     server.ssrLoadModule("/src/pages/directorDesk/runtime/editor/presets/characterSpecificActionPresets.ts"),
     server.ssrLoadModule("/src/pages/directorDesk/runtime/editor/modelLibrary/guoCharacterCompatibility.ts"),
     server.ssrLoadModule("/src/pages/directorDesk/runtime/editor/runtime/characterActionPlaybackPolicy.ts"),
     server.ssrLoadModule("/src/pages/directorDesk/runtime/editor/runtime/MixamoCharacterModel.tsx"),
+    server.ssrLoadModule("/src/pages/directorDesk/runtime/editor/runtime/semanticBodyTracking.ts"),
   ]);
 
   const {
@@ -208,13 +380,15 @@ try {
     resolveCompatibleCharacterActionPresetId,
   } = specificPresetsModule;
   const { getGuoCharacterCompatibility } = compatibilityModule;
-  const { shouldUseProceduralBuiltInAction } = playbackPolicyModule;
   const { getCharacterActionPlaybackMode } = playbackPolicyModule;
   const {
+    applyCharacterRestPose,
+    captureCharacterRestPose,
     getNativeMixamoActionClip,
-    getProceduralJointForBoneName,
+    prepareMixamoAnimationClip,
     ROBOT_EXPRESSIVE_ACTION_CLIPS,
   } = characterModelModule;
+  const { findSemanticBodyPartNode } = semanticBodyTrackingModule;
 
   const allPresets = [...CHARACTER_ACTION_PRESETS, ...CHARACTER_SPECIFIC_ACTION_PRESETS];
   const uniquePresetIds = new Set(allPresets.map((preset) => preset.id));
@@ -280,33 +454,33 @@ try {
   let blockedModels = 0;
   const parsedAnimationFiles = new Map();
 
-  async function validateExternalAnimation(animationPath, scope) {
+  async function loadExternalAnimation(animationPath, scope) {
     if (parsedAnimationFiles.has(animationPath)) return parsedAnimationFiles.get(animationPath);
 
     const result = (async () => {
       if (!fs.existsSync(animationPath)) {
         fail(scope, `动画文件不存在：${path.relative(root, animationPath)}`);
-        return false;
+        return null;
       }
       try {
         const loaded = await loadCharacterModel(animationPath);
         if (!loaded.animations.length) {
           fail(scope, "动画文件中没有动画片段");
-          return false;
+          return null;
         }
         const runtimeClip = loaded.animations[0];
         if (!Number.isFinite(runtimeClip.duration) || runtimeClip.duration <= 0) {
           fail(scope, "运行时首个动画片段时长无效");
-          return false;
+          return null;
         }
         if (!runtimeClip.tracks.length) {
           fail(scope, "运行时首个动画片段没有轨道");
-          return false;
+          return null;
         }
-        return true;
+        return loaded;
       } catch (error) {
         fail(scope, `动画解析失败：${error instanceof Error ? error.message : String(error)}`);
-        return false;
+        return null;
       }
     })();
 
@@ -335,6 +509,7 @@ try {
       assetUrl: character.source,
       importReadiness: character.readiness,
       objectName: character.label,
+      rigType: "mixamo",
     };
     const profile = getCharacterActionProfile(context);
     profileCounts.set(profile, (profileCounts.get(profile) ?? 0) + 1);
@@ -357,31 +532,24 @@ try {
     const specificPresets = getCharacterSpecificActionPresets(context);
     const visiblePresets = [...commonPresets, ...specificPresets];
     if (!commonPresets.length) fail(scope, "没有可用的通用动作");
-    if (!specificPresets.length) fail(scope, "没有角色适配动作");
+    const isRobotExpressive = character.id === "rigged-character:robot-expressive";
+    if (isRobotExpressive && !specificPresets.length) fail(scope, "原生动作模型没有暴露角色适配动作");
+    if (!isRobotExpressive && specificPresets.length) {
+      fail(scope, "外部骨架不应暴露固定轴程序化动作");
+    }
+    for (const preset of CHARACTER_SPECIFIC_ACTION_PRESETS) {
+      const shouldBeAvailable = isRobotExpressive && specificPresets.includes(preset);
+      const resolvedPresetId = resolveCompatibleCharacterActionPresetId(context, preset.id);
+      if (shouldBeAvailable ? resolvedPresetId !== preset.id : resolvedPresetId !== null) {
+        fail(scope, `角色适配动作 ${preset.id} 的兼容性结果错误`);
+      }
+    }
 
-    const boneNames = [];
-    loaded.scene.traverse((object) => {
-      if (object.isBone) boneNames.push(object.name);
-    });
-    const matchedJoints = new Set(
-      boneNames.map((name) => getProceduralJointForBoneName(name)).filter(Boolean),
-    );
-    const requiredCoreJoints = [
-      "body",
-      "torso",
-      "head",
-      "leftShoulder",
-      "rightShoulder",
-      "leftElbow",
-      "rightElbow",
-      "leftHip",
-      "rightHip",
-      "leftKnee",
-      "rightKnee",
-    ];
-    const missingCoreJoints = requiredCoreJoints.filter((joint) => !matchedJoints.has(joint));
-    if (missingCoreJoints.length) {
-      fail(scope, `缺少程序化动作关节：${missingCoreJoints.join(", ")}`);
+    const targetRestPose = captureCharacterRestPose(loaded.scene);
+    const targetRestSample = capturePose(loaded.scene, findSemanticBodyPartNode);
+    if (!targetRestSample) {
+      fail(scope, "无法建立完整身体坐标系，不能安全应用外部动作");
+      continue;
     }
 
     for (const preset of visiblePresets) {
@@ -390,7 +558,6 @@ try {
         fail(scope, `界面动作 ${preset.id} 无法通过兼容性解析`);
       }
 
-      const isRobotExpressive = character.id === "rigged-character:robot-expressive";
       if (isRobotExpressive) {
         const clip = getNativeMixamoActionClip(
           preset.id,
@@ -401,23 +568,98 @@ try {
         continue;
       }
 
-      const useProcedural = specificPresets.includes(preset)
-        || shouldUseProceduralBuiltInAction(character.source, preset.id)
-        || !preset.mixamoAnimationUrl;
-      if (!useProcedural) {
-        const animationPath = normalizePublicUrl(preset.mixamoAnimationUrl);
-        await validateExternalAnimation(animationPath, `${scope} / 动作 ${preset.id}`);
+      if (!preset.mixamoAnimationUrl) {
+        fail(scope, `动作 ${preset.id} 缺少外部动画资源`);
         continue;
       }
+      const animationPath = normalizePublicUrl(preset.mixamoAnimationUrl);
+      const sourceAnimation = await loadExternalAnimation(animationPath, `${scope} / 动作 ${preset.id}`);
+      if (!sourceAnimation) continue;
 
-      const missingActionJoints = getChangingControlKeys(preset)
-        .filter((key) => key !== "body.offsetY")
-        .map((key) => key.split(".", 1)[0])
-        .filter((joint, index, joints) => joints.indexOf(joint) === index)
-        .filter((joint) => !matchedJoints.has(joint));
-      if (missingActionJoints.length) {
-        fail(scope, `动作 ${preset.id} 找不到目标关节：${missingActionJoints.join(", ")}`);
+      const sourceClip = sourceAnimation.animations[0];
+      const sourceRestPose = captureCharacterRestPose(sourceAnimation.scene);
+      const sourceRestSample = capturePose(sourceAnimation.scene, findSemanticBodyPartNode);
+      if (!sourceRestSample) {
+        fail(`${scope} / 动作 ${preset.id}`, "动作源无法建立完整身体坐标系");
+        continue;
       }
+      const preparedClip = prepareMixamoAnimationClip(
+        sourceClip,
+        loaded.scene,
+        sourceAnimation.scene,
+        auditRetargetMode,
+        targetRestPose,
+        sourceRestPose,
+      );
+      const targetMixer = new AnimationMixer(loaded.scene);
+      const sourceMixer = new AnimationMixer(sourceAnimation.scene);
+      targetMixer.clipAction(preparedClip).play();
+      sourceMixer.clipAction(sourceClip).play();
+
+      let worst = {
+        averageSegmentError: 0,
+        maxBoundsRatio: 1,
+        maxJointError: 0,
+        maxSegmentError: 0,
+        minBoundsRatio: 1,
+        reversedJointCount: 0,
+        reversedJointDetails: [],
+        reversedJoints: [],
+        worstProgress: 0,
+      };
+      for (const progress of [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 0.999]) {
+        applyCharacterRestPose(loaded.scene, targetRestPose);
+        applyCharacterRestPose(sourceAnimation.scene, sourceRestPose);
+        targetMixer.setTime(preparedClip.duration * progress);
+        sourceMixer.setTime(sourceClip.duration * progress);
+        loaded.scene.updateMatrixWorld(true);
+        sourceAnimation.scene.updateMatrixWorld(true);
+        const targetPose = capturePose(loaded.scene, findSemanticBodyPartNode);
+        const sourcePose = capturePose(sourceAnimation.scene, findSemanticBodyPartNode);
+        if (!targetPose || !sourcePose) {
+          worst.maxSegmentError = Number.POSITIVE_INFINITY;
+          break;
+        }
+        const result = compareRetargetedPose(sourceRestSample, sourcePose, targetRestSample, targetPose);
+        const isWorseSample = result.reversedJointCount > worst.reversedJointCount
+          || result.maxJointError > worst.maxJointError
+          || result.maxSegmentError > worst.maxSegmentError;
+        worst = {
+          averageSegmentError: Math.max(worst.averageSegmentError, result.averageSegmentError),
+          maxBoundsRatio: Math.max(worst.maxBoundsRatio, result.maxBoundsRatio),
+          maxJointError: Math.max(worst.maxJointError, result.maxJointError),
+          maxSegmentError: Math.max(worst.maxSegmentError, result.maxSegmentError),
+          minBoundsRatio: Math.min(worst.minBoundsRatio, result.minBoundsRatio),
+          reversedJointCount: Math.max(worst.reversedJointCount, result.reversedJointCount),
+          reversedJointDetails: result.reversedJointCount >= worst.reversedJointCount
+            ? result.reversedJointDetails
+            : worst.reversedJointDetails,
+          reversedJoints: result.reversedJointCount >= worst.reversedJointCount
+            ? result.reversedJoints
+            : worst.reversedJoints,
+          worstProgress: isWorseSample ? progress : worst.worstProgress,
+        };
+      }
+      targetMixer.stopAllAction();
+      sourceMixer.stopAllAction();
+      targetMixer.uncacheRoot(loaded.scene);
+      sourceMixer.uncacheRoot(sourceAnimation.scene);
+      applyCharacterRestPose(loaded.scene, targetRestPose);
+      applyCharacterRestPose(sourceAnimation.scene, sourceRestPose);
+
+      const reasons = [];
+      if (worst.averageSegmentError > 30) reasons.push(`平均肢段方向误差 ${worst.averageSegmentError.toFixed(1)}°`);
+      if (worst.maxSegmentError > 75) reasons.push(`最大肢段方向误差 ${worst.maxSegmentError.toFixed(1)}°`);
+      if (worst.maxJointError > 55) reasons.push(`最大关节角误差 ${worst.maxJointError.toFixed(1)}°`);
+      if (worst.reversedJointCount > 0) {
+        reasons.push(
+          `检测到 ${worst.reversedJointCount} 个反向弯曲关节（${worst.reversedJointDetails.join("；")}，动作进度 ${Math.round(worst.worstProgress * 100)}%）`,
+        );
+      }
+      if (worst.maxBoundsRatio > 2.5 || worst.minBoundsRatio < 0.35) {
+        reasons.push(`蒙皮包围盒比例异常 ${worst.minBoundsRatio.toFixed(2)}..${worst.maxBoundsRatio.toFixed(2)}`);
+      }
+      if (reasons.length) fail(`${scope} / 动作 ${preset.id}`, reasons.join("；"));
     }
   }
 

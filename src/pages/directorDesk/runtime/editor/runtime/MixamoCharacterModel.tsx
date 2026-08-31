@@ -2,6 +2,7 @@
 import { useFrame, useLoader } from "@react-three/fiber";
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import {
+  AnimationClip,
   AnimationMixer,
   Box3,
   Euler,
@@ -9,15 +10,16 @@ import {
   LoopRepeat,
   Matrix4,
   Quaternion,
+  QuaternionKeyframeTrack,
   Vector3,
-  type AnimationClip,
+  VectorKeyframeTrack,
   type Group,
   type Object3D,
   type SkinnedMesh,
 } from "three";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { clone as cloneSkeleton, retargetClip } from "three/examples/jsm/utils/SkeletonUtils.js";
+import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
 import {
   getCharacterActionPreset,
   sampleCharacterActionControls,
@@ -136,6 +138,8 @@ const BONE_MAP = {
   rightHip: "mixamorig:RightUpLeg",
   leftKnee: "mixamorig:LeftLeg",
   rightKnee: "mixamorig:RightLeg",
+  leftFoot: "mixamorig:LeftFoot",
+  rightFoot: "mixamorig:RightFoot",
 } as const;
 
 type ProceduralJoint = keyof typeof BONE_MAP;
@@ -152,8 +156,10 @@ const SEMANTIC_BODY_PART_TO_JOINT: Partial<Record<DirectorCharacterBonePart, Pro
   rightHand: "rightHand",
   leftThigh: "leftHip",
   leftCalf: "leftKnee",
+  leftFoot: "leftFoot",
   rightThigh: "rightHip",
   rightCalf: "rightKnee",
+  rightFoot: "rightFoot",
 };
 
 function degrees(value: number) {
@@ -214,6 +220,12 @@ function getRestWorldPosition(object: Object3D, restPose?: CharacterRestPose) {
   return new Vector3().setFromMatrixPosition(getRestWorldMatrix(object, restPose));
 }
 
+function getRestWorldQuaternion(object: Object3D, restPose?: CharacterRestPose) {
+  const quaternion = new Quaternion();
+  getRestWorldMatrix(object, restPose).decompose(new Vector3(), quaternion, new Vector3());
+  return quaternion.normalize();
+}
+
 function findPrimarySkinnedMesh(scene: Object3D) {
   let primary: SkinnedMesh | null = null;
   scene.traverse((object) => {
@@ -224,55 +236,199 @@ function findPrimarySkinnedMesh(scene: Object3D) {
   return primary as SkinnedMesh | null;
 }
 
-function prepareSkinnedMixamoAnimationClip(
+function getObjectDepth(object: Object3D) {
+  let depth = 0;
+  let current = object.parent;
+  while (current) {
+    depth += 1;
+    current = current.parent;
+  }
+  return depth;
+}
+
+function getHumanoidNodes(scene: Object3D, boneMap?: DirectorCharacterBoneMap) {
+  const byCanonicalName = new Map<string, Object3D>();
+  const byJoint = new Map<ProceduralJoint, Object3D>();
+  scene.traverse((object) => {
+    const canonicalName = getCanonicalHumanoidBoneName(object.name).toLowerCase();
+    if (canonicalName && !byCanonicalName.has(canonicalName)) byCanonicalName.set(canonicalName, object);
+    const joint = getProceduralJointForBoneName(object.name, boneMap);
+    if (joint && !byJoint.has(joint)) byJoint.set(joint, object);
+  });
+  return { byCanonicalName, byJoint };
+}
+
+function getRigBasisQuaternion(
+  scene: Object3D,
+  restPose: CharacterRestPose,
+  boneMap?: DirectorCharacterBoneMap,
+) {
+  const { byJoint } = getHumanoidNodes(scene, boneMap);
+  const leftShoulder = byJoint.get("leftShoulder");
+  const rightShoulder = byJoint.get("rightShoulder");
+  const leftHip = byJoint.get("leftHip");
+  const rightHip = byJoint.get("rightHip");
+  const body = byJoint.get("body");
+  const head = byJoint.get("head");
+
+  const right = leftShoulder && rightShoulder
+    ? getRestWorldPosition(rightShoulder, restPose).sub(getRestWorldPosition(leftShoulder, restPose))
+    : leftHip && rightHip
+      ? getRestWorldPosition(rightHip, restPose).sub(getRestWorldPosition(leftHip, restPose))
+      : new Vector3(1, 0, 0);
+  const shoulderCenter = leftShoulder && rightShoulder
+    ? getRestWorldPosition(leftShoulder, restPose)
+      .add(getRestWorldPosition(rightShoulder, restPose))
+      .multiplyScalar(.5)
+    : null;
+  const hipCenter = leftHip && rightHip
+    ? getRestWorldPosition(leftHip, restPose)
+      .add(getRestWorldPosition(rightHip, restPose))
+      .multiplyScalar(.5)
+    : null;
+  const up = shoulderCenter && hipCenter
+    ? shoulderCenter.sub(hipCenter)
+    : body && head
+      ? getRestWorldPosition(head, restPose).sub(getRestWorldPosition(body, restPose))
+      : new Vector3(0, 1, 0);
+
+  if (right.lengthSq() < 1e-8) right.set(1, 0, 0);
+  if (up.lengthSq() < 1e-8) up.set(0, 1, 0);
+  up.normalize();
+  right.addScaledVector(up, -right.dot(up)).normalize();
+  const forward = right.clone().cross(up).normalize();
+  right.copy(up).cross(forward).normalize();
+  return new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(right, up, forward)).normalize();
+}
+
+function getRigHeight(
+  scene: Object3D,
+  restPose: CharacterRestPose,
+  boneMap?: DirectorCharacterBoneMap,
+) {
+  const { byJoint } = getHumanoidNodes(scene, boneMap);
+  const head = byJoint.get("head");
+  const leftFoot = byJoint.get("leftFoot");
+  const rightFoot = byJoint.get("rightFoot");
+  if (!head || (!leftFoot && !rightFoot)) return 1;
+  const feet = leftFoot && rightFoot
+    ? getRestWorldPosition(leftFoot, restPose).add(getRestWorldPosition(rightFoot, restPose)).multiplyScalar(.5)
+    : getRestWorldPosition((leftFoot ?? rightFoot)!, restPose);
+  return Math.max(.0001, getRestWorldPosition(head, restPose).distanceTo(feet));
+}
+
+function prepareWorldSpaceMixamoAnimationClip(
   sourceClip: AnimationClip,
   scene: Object3D,
   sourceScene: Object3D,
-  targetRestPose?: CharacterRestPose
+  targetBoneMap?: DirectorCharacterBoneMap,
 ) {
-  const targetMesh = findPrimarySkinnedMesh(scene);
-  const sourceMesh = findPrimarySkinnedMesh(sourceScene);
-  if (!targetMesh || !sourceMesh) return null;
+  // 动画准备只允许操作副本。目标副本可以恢复绑定姿势用于动作映射，
+  // 画布中的真实角色仍保留模型自带的坐姿、趴姿或其他初始造型。
+  const targetScene = cloneSkeleton(scene) as Object3D;
+  const animationSourceScene = cloneSkeleton(sourceScene) as Object3D;
+  const targetMesh = findPrimarySkinnedMesh(targetScene);
+  const sourceMesh = findPrimarySkinnedMesh(animationSourceScene);
+  sourceMesh?.skeleton.pose();
+  targetMesh?.skeleton.pose();
+  animationSourceScene.updateMatrixWorld(true);
+  targetScene.updateMatrixWorld(true);
 
-  const sourceBonesByNormalizedName = new Map(
-    sourceMesh.skeleton.bones.map((bone) => [getCanonicalHumanoidBoneName(bone.name), bone])
-  );
-  const sourceHips = sourceMesh.skeleton.bones.find((bone) => getCanonicalHumanoidBoneName(bone.name).endsWith("mixamorigHips"));
-  const targetHips = targetMesh.skeleton.bones.find((bone) => getCanonicalHumanoidBoneName(bone.name).endsWith("mixamorigHips"));
-  if (!sourceHips || !targetHips) return null;
-  const targetHipsRestPosition = new Vector3().fromArray(getRestTransform(targetHips, targetRestPose).position);
+  const sourceRestPose = captureCharacterRestPose(animationSourceScene);
+  const targetActionRestPose = captureCharacterRestPose(targetScene);
+  const sourceNodes = getHumanoidNodes(animationSourceScene);
+  const targetNodes = getHumanoidNodes(targetScene, targetBoneMap);
+  const mappedNodes = [...targetNodes.byCanonicalName.values()]
+    .map((targetNode) => {
+      const canonicalName = getCanonicalHumanoidBoneName(targetNode.name).toLowerCase();
+      const joint = getProceduralJointForBoneName(targetNode.name, targetBoneMap);
+      const sourceNode = sourceNodes.byCanonicalName.get(canonicalName)
+        ?? (joint ? sourceNodes.byJoint.get(joint) : undefined);
+      return sourceNode ? { sourceNode, targetNode } : null;
+    })
+    .filter((mapping): mapping is { sourceNode: Object3D; targetNode: Object3D } => Boolean(mapping))
+    .filter((mapping, index, mappings) => mappings.findIndex(({ targetNode }) => targetNode === mapping.targetNode) === index)
+    .sort((left, right) => getObjectDepth(left.targetNode) - getObjectDepth(right.targetNode));
+  if (!mappedNodes.length) return null;
 
-  sourceMesh.skeleton.pose();
-  targetMesh.skeleton.pose();
-  sourceScene.updateMatrixWorld(true);
-  scene.updateMatrixWorld(true);
-  const sourceHipsHeight = Math.max(0.0001, Math.abs(sourceHips.getWorldPosition(new Vector3()).y));
-  const hipsScale = Math.abs(targetHips.getWorldPosition(new Vector3()).y) / sourceHipsHeight;
+  const sourceBasis = getRigBasisQuaternion(animationSourceScene, sourceRestPose);
+  const targetBasis = getRigBasisQuaternion(targetScene, targetActionRestPose, targetBoneMap);
+  const basisConversion = targetBasis.clone().multiply(sourceBasis.clone().invert()).normalize();
+  const inverseBasisConversion = basisConversion.clone().invert();
+  const heightScale = getRigHeight(targetScene, targetActionRestPose, targetBoneMap)
+    / getRigHeight(animationSourceScene, sourceRestPose);
+  const sourceMixer = new AnimationMixer(animationSourceScene);
+  const sourceAction = sourceMixer.clipAction(sourceClip, animationSourceScene);
+  sourceAction.play();
 
-  const clip = retargetClip(targetMesh, sourceMesh, sourceClip, {
-    fps: 30,
-    getBoneName: (targetBone) => sourceBonesByNormalizedName.get(getCanonicalHumanoidBoneName(targetBone.name))?.name ?? targetBone.name,
-    hip: sourceHips.name,
-    hipInfluence: new Vector3(0, 1, 0),
-    preserveBoneMatrix: true,
-    scale: hipsScale,
-    useFirstFramePosition: false,
+  const sampleCount = Math.max(2, Math.ceil(sourceClip.duration * 30) + 1);
+  const times = Array.from({ length: sampleCount }, (_, index) => Math.min(sourceClip.duration, index / 30));
+  times[times.length - 1] = sourceClip.duration;
+  const quaternionValues = new Map<Object3D, number[]>();
+  mappedNodes.forEach(({ targetNode }) => quaternionValues.set(targetNode, []));
+  const targetBody = targetNodes.byJoint.get("body");
+  const sourceBody = sourceNodes.byJoint.get("body");
+  const hipsPositionValues: number[] = [];
+  const sourceBodyRestPosition = sourceBody ? getRestWorldPosition(sourceBody, sourceRestPose) : null;
+  const targetBodyRestPosition = targetBody ? getRestWorldPosition(targetBody, targetActionRestPose) : null;
+  const sourceBasisInverse = sourceBasis.clone().invert();
+
+  times.forEach((time) => {
+    applyCharacterRestPose(animationSourceScene, sourceRestPose);
+    applyCharacterRestPose(targetScene, targetActionRestPose);
+    sourceMixer.setTime(time);
+    animationSourceScene.updateMatrixWorld(true);
+    targetScene.updateMatrixWorld(true);
+
+    mappedNodes.forEach(({ sourceNode, targetNode }) => {
+      const sourceRestWorld = getRestWorldQuaternion(sourceNode, sourceRestPose);
+      const sourceAnimatedWorld = sourceNode.getWorldQuaternion(new Quaternion()).normalize();
+      const sourceDelta = sourceAnimatedWorld.multiply(sourceRestWorld.clone().invert()).normalize();
+      const targetDelta = basisConversion.clone()
+        .multiply(sourceDelta)
+        .multiply(inverseBasisConversion)
+        .normalize();
+      const targetRestWorld = getRestWorldQuaternion(targetNode, targetActionRestPose);
+      const desiredTargetWorld = targetDelta.multiply(targetRestWorld).normalize();
+      const parentWorld = targetNode.parent?.getWorldQuaternion(new Quaternion()).normalize() ?? new Quaternion();
+      const targetLocal = parentWorld.invert().multiply(desiredTargetWorld).normalize();
+      const values = quaternionValues.get(targetNode)!;
+      if (values.length >= 4) {
+        const previous = new Quaternion().fromArray(values, values.length - 4);
+        if (previous.dot(targetLocal) < 0) {
+          targetLocal.set(-targetLocal.x, -targetLocal.y, -targetLocal.z, -targetLocal.w);
+        }
+      }
+      targetLocal.toArray(values, values.length);
+      targetNode.quaternion.copy(targetLocal);
+      targetNode.updateMatrixWorld(true);
+    });
+
+    if (sourceBody && targetBody && sourceBodyRestPosition && targetBodyRestPosition) {
+      const sourceBodyPosition = sourceBody.getWorldPosition(new Vector3());
+      const bodyDelta = sourceBodyPosition.sub(sourceBodyRestPosition).applyQuaternion(sourceBasisInverse);
+      bodyDelta.x = 0;
+      bodyDelta.z = 0;
+      const desiredWorldPosition = targetBodyRestPosition.clone()
+        .add(bodyDelta.multiplyScalar(heightScale).applyQuaternion(targetBasis));
+      const localPosition = targetBody.parent
+        ? desiredWorldPosition.applyMatrix4(targetBody.parent.matrixWorld.clone().invert())
+        : desiredWorldPosition;
+      localPosition.toArray(hipsPositionValues, hipsPositionValues.length);
+    }
   });
 
-  for (const track of clip.tracks) {
-    const match = track.name.match(/^\.bones\[(.+)]\.(position|quaternion)$/);
-    if (match) track.name = `${match[1]}.${match[2]}`;
-    if (track.name === `${targetHips.name}.position` && track.getValueSize() === 3) {
-      for (let index = 0; index < track.values.length; index += 3) {
-        targetHipsRestPosition.toArray(track.values, index);
-      }
-    }
+  sourceMixer.stopAllAction();
+  sourceMixer.uncacheRoot(animationSourceScene);
+  const tracks = mappedNodes.map(({ targetNode }) => new QuaternionKeyframeTrack(
+    `${targetNode.name}.quaternion`,
+    times,
+    quaternionValues.get(targetNode)!,
+  ));
+  if (targetBody && hipsPositionValues.length === times.length * 3) {
+    tracks.push(new VectorKeyframeTrack(`${targetBody.name}.position`, times, hipsPositionValues));
   }
-  sourceMesh.skeleton.pose();
-  targetMesh.skeleton.pose();
-  sourceScene.updateMatrixWorld(true);
-  scene.updateMatrixWorld(true);
-  return clip;
+  return new AnimationClip(`${sourceClip.name || "动作"}-重定向`, sourceClip.duration, tracks);
 }
 
 export function prepareMixamoAnimationClip(
@@ -285,8 +441,13 @@ export function prepareMixamoAnimationClip(
   targetBoneMap?: DirectorCharacterBoneMap
 ) {
   if (sourceScene && retargetMode === "skeleton") {
-    const skinnedClip = prepareSkinnedMixamoAnimationClip(sourceClip, scene, sourceScene, targetRestPose);
-    if (skinnedClip) return skinnedClip;
+    const retargetedClip = prepareWorldSpaceMixamoAnimationClip(
+      sourceClip,
+      scene,
+      sourceScene,
+      targetBoneMap,
+    );
+    if (retargetedClip) return retargetedClip;
   }
 
   const clip = sourceClip.clone();
@@ -455,6 +616,19 @@ function applyProceduralCharacterPose(
     const rotation = rotationForBone(object.name, controls, boneMap);
     if (rotation) object.quaternion.multiply(new Quaternion().setFromEuler(new Euler(...rotation)));
   });
+}
+
+export function applyProceduralCharacterControls(
+  scene: Object3D,
+  restPose: CharacterRestPose,
+  controls: Record<string, number>,
+  boneMap?: DirectorCharacterBoneMap,
+) {
+  applyCharacterRestPose(scene, restPose);
+  const bindings = getProceduralBoneBindings(scene, restPose, boneMap);
+  applyProceduralCharacterPose(bindings, controls, boneMap);
+  scene.updateMatrixWorld(true);
+  return bindings.length;
 }
 
 const ANIMATION_SAMPLE_EPSILON = 1e-7;
@@ -756,13 +930,7 @@ function LoadedMixamoCharacter({
       return;
     }
     const controls = rigState?.controls ?? {};
-    applyCharacterRestPose(scene, restPose);
-    scene.traverse((object) => {
-      const rest = restPose.get(object.uuid);
-      if (!rest) return;
-      const rotation = rotationForBone(object.name, controls, boneMap);
-      if (rotation) object.quaternion.multiply(new Quaternion().setFromEuler(new Euler(...rotation)));
-    });
+    applyProceduralCharacterControls(scene, restPose, controls, boneMap);
     onLabelAnchorYChange?.(1.8 + VIEWPORT_OBJECT_LABEL_VERTICAL_GAP + (controls["body.offsetY"] ?? 0));
   }, [boneMap, hasActiveAnimationClip, onLabelAnchorYChange, restPose, rigState?.controls, scene]);
 

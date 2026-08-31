@@ -8,6 +8,17 @@ type ApiEnvelope<T> = {
   data?: T | null
 }
 
+export type SystemSupplierBalanceQuery = {
+  supplierId: number
+}
+
+export type SystemSupplierBalanceRead = {
+  supplierId: number
+  supplierName?: string | null
+  balance: number | string | null
+  currency?: string | null
+}
+
 export type SystemSupplierCreateRequest = {
   name: string
   baseUrl: string
@@ -242,6 +253,19 @@ function getSystemSupplierModels(
   })
 }
 
+function getSystemSupplierBalance(
+  query: SystemSupplierBalanceQuery,
+): CancelablePromise<ApiEnvelope<SystemSupplierBalanceRead>> {
+  return __request(OpenAPI, {
+    method: 'GET',
+    url: '/api/v1/system/suppliers/getBalance',
+    query,
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
 export const SystemSuppliersApi = {
   async getAll(): Promise<SystemSupplierRead[]> {
     const response = await getAllSystemSuppliers()
@@ -261,6 +285,13 @@ export const SystemSuppliersApi = {
       pageSize: response.data?.pageSize ?? query.pageSize,
       total: response.data?.total ?? 0,
     }
+  },
+  async getBalance(query: SystemSupplierBalanceQuery): Promise<SystemSupplierBalanceRead | null> {
+    const response = await getSystemSupplierBalance(query)
+    if ((response.code ?? 200) >= 400) {
+      throw new Error(response.message || 'Supplier balance loading failed')
+    }
+    return response.data ?? null
   },
   async create(requestBody: SystemSupplierCreateRequest): Promise<void> {
     const response = await createSystemSupplier(requestBody)

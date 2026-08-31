@@ -19,6 +19,7 @@ import {
   getCompatibleCharacterCommonActionPresets,
   getCharacterActionProfile,
   getCharacterSpecificActionPresets,
+  resolveCharacterImportReadiness,
   resolveCompatibleCharacterActionPresetId,
 } from "../presets/characterSpecificActionPresets";
 import { getCameraMotionPath } from "../schema/cameraMotion";
@@ -122,7 +123,14 @@ export function CharacterPanel() {
   const roleAsset = assets.find((asset) => asset.id === role.assetRefId);
   const roleRigProfile: CharacterRigProfile = roleAsset?.characterRigProfile
     ?? (role.characterRig?.rigType === "mixamo" ? "mixamo" : role.characterRig?.rigType === "ue4-mannequin" ? "bip" : "unknown");
-  const roleImportReadiness = roleAsset?.characterImportReadiness ?? "ready";
+  const roleImportReadiness = resolveCharacterImportReadiness({
+    assetUrl: roleAsset?.url,
+    assetName: roleAsset?.name ?? roleAsset?.fileName,
+    objectName: role.name,
+    bodyType: role.bodyType,
+    importReadiness: roleAsset?.characterImportReadiness,
+    rigType: role.characterRig?.rigType,
+  });
   const allowsHumanoidActions = roleImportReadiness === "ready";
   const roleHasCompleteBoneMap = isCompleteDirectorCharacterBoneMap(roleAsset?.characterBoneMap);
   const compatibleAnimationAssets = animationAssets.filter((animationAsset) =>
@@ -204,6 +212,7 @@ export function CharacterPanel() {
     objectName: role.name,
     bodyType: role.bodyType,
     importReadiness: roleImportReadiness,
+    rigType: role.characterRig?.rigType,
   };
   const characterActionProfile = getCharacterActionProfile(characterActionContext);
   const compatibleCommonActionPresets = getCompatibleCharacterCommonActionPresets(
@@ -526,11 +535,14 @@ export function CharacterPanel() {
                     key={preset.id}
                     className={role.characterRig?.posePresetId === preset.id ? "is-active" : undefined}
                     type="button"
-                    onClick={() =>
-                      isCrowd && selection.crowdId
-                        ? applyCrowdPosePreset(selection.crowdId, preset.id)
-                        : applyPosePreset(role.id, preset.id)
-                    }
+                    onClick={() => {
+                      setCameraMotionPlaying(false);
+                      if (isCrowd && selection.crowdId) {
+                        applyCrowdPosePreset(selection.crowdId, preset.id);
+                      } else {
+                        applyPosePreset(role.id, preset.id);
+                      }
+                    }}
                   >
                     {text(preset.label, preset.labelEn)}
                   </button>
@@ -554,11 +566,14 @@ export function CharacterPanel() {
                           min="-90"
                           step="1"
                           value={role.characterRig?.controls[control.key] ?? 0}
-                          onValueChange={(value) =>
-                            isCrowd && selection.crowdId
-                              ? updateCrowdPoseControl(selection.crowdId, control.key, Number(value))
-                              : updatePoseControl(role.id, control.key, Number(value))
-                          }
+                          onValueChange={(value) => {
+                            setCameraMotionPlaying(false);
+                            if (isCrowd && selection.crowdId) {
+                              updateCrowdPoseControl(selection.crowdId, control.key, Number(value));
+                            } else {
+                              updatePoseControl(role.id, control.key, Number(value));
+                            }
+                          }}
                         />
                       ))}
                     </section>

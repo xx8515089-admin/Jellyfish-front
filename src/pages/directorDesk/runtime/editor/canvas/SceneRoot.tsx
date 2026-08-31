@@ -43,7 +43,10 @@ import type { TransformMode } from "../store/directorStore";
 import { useDirectorStore } from "../store/directorStore";
 import { CharacterModel } from "../runtime/CharacterModel";
 import { sampleCharacterActionControls } from "../presets/characterActionPresets";
-import { resolveCompatibleCharacterActionPresetId } from "../presets/characterSpecificActionPresets";
+import {
+  resolveCharacterImportReadiness,
+  resolveCompatibleCharacterActionPresetId,
+} from "../presets/characterSpecificActionPresets";
 import { getGroundedLabelY } from "../runtime/mannequin/bodyTypes";
 import { constrainCameraPosition, constrainObjectMotionTransform } from "../schema/pathCollision";
 import { getUE4GroundedLabelY } from "../runtime/ue4Mannequin/ue4MannequinRig";
@@ -352,6 +355,7 @@ function ObjectSceneNode({
   const pilotHoveredTargetId = useDirectorStore((state) => state.cameraPilotHoveredTargetId);
   const pilotLockedTargetId = useDirectorStore((state) => state.cameraPilotLockedTargetId);
   const animationAssets = useDirectorStore((state) => state.project.animationAssets);
+  const cameraMotionPlaying = useDirectorStore((state) => state.cameraMotionPlaying);
   const characterActionPreview = useDirectorStore((state) => state.characterActionPreview);
   const initialRouteActionPresetId = getObjectMotionActionPresetId(item, motionProgress, motionDurationSeconds);
   const [runtimeActionPresetId, setRuntimeActionPresetId] = useState(initialRouteActionPresetId);
@@ -376,20 +380,30 @@ function ObjectSceneNode({
     ? isCharacterActionPreviewTarget
       ? characterActionPreview.actionPresetId
       : null
-    : runtimeActionPresetId;
+    : cameraMotionPlaying
+      ? runtimeActionPresetId
+      : item.characterRig?.actionPresetId ?? null;
   const characterActionContext = {
     assetUrl: asset?.url,
     assetName: asset?.name ?? asset?.fileName,
     objectName: item.name,
     bodyType: item.bodyType,
-    importReadiness: asset?.characterImportReadiness ?? "ready" as const,
+    importReadiness: resolveCharacterImportReadiness({
+      assetUrl: asset?.url,
+      assetName: asset?.name ?? asset?.fileName,
+      objectName: item.name,
+      bodyType: item.bodyType,
+      importReadiness: asset?.characterImportReadiness,
+      rigType: item.characterRig?.rigType,
+    }),
+    rigType: item.characterRig?.rigType,
   };
   const routeActionPresetId = resolveCompatibleCharacterActionPresetId(
     characterActionContext,
     requestedRouteActionPresetId,
   );
   const requestedActionPresetId = requestedRouteActionPresetId
-    ?? (!characterActionPreview && motionWalking ? "walk-cycle" : null);
+    ?? (!characterActionPreview && cameraMotionPlaying && motionWalking ? "walk-cycle" : null);
   const resolvedActionPresetId = resolveCompatibleCharacterActionPresetId(
     characterActionContext,
     requestedActionPresetId,
@@ -415,7 +429,7 @@ function ObjectSceneNode({
         ),
       };
     }
-    if (!motionWalking || requestedRouteActionPresetId) return item.characterRig;
+    if (!cameraMotionPlaying || !motionWalking || requestedRouteActionPresetId) return item.characterRig;
     const stride = Math.sin(motionPhase) * 28;
     const leftKnee = Math.max(0, Math.sin(motionPhase + Math.PI / 2)) * 24;
     const rightKnee = Math.max(0, Math.sin(motionPhase - Math.PI / 2)) * 24;
@@ -433,7 +447,7 @@ function ObjectSceneNode({
         "rightKnee.bend": rightKnee,
       },
     };
-  }, [item, motionPhase, motionTimeSeconds, motionWalking, requestedRouteActionPresetId, routeActionPresetId]);
+  }, [cameraMotionPlaying, item, motionPhase, motionTimeSeconds, motionWalking, requestedRouteActionPresetId, routeActionPresetId]);
   const handleCharacterLabelAnchorYChange = useCallback(
     (anchorY: number) => {
       setMeasuredCharacterLabel((current) => {
@@ -536,13 +550,15 @@ function ObjectSceneNode({
               motionWalking={motionWalking}
               onLabelAnchorYChange={handleCharacterLabelAnchorYChange}
               rigState={animatedCharacterRig}
-              runtimeMotion={{
-                duration: motionDurationSeconds,
-                object: item,
-                previewActionPresetId: isCharacterActionPreviewTarget
-                  ? resolvedActionPresetId
-                  : null,
-              }}
+              runtimeMotion={resolvedActionPresetId
+                ? {
+                    duration: motionDurationSeconds,
+                    object: item,
+                    previewActionPresetId: isCharacterActionPreviewTarget
+                      ? resolvedActionPresetId
+                      : null,
+                  }
+                : undefined}
             />
           </Suspense>
           {showLabels ? (

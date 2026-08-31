@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   App,
@@ -7,7 +7,6 @@ import {
   Drawer,
   Empty,
   Form,
-  Grid,
   Input,
   InputNumber,
   Layout,
@@ -37,6 +36,7 @@ import {
 import { useBilingualText } from '../../../i18n/useBilingualText'
 import {
   SystemSuppliersApi,
+  type SystemSupplierBalanceRead,
   type SystemSupplierCreateRequest,
   type SystemSupplierImageCapabilities,
   type SystemSupplierModelRead,
@@ -95,10 +95,24 @@ type ModelPagination = {
   total: number
 }
 
+type ProviderBalanceState = {
+  supplierId: number | null
+  data: SystemSupplierBalanceRead | null
+  loading: boolean
+  error: boolean
+}
+
 const DEFAULT_MODEL_PAGINATION: ModelPagination = {
   page: 1,
   pageSize: 20,
   total: 0,
+}
+
+const DEFAULT_PROVIDER_BALANCE_STATE: ProviderBalanceState = {
+  supplierId: null,
+  data: null,
+  loading: false,
+  error: false,
 }
 
 const MODEL_TYPE_BY_CATEGORY: Record<ModelCategoryKey, SystemSupplierModelType> = {
@@ -180,13 +194,13 @@ function buildVideoCapabilities(values: ModelFormValues): SystemSupplierVideoCap
 export default function ProvidersTab() {
   const l = useBilingualText()
   const { message } = App.useApp()
-  const { lg } = Grid.useBreakpoint()
-  const isLargeScreen = lg ?? false
+  const [showInlineDetail, setShowInlineDetail] = useState(false)
   const [providers, setProviders] = useState<ProviderListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedProvider, setSelectedProvider] = useState<ProviderListItem | null>(null)
   const [providerModels, setProviderModels] = useState<SystemSupplierModelRead[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
+  const [providerBalance, setProviderBalance] = useState<ProviderBalanceState>(DEFAULT_PROVIDER_BALANCE_STATE)
   const [modelTypeFilter, setModelTypeFilter] = useState<ModelTypeFilter>('all')
   const [modelPagination, setModelPagination] = useState<ModelPagination>(DEFAULT_MODEL_PAGINATION)
   const [detailPanelOpen, setDetailPanelOpen] = useState(false)
@@ -198,9 +212,19 @@ export default function ProvidersTab() {
   const [modelModalOpen, setModelModalOpen] = useState(false)
   const [modelEditing, setModelEditing] = useState<SystemSupplierModelRead | null>(null)
   const [modelFormSeed, setModelFormSeed] = useState<Partial<ModelFormValues> | null>(null)
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(min-width: 1840px)')
+    const syncDetailLayout = () => setShowInlineDetail(mediaQuery.matches)
+
+    syncDetailLayout()
+    mediaQuery.addEventListener('change', syncDetailLayout)
+    return () => mediaQuery.removeEventListener('change', syncDetailLayout)
+  }, [])
   const [modelSaving, setModelSaving] = useState(false)
   const [modelForm] = Form.useForm<ModelFormValues>()
   const selectedFormCategory = Form.useWatch<ModelCategoryKey | undefined>('category', modelForm)
+  const balanceRequestId = useRef(0)
 
   /** 将后端状态枚举转换为当前页面展示文案。 */
   const statusText = (status: ProviderStatus) =>
@@ -279,12 +303,59 @@ export default function ProvidersTab() {
     }
   }
 
+  const resetProviderBalance = () => {
+    balanceRequestId.current += 1
+    setProviderBalance(DEFAULT_PROVIDER_BALANCE_STATE)
+  }
+
+  const loadProviderBalance = async (provider: ProviderListItem) => {
+    const supplierId = Number(provider.id)
+    if (!Number.isInteger(supplierId) || supplierId <= 0) {
+      setProviderBalance({
+        supplierId: null,
+        data: null,
+        loading: false,
+        error: true,
+      })
+      return
+    }
+
+    const requestId = balanceRequestId.current + 1
+    balanceRequestId.current = requestId
+    setProviderBalance({
+      supplierId,
+      data: null,
+      loading: true,
+      error: false,
+    })
+
+    try {
+      const result = await SystemSuppliersApi.getBalance({ supplierId })
+      if (balanceRequestId.current !== requestId) return
+      setProviderBalance({
+        supplierId,
+        data: result,
+        loading: false,
+        error: false,
+      })
+    } catch {
+      if (balanceRequestId.current !== requestId) return
+      setProviderBalance({
+        supplierId,
+        data: null,
+        loading: false,
+        error: true,
+      })
+    }
+  }
+
   const openProviderDetail = (provider: ProviderListItem) => {
     setSelectedProvider(provider)
     setDetailPanelOpen(true)
     setModelTypeFilter('all')
     setProviderModels([])
     setModelPagination(DEFAULT_MODEL_PAGINATION)
+    void loadProviderBalance(provider)
     void loadProviderModels(provider, DEFAULT_MODEL_PAGINATION.page, DEFAULT_MODEL_PAGINATION.pageSize, 'all')
   }
 
@@ -589,7 +660,7 @@ export default function ProvidersTab() {
       title: l('名称', 'Name'),
       dataIndex: 'name',
       key: 'name',
-      width: '24%',
+      width: 150,
       ellipsis: true,
       render: (name: string) => <span className="font-medium">{name}</span>,
     },
@@ -597,7 +668,7 @@ export default function ProvidersTab() {
       title: l('描述', 'Description'),
       dataIndex: 'description',
       key: 'description',
-      width: '34%',
+      width: 220,
       ellipsis: true,
       render: (description: string) => <Tooltip title={description}>{description || '—'}</Tooltip>,
     },
@@ -605,7 +676,7 @@ export default function ProvidersTab() {
       title: l('状态', 'Status'),
       dataIndex: 'status',
       key: 'status',
-      width: '12%',
+      width: 92,
       align: 'center',
       render: (status: ProviderStatus) => (
         <Tag color={PROVIDER_STATUS_MAP[status ?? 'active']?.color}>{statusText(status ?? 'active')}</Tag>
@@ -615,14 +686,14 @@ export default function ProvidersTab() {
       title: l('创建人', 'Creator'),
       dataIndex: 'created_by',
       key: 'created_by',
-      width: '16%',
+      width: 104,
       align: 'center',
       render: (creator: string) => creator || '—',
     },
     {
       title: l('操作', 'Actions'),
       key: 'action',
-      width: '12%',
+      width: 90,
       align: 'left',
       render: (_, record) => (
         <Space size={10} className="flex-nowrap justify-start">
@@ -656,7 +727,12 @@ export default function ProvidersTab() {
         </div>
       </div>
 
-      <Layout className="model-management__workspace min-h-0 flex-1 flex-row overflow-hidden">
+      <Layout
+        className={[
+          'model-management__workspace min-h-0 flex-1 overflow-hidden',
+          selectedProvider && showInlineDetail ? 'model-management__workspace--with-detail' : '',
+        ].filter(Boolean).join(' ')}
+      >
         <div
           className="model-management__rail flex-shrink-0 overflow-auto border-r border-gray-200 bg-white"
           style={{ width: treeCollapsed ? 42 : 188 }}
@@ -705,7 +781,8 @@ export default function ProvidersTab() {
                 loading={loading}
                 columns={providerColumns}
                 dataSource={providerList}
-                scroll={{ x: 760 }}
+                tableLayout="fixed"
+                scroll={{ x: 656 }}
                 pagination={{ pageSize: 20 }}
                 onRow={(record) => ({
                   onClick: () => openProviderDetail(record),
@@ -720,13 +797,13 @@ export default function ProvidersTab() {
           )}
         </div>
 
-        {selectedProvider && isLargeScreen && (
-          <div
-            className="model-management__detail flex-shrink-0 overflow-auto border-l border-gray-200 bg-white"
-            style={{ width: '54%', minWidth: 720 }}
-          >
+        {selectedProvider && showInlineDetail && (
+          <div className="model-management__detail overflow-auto border-l border-gray-200 bg-white">
             <ProviderDetail
               provider={selectedProvider}
+              balance={providerBalance.data}
+              balanceLoading={providerBalance.loading && providerBalance.supplierId === Number(selectedProvider.id)}
+              balanceError={providerBalance.error && providerBalance.supplierId === Number(selectedProvider.id)}
               models={providerModels}
               modelsLoading={modelsLoading}
               modelTypeFilter={modelTypeFilter}
@@ -742,21 +819,26 @@ export default function ProvidersTab() {
                 setSelectedProvider(null)
                 setProviderModels([])
                 setModelPagination(DEFAULT_MODEL_PAGINATION)
+                resetProviderBalance()
               }}
             />
           </div>
         )}
 
-        {selectedProvider && !isLargeScreen && (
+        {selectedProvider && !showInlineDetail && (
           <Drawer
             title={l('详情', 'Details')}
             placement="right"
             open={detailPanelOpen}
             onClose={() => setDetailPanelOpen(false)}
-            width="min(100%, 400px)"
+            width="min(82vw, 1040px)"
+            rootClassName="provider-detail-drawer"
           >
             <ProviderDetail
               provider={selectedProvider}
+              balance={providerBalance.data}
+              balanceLoading={providerBalance.loading && providerBalance.supplierId === Number(selectedProvider.id)}
+              balanceError={providerBalance.error && providerBalance.supplierId === Number(selectedProvider.id)}
               models={providerModels}
               modelsLoading={modelsLoading}
               modelTypeFilter={modelTypeFilter}
@@ -1111,6 +1193,9 @@ export default function ProvidersTab() {
 
 type ProviderDetailProps = {
   provider: ProviderListItem
+  balance: SystemSupplierBalanceRead | null
+  balanceLoading: boolean
+  balanceError: boolean
   models: SystemSupplierModelRead[]
   modelsLoading: boolean
   modelTypeFilter: ModelTypeFilter
@@ -1124,9 +1209,24 @@ type ProviderDetailProps = {
   onClose?: () => void
 }
 
+function formatSupplierBalance(balance: SystemSupplierBalanceRead | null): string {
+  if (!balance || balance.balance === null || balance.balance === undefined || balance.balance === '') return '—'
+
+  const amount = typeof balance.balance === 'number' ? balance.balance : Number(balance.balance)
+  const amountText = Number.isFinite(amount)
+    ? amount.toLocaleString(undefined, { maximumFractionDigits: 6 })
+    : String(balance.balance)
+  const currency = balance.currency?.trim()
+
+  return currency ? `${amountText} ${currency}` : amountText
+}
+
 /** 展示供应商详情，敏感连接信息不会从后端响应中回显。 */
 function ProviderDetail({
   provider,
+  balance,
+  balanceLoading,
+  balanceError,
   models,
   modelsLoading,
   modelTypeFilter,
@@ -1141,12 +1241,17 @@ function ProviderDetail({
 }: ProviderDetailProps) {
   const l = useBilingualText()
   const status = provider.status ?? 'active'
+  const balanceText = balanceLoading
+    ? l('查询中…', 'Loading...')
+    : balanceError
+      ? l('查询失败', 'Failed to load')
+      : formatSupplierBalance(balance)
   const modelColumns: TableColumnsType<SystemSupplierModelRead> = [
     {
       title: l('名称', 'Name'),
       dataIndex: 'name',
       key: 'name',
-      width: 210,
+      width: 190,
       ellipsis: true,
       render: (name: string, record) => (
         <div className="provider-detail__table-name">
@@ -1170,7 +1275,7 @@ function ProviderDetail({
       title: l('描述', 'Description'),
       dataIndex: 'description',
       key: 'description',
-      width: 220,
+      width: 190,
       ellipsis: true,
       render: (description: string) => <Tooltip title={description}>{description || '—'}</Tooltip>,
     },
@@ -1178,7 +1283,7 @@ function ProviderDetail({
       title: l('请求地址', 'Request URL'),
       dataIndex: 'requestUrl',
       key: 'requestUrl',
-      width: 260,
+      width: 240,
       ellipsis: true,
       render: (requestUrl: string) => <Tooltip title={requestUrl}>{requestUrl || '—'}</Tooltip>,
     },
@@ -1195,11 +1300,10 @@ function ProviderDetail({
     {
       title: l('操作', 'Actions'),
       key: 'action',
-      width: 148,
+      width: 164,
       align: 'left',
-      fixed: 'right',
       render: (_, record) => (
-        <Space size={10} className="flex-nowrap justify-start">
+        <Space size={8} className="provider-detail__table-actions flex-nowrap justify-start">
           <Button
             type="text"
             size="small"
@@ -1258,6 +1362,17 @@ function ProviderDetail({
             <Tag color={PROVIDER_STATUS_MAP[status]?.color}>{providerStatusText(status, l)}</Tag>
           </div>
           <div>
+            <span className="provider-detail__meta-label">{l('账户余额', 'Account balance')}</span>
+            <strong
+              className={[
+                'provider-detail__balance-value',
+                balanceError ? 'provider-detail__balance-value--error' : '',
+              ].filter(Boolean).join(' ')}
+            >
+              {balanceText}
+            </strong>
+          </div>
+          <div>
             <span className="provider-detail__meta-label">Base URL</span>
             <Tooltip title={provider.base_url}>
               <strong>{provider.base_url || '—'}</strong>
@@ -1313,11 +1428,12 @@ function ProviderDetail({
         <Table<SystemSupplierModelRead>
           rowKey="id"
           className="provider-detail__model-table"
+          tableLayout="fixed"
           loading={modelsLoading}
           columns={modelColumns}
           dataSource={models}
           pagination={false}
-          scroll={{ x: 1040 }}
+          scroll={{ x: 970 }}
           size="small"
           locale={{
             emptyText: (

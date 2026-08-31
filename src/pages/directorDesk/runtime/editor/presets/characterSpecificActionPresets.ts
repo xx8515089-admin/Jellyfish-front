@@ -1,5 +1,12 @@
-import type { CharacterBodyType, CharacterImportReadiness } from "../schema/directorProject";
-import type { CharacterActionPreset } from "./characterActionPresets";
+import type {
+  CharacterBodyType,
+  CharacterImportReadiness,
+  CharacterRigType,
+} from "../schema/directorProject";
+import {
+  getCharacterActionPreset,
+  type CharacterActionPreset,
+} from "./characterActionPresets";
 
 export type CharacterActionProfile =
   | "natural"
@@ -16,6 +23,7 @@ export interface CharacterActionContext {
   objectName?: string | null;
   bodyType?: CharacterBodyType | null;
   importReadiness?: CharacterImportReadiness | null;
+  rigType?: CharacterRigType | null;
 }
 
 export const CHARACTER_ACTION_PROFILE_LABELS: Record<CharacterActionProfile, string> = {
@@ -300,6 +308,14 @@ const COMMON_ACTION_IDS = new Set([
   "wave-cycle",
 ]);
 
+const ROBOT_EXPRESSIVE_NATIVE_SPECIFIC_ACTION_IDS = new Set([
+  "robot-scan",
+  "robot-guard",
+  "robot-approve",
+  "robot-punch",
+  "robot-dance",
+]);
+
 const compatibleCommonActionIds: Record<CharacterActionProfile, ReadonlySet<string>> = {
   natural: COMMON_ACTION_IDS,
   stylized: COMMON_ACTION_IDS,
@@ -308,6 +324,13 @@ const compatibleCommonActionIds: Record<CharacterActionProfile, ReadonlySet<stri
   robot: new Set(["walk-cycle", "run-cycle", "side-step-left", "wave-cycle"]),
   skeletal: new Set(["walk-cycle", "run-cycle", "side-step-left", "wave-cycle"]),
   creature: new Set(["walk-cycle", "run-cycle"]),
+};
+
+// 外部骨架必须通过动作审计后才能暴露预设。跳跃动画在当前本地模型上会造成
+// 大范围关节翻转；骷髅的挥手动画也超过骨骼方向误差阈值。
+const unsafeExternalActionIds = new Set(["jump-cycle"]);
+const blockedExternalActionIdsByModelFileName: Readonly<Record<string, ReadonlySet<string>>> = {
+  "0058_skeleton.fbx": new Set(["wave-cycle"]),
 };
 
 function getModelFileName(context: CharacterActionContext) {
@@ -319,10 +342,52 @@ function isRobotExpressiveCharacter(context: CharacterActionContext) {
   return /robot-expressive\.glb(?:$|[?#\s])/i.test(`${context.assetUrl ?? ""} ${context.assetName ?? ""}`);
 }
 
+/**
+ * 旧项目没有保存 characterImportReadiness。这里依据已落盘的骨架类型恢复兼容性，
+ * 但仍尊重模型库对特殊模型给出的显式限制。
+ */
+export function resolveCharacterImportReadiness(
+  context: CharacterActionContext,
+): CharacterImportReadiness {
+  if (context.importReadiness) return context.importReadiness;
+  if (!context.assetUrl) return "ready";
+  if (
+    context.rigType === "mixamo"
+    || context.rigType === "mannequin"
+    || context.rigType === "ue4-mannequin"
+  ) {
+    return "ready";
+  }
+  return "manual-mapping";
+}
+
+function hasVerifiedActionMapping(context: CharacterActionContext) {
+  return resolveCharacterImportReadiness(context) === "ready";
+}
+
+function canUseProgrammaticActionControls(context: CharacterActionContext) {
+  return !context.assetUrl
+    || context.rigType === "mannequin"
+    || context.rigType === "ue4-mannequin";
+}
+
+function isCompatibleSpecificAction(context: CharacterActionContext, actionPresetId: string) {
+  if (!hasVerifiedActionMapping(context)) return false;
+  if (canUseProgrammaticActionControls(context)) return true;
+  return isRobotExpressiveCharacter(context)
+    && ROBOT_EXPRESSIVE_NATIVE_SPECIFIC_ACTION_IDS.has(actionPresetId);
+}
+
 function isCompatibleCommonAction(context: CharacterActionContext, actionPresetId: string) {
-  if (context.importReadiness && context.importReadiness !== "ready") return false;
-  if (isRobotExpressiveCharacter(context)) return true;
-  return compatibleCommonActionIds[getCharacterActionProfile(context)].has(actionPresetId);
+  if (!hasVerifiedActionMapping(context)) return false;
+  if (!compatibleCommonActionIds[getCharacterActionProfile(context)].has(actionPresetId)) return false;
+  if (canUseProgrammaticActionControls(context) || isRobotExpressiveCharacter(context)) return true;
+  if (unsafeExternalActionIds.has(actionPresetId)) return false;
+  const modelFileName = getModelFileName(context);
+  if (modelFileName && blockedExternalActionIdsByModelFileName[modelFileName]?.has(actionPresetId)) {
+    return false;
+  }
+  return Boolean(getCharacterActionPreset(actionPresetId)?.mixamoAnimationUrl);
 }
 
 export function getCharacterActionProfile(context: CharacterActionContext): CharacterActionProfile {
@@ -352,7 +417,8 @@ export function getCharacterActionProfile(context: CharacterActionContext): Char
 }
 
 export function getCharacterSpecificActionPresets(context: CharacterActionContext) {
-  return characterSpecificActionPresets[getCharacterActionProfile(context)];
+  return characterSpecificActionPresets[getCharacterActionProfile(context)]
+    .filter((preset) => isCompatibleSpecificAction(context, preset.id));
 }
 
 export function getCompatibleCharacterCommonActionPresets(
@@ -369,7 +435,7 @@ export function resolveCompatibleCharacterActionPresetId(
   if (!actionPresetId) return null;
   const isBuiltInSpecificAction = CHARACTER_SPECIFIC_ACTION_PRESETS.some((preset) => preset.id === actionPresetId);
   if (!COMMON_ACTION_IDS.has(actionPresetId) && !isBuiltInSpecificAction) return actionPresetId;
-  if (context.importReadiness && context.importReadiness !== "ready") return null;
+  if (!hasVerifiedActionMapping(context)) return null;
   if (COMMON_ACTION_IDS.has(actionPresetId)) {
     return isCompatibleCommonAction(context, actionPresetId) ? actionPresetId : null;
   }
