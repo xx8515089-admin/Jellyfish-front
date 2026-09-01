@@ -24,6 +24,10 @@ export type StudioScriptImportListItem = {
   chapterCount?: number | null
   parseStatus?: number | null
   parseStatusName?: string | null
+  /** 页面创建步骤，后端使用 1 开始的序号。 */
+  currentStep?: number | null
+  /** 列表接口当前不返回原文，保留该字段以兼容后续详情化返回。 */
+  rawText?: string | null
   createdAt?: string | null
   updatedAt?: string | null
 }
@@ -60,6 +64,7 @@ export type StudioScriptParseResult = {
   id?: StudioScriptImportId | null
   parseStatus?: number | null
   parseStatusName?: string | null
+  currentStep?: number | null
   segmentationMode?: number | null
   aiModelId?: StudioScriptImportId | null
   aiModel?: unknown
@@ -74,6 +79,7 @@ export type StudioScriptParseResult = {
   visualStyleCode?: string | null
   customStylePrompt?: string | null
   toneStyleCode?: string | null
+  toneStylePrompt?: string | null
   characterCount?: number | null
   paragraphCount?: number | null
   chapterCount?: number | null
@@ -82,10 +88,22 @@ export type StudioScriptParseResult = {
 }
 
 export type StudioScriptBasicInfoConfirmRequest = {
-  id: StudioScriptImportId
+  id: StudioScriptImportId | null
   title: string
   videoRatio: string
   rawText: string
+  targetMarket: string
+  visualStyleId: StudioScriptImportId | null
+  toneStyleId: StudioScriptImportId | null
+}
+
+export type StudioScriptBasicInfoSaveRequest = {
+  id: StudioScriptImportId | null
+  sourceFileName: string
+  fileType: string
+  title: string
+  rawText: string
+  videoRatio: string
   targetMarket: string
   visualStyleId: StudioScriptImportId | null
   toneStyleId: StudioScriptImportId | null
@@ -95,10 +113,6 @@ export type StudioScriptImportRenameRequest = {
   id: StudioScriptImportId
   title: string
 }
-
-type StudioScriptBasicInfoRequest =
-  | StudioScriptBasicInfoConfirmRequest
-  | StudioScriptImportRenameRequest
 
 export type StudioScriptChapterFileParseResult = {
   fileName?: string | null
@@ -125,13 +139,40 @@ function parseScriptFile(file: File): CancelablePromise<ApiEnvelope<StudioScript
 }
 
 function confirmScriptBasicInfo(
-  requestBody: StudioScriptBasicInfoRequest,
+  requestBody: StudioScriptBasicInfoConfirmRequest,
 ): CancelablePromise<ApiEnvelope<StudioScriptParseResult>> {
   return __request(OpenAPI, {
     method: 'POST',
     url: '/api/v1/studio/scripts/imports/basicInfo/confirm',
     body: requestBody,
     mediaType: 'application/json',
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function saveScriptBasicInfo(
+  requestBody: StudioScriptBasicInfoSaveRequest,
+): CancelablePromise<ApiEnvelope<StudioScriptParseResult>> {
+  return __request(OpenAPI, {
+    method: 'POST',
+    url: '/api/v1/studio/scripts/imports/basicInfo/save',
+    body: requestBody,
+    mediaType: 'application/json',
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function getScriptBasicInfoDetail(
+  id: StudioScriptImportId,
+): CancelablePromise<ApiEnvelope<StudioScriptParseResult>> {
+  return __request(OpenAPI, {
+    method: 'GET',
+    url: '/api/v1/studio/scripts/imports/basicInfo/detail',
+    query: { id },
     errors: {
       422: 'Validation Error',
     },
@@ -214,11 +255,24 @@ export const StudioScriptsApi = {
     return unwrapApiData<StudioScriptParseResult>(response, 'Script basic information confirmation failed')
   },
 
-  async renameImport(requestBody: StudioScriptImportRenameRequest): Promise<void> {
-    const response = await confirmScriptBasicInfo(requestBody)
+  async saveBasicInfo(
+    requestBody: StudioScriptBasicInfoSaveRequest,
+  ): Promise<StudioScriptParseResult | null> {
+    const response = await saveScriptBasicInfo(requestBody)
     if ((response.code ?? 200) >= 400) {
-      throw new Error(response.message || 'Script import rename failed')
+      throw new Error(response.message || 'Script basic information saving failed')
     }
+    return response.data ?? null
+  },
+
+  async getBasicInfoDetail(id: StudioScriptImportId): Promise<StudioScriptParseResult> {
+    const response = await getScriptBasicInfoDetail(id)
+    return unwrapApiData<StudioScriptParseResult>(response, 'Script basic information loading failed')
+  },
+
+  async renameImport(requestBody: StudioScriptImportRenameRequest): Promise<void> {
+    void requestBody
+    throw new Error('Script import rename API is not configured')
   },
 
   async parseChapterFile(file: File): Promise<StudioScriptChapterFileParseResult> {

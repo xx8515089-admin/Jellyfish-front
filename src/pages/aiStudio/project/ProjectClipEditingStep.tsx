@@ -55,6 +55,7 @@ type ProjectClipEditingStepProps = {
   episodes: EpisodeDraft[]
   ratio: string
   styleName: string
+  toneStyleName?: string
 }
 
 type GenerationMode = 'video' | 'image' | 'voice'
@@ -925,7 +926,12 @@ const splitIntoClips = (episodes: EpisodeDraft[]): ClipDraft[] => {
   })
 }
 
-export default function ProjectClipEditingStep({ episodes, ratio, styleName }: ProjectClipEditingStepProps) {
+export default function ProjectClipEditingStep({
+  episodes,
+  ratio,
+  styleName,
+  toneStyleName = '',
+}: ProjectClipEditingStepProps) {
   const l = useBilingualText()
   const promptMentionAssets = useMemo<PromptMentionAsset[]>(() => [
     { id: 'character-jiang-xuan', name: l('姜萱', 'Jiang Xuan'), imageUrl: PREVIEW_IMAGES[1], kind: 'character' },
@@ -934,19 +940,6 @@ export default function ProjectClipEditingStep({ episodes, ratio, styleName }: P
     { id: 'scene-street-stall', name: l('街边店铺', 'Street stall'), imageUrl: PREVIEW_IMAGES[2], kind: 'scene' },
     { id: 'scene-night', name: l('夜景氛围', 'Night ambience'), imageUrl: PREVIEW_IMAGES[3], kind: 'scene' },
   ], [l])
-  const styleOptions = useMemo(() => {
-    const configuredOptions = Object.values(PROJECT_STYLE_OPTIONS_BY_VISUAL).flat()
-    const options = [
-      { value: NO_STYLE_VALUE, label: l('无风格', 'No style') },
-      ...configuredOptions,
-    ]
-
-    if (styleName && !options.some((option) => option.value === styleName)) {
-      options.splice(1, 0, { value: styleName, label: styleName })
-    }
-
-    return options
-  }, [l, styleName])
   const initialClips = useMemo(() => splitIntoClips(episodes), [episodes])
   const sourceSignature = useMemo(() => buildEpisodeSourceSignature(episodes), [episodes])
   const [restoredDraft] = useState(() =>
@@ -988,11 +981,42 @@ export default function ProjectClipEditingStep({ episodes, ratio, styleName }: P
     canRestoreDraft ? restoredDraft.selectedRatio : ratio || '9:16',
   )
   const [selectedTone, setSelectedTone] = useState(
-    canRestoreDraft ? restoredDraft.selectedTone : NO_TONE_VALUE,
+    canRestoreDraft ? restoredDraft.selectedTone : toneStyleName || NO_TONE_VALUE,
   )
   const [selectedStyle, setSelectedStyle] = useState(
     canRestoreDraft ? restoredDraft.selectedStyle : styleName || NO_STYLE_VALUE,
   )
+  const styleOptions = useMemo(() => {
+    const configuredOptions = Object.values(PROJECT_STYLE_OPTIONS_BY_VISUAL).flat()
+    const options = [
+      { value: NO_STYLE_VALUE, label: l('无风格', 'No style') },
+      ...configuredOptions,
+    ]
+
+    for (const value of [styleName, selectedStyle]) {
+      if (value && value !== NO_STYLE_VALUE && !options.some((option) => option.value === value)) {
+        options.splice(1, 0, { value, label: value })
+      }
+    }
+
+    return options
+  }, [l, selectedStyle, styleName])
+  const toneOptions = useMemo(() => {
+    const options = [
+      { value: NO_TONE_VALUE, label: l('选择影调', 'Select tone') },
+      { value: 'suspense', label: l('悬疑电影', 'Suspense film') },
+      { value: 'documentary', label: l('纪实主义', 'Documentary') },
+      { value: 'cyberpunk', label: l('赛博朋克', 'Cyberpunk') },
+    ]
+
+    for (const value of [toneStyleName, selectedTone]) {
+      if (value && value !== NO_TONE_VALUE && !options.some((option) => option.value === value)) {
+        options.splice(1, 0, { value, label: value })
+      }
+    }
+
+    return options
+  }, [l, selectedTone, toneStyleName])
   const [storyboardSkillEnabled, setStoryboardSkillEnabled] = useState(
     canRestoreDraft ? restoredDraft.storyboardSkillEnabled : false,
   )
@@ -1026,6 +1050,7 @@ export default function ProjectClipEditingStep({ episodes, ratio, styleName }: P
   const sourceSignatureRef = useRef(sourceSignature)
   const ratioPropRef = useRef(ratio)
   const styleNamePropRef = useRef(styleName)
+  const toneStyleNamePropRef = useRef(toneStyleName)
   const persistableVoiceLines = useMemo(() => voiceLines.map((line) => ({
     ...line,
     expressionPanel: null,
@@ -1094,8 +1119,16 @@ export default function ProjectClipEditingStep({ episodes, ratio, styleName }: P
   useEffect(() => {
     if (styleNamePropRef.current === styleName) return
     styleNamePropRef.current = styleName
+    if (canRestoreDraft) return
     setSelectedStyle(styleName || NO_STYLE_VALUE)
-  }, [styleName])
+  }, [canRestoreDraft, styleName])
+
+  useEffect(() => {
+    if (toneStyleNamePropRef.current === toneStyleName) return
+    toneStyleNamePropRef.current = toneStyleName
+    if (canRestoreDraft) return
+    setSelectedTone(toneStyleName || NO_TONE_VALUE)
+  }, [canRestoreDraft, toneStyleName])
 
   useEffect(() => () => {
     const audio = voicePreviewAudioRef.current
@@ -1954,12 +1987,7 @@ export default function ProjectClipEditingStep({ episodes, ratio, styleName }: P
           <StudioSelect
             aria-label={l('影调风格', 'Tone style')}
             value={selectedTone}
-            options={[
-              { value: NO_TONE_VALUE, label: l('选择影调', 'Select tone') },
-              { value: 'suspense', label: l('悬疑电影', 'Suspense film') },
-              { value: 'documentary', label: l('纪实主义', 'Documentary') },
-              { value: 'cyberpunk', label: l('赛博朋克', 'Cyberpunk') },
-            ]}
+            options={toneOptions}
             onChange={(value) => setSelectedTone(String(value))}
           />
           <StudioSelect

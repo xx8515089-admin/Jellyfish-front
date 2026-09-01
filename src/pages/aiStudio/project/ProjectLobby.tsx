@@ -30,6 +30,12 @@ import type { StudioScriptImportId, StudioScriptImportListItem } from '../../../
 import { useBilingualText } from '../../../i18n/useBilingualText'
 import { clearProjectCreationDrafts } from './projectCreationDraft'
 import {
+  loadScriptImportChapters,
+  loadScriptImportDetail,
+  readCachedScriptImportChapters,
+  readCachedScriptImportDetail,
+} from './scriptImportResumeCache'
+import {
   createCanvasWorkspace,
   deleteCanvasWorkspace,
   listCanvasWorkspaces,
@@ -71,6 +77,7 @@ type ProjectView = {
   parseStatus?: number
   parseStatusName?: string
   scriptImportId?: StudioScriptImportId
+  scriptImport?: StudioScriptImportListItem
 }
 
 const WORKFLOW_PAGE_SIZE = 10
@@ -101,6 +108,7 @@ const toUIImportProject = (item: StudioScriptImportListItem): ProjectView => ({
   targetMarket: item.targetMarket ?? undefined,
   parseStatus: item.parseStatus ?? undefined,
   parseStatusName: item.parseStatusName ?? undefined,
+  scriptImport: item,
 })
 
 const formatChineseCount = (count: number) => {
@@ -129,7 +137,7 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
   const searchInputRef = useRef<InputRef>(null)
   const [page, setPage] = useState(1)
   const [totalProjects, setTotalProjects] = useState(0)
-  const [workflowListRefreshToken, setWorkflowListRefreshToken] = useState(0)
+  const [workflowListRefreshToken] = useState(0)
   const [visibleInfoProjectId, setVisibleInfoProjectId] = useState<string | null>(null)
   const [openProjectMenuId, setOpenProjectMenuId] = useState<string | null>(null)
   const suppressProjectMenuOpenRef = useRef(false)
@@ -237,8 +245,32 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
     navigate('/projects/create')
   }
 
+  const prefetchProjectResumeData = (project: ProjectView) => {
+    const scriptImport = project.scriptImport
+    if (!scriptImport) return
+    void loadScriptImportDetail(scriptImport.id).catch(() => undefined)
+    if ((scriptImport.currentStep ?? 1) >= 2) {
+      void loadScriptImportChapters(scriptImport.id).catch(() => undefined)
+    }
+  }
+
   const handleOpenWorkspace = (project: ProjectView) => {
-    navigate(workspaceView === 'canvas' ? `/canvas/${project.id}` : `/projects/${project.id}`)
+    if (workspaceView === 'canvas') {
+      navigate(`/canvas/${project.id}`)
+      return
+    }
+
+    const scriptImport = project.scriptImport
+    if (!scriptImport) return
+    prefetchProjectResumeData(project)
+    clearProjectCreationDrafts()
+    navigate(`/projects/create?scriptImportId=${encodeURIComponent(String(scriptImport.id))}`, {
+      state: {
+        scriptImport,
+        scriptImportDetail: readCachedScriptImportDetail(scriptImport.id),
+        chapters: readCachedScriptImportChapters(scriptImport.id),
+      },
+    })
   }
 
   const handleOpenRename = (p: ProjectView) => {
@@ -259,14 +291,7 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
         setRenamingProject(null)
         return
       }
-      await StudioScriptsApi.renameImport({
-        id: renamingProject.scriptImportId ?? renamingProject.id,
-        title: values.name.trim(),
-      })
-      message.success(l('重命名成功', 'Project renamed'))
-      setRenameModalOpen(false)
-      setRenamingProject(null)
-      setWorkflowListRefreshToken((token) => token + 1)
+      message.warning(l('剧本项目重命名接口未接入，暂不能修改名称', 'Script project rename API is not connected yet'))
     } catch {
       message.error(l('重命名失败', 'Failed to rename project'))
     }
@@ -308,6 +333,8 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
         className={`project-lobby-card${isCanvasView ? ' project-lobby-card--canvas' : ''}${visibleInfoProjectId === p.id ? ' is-info-visible' : ''}`}
         role="button"
         tabIndex={0}
+        onPointerEnter={() => prefetchProjectResumeData(p)}
+        onFocus={() => prefetchProjectResumeData(p)}
         onClick={() => handleOpenWorkspace(p)}
         onKeyDown={(event) => {
           if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return

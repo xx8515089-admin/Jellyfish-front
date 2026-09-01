@@ -58,6 +58,15 @@ export type StudioStyleOption = {
   publicOption?: boolean
 }
 
+type StudioStyleOptionPayload = Partial<Omit<StudioStyleOption, 'id' | 'styleType' | 'name'>> & {
+  id?: string | number | null
+  styleId?: string | number | null
+  styleType?: StudioCustomStyleType | null
+  type?: StudioCustomStyleType | null
+  name?: string | null
+  isDefault?: boolean | null
+}
+
 function createCustomStyle(
   requestBody: StudioCustomStyleCreate,
 ): CancelablePromise<ApiEnvelope<StudioCustomStyle>> {
@@ -90,7 +99,7 @@ function uploadCustomStyleCover(
 /** 加载指定后端风格类别中已启用的风格选项。 */
 function getStyleOptions(
   styleType: StudioCustomStyleType,
-): CancelablePromise<ApiEnvelope<StudioStyleOption[]>> {
+): CancelablePromise<ApiEnvelope<StudioStyleOptionPayload[]>> {
   return __request(OpenAPI, {
     method: 'GET',
     url: '/api/v1/studio/styles/options',
@@ -101,6 +110,24 @@ function getStyleOptions(
       422: 'Validation Error',
     },
   })
+}
+
+/** 兼容风格接口的新旧字段名，并补全当前请求对应的风格类型。 */
+function normalizeStyleOption(
+  item: StudioStyleOptionPayload,
+  requestedStyleType: StudioCustomStyleType,
+): StudioStyleOption | null {
+  const id = item.id ?? item.styleId
+  const name = item.name?.trim()
+  if (id === null || id === undefined || !name) return null
+
+  return {
+    ...item,
+    id,
+    styleType: item.styleType ?? item.type ?? requestedStyleType,
+    name,
+    defaultOption: item.defaultOption ?? item.isDefault ?? false,
+  }
 }
 
 export const StudioStylesApi = {
@@ -121,7 +148,10 @@ export const StudioStylesApi = {
     if ((response.code ?? 200) >= 400) {
       throw new Error(response.message || 'Style options loading failed')
     }
-    return Array.isArray(response.data) ? response.data : []
+    if (!Array.isArray(response.data)) return []
+    return response.data
+      .map((item) => normalizeStyleOption(item, styleType))
+      .filter((item): item is StudioStyleOption => item !== null)
   },
   async createCustom(requestBody: StudioCustomStyleCreate): Promise<StudioCustomStyle> {
     const response = await createCustomStyle(requestBody)
