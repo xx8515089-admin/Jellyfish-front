@@ -67,7 +67,15 @@ export type StudioScriptParseResult = {
   currentStep?: number | null
   segmentationMode?: number | null
   aiModelId?: StudioScriptImportId | null
-  aiModel?: unknown
+  ai_model_id?: StudioScriptImportId | null
+  /** 兼容部分接口直接返回 modelId，或把模型信息放在 aiModel 中。 */
+  modelId?: StudioScriptImportId | null
+  model_id?: StudioScriptImportId | null
+  aiModel?: StudioScriptImportId | {
+    id?: StudioScriptImportId | null
+    modelId?: StudioScriptImportId | null
+    model_id?: StudioScriptImportId | null
+  } | null
   fileName?: string | null
   fileType?: string | null
   title?: string | null
@@ -89,6 +97,8 @@ export type StudioScriptParseResult = {
 
 export type StudioScriptBasicInfoConfirmRequest = {
   id: StudioScriptImportId | null
+  fileName: string
+  fileType: string
   title: string
   videoRatio: string
   rawText: string
@@ -125,6 +135,76 @@ export type StudioScriptChapterCreateRequest = {
   scriptImportId: StudioScriptImportId
   rawText: string
 }
+
+export type StudioScriptAssetExtractEstimateParams = {
+  scriptImportId: StudioScriptImportId
+}
+
+export type StudioScriptAssetExtractEstimate = {
+  modelId: StudioScriptImportId
+  modelName: string
+  chapterCount: number
+  creditPerChapter: number
+  requiredCredits: number
+  currentBalance: number | null
+  deficitCredits: number
+  sufficient: boolean
+  unlimited: boolean
+  alreadyStarted: boolean
+}
+
+export type StudioScriptAssetExtractRequest = {
+  scriptImportId: StudioScriptImportId
+}
+
+export type StudioScriptAssetEpisode = {
+  id: StudioScriptImportId
+  index: number
+  title: string
+}
+
+export type StudioScriptAssetType = 1 | 2 | 3
+
+export type StudioScriptAssetListParams = {
+  scriptImportId: StudioScriptImportId
+  chapterId?: StudioScriptImportId
+  assetType: StudioScriptAssetType
+}
+
+export type StudioScriptAssetListItem = {
+  id: StudioScriptImportId
+  assetCode?: string | null
+  assetType: StudioScriptAssetType
+  assetTypeName?: string | null
+  name: string
+  aliases?: string[] | null
+  appearedEpisodes?: number[] | null
+  description?: string | null
+  createPrompt?: string | null
+  status?: number | null
+  coverFileId?: StudioScriptImportId | null
+  coverUrl?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+export type StudioScriptAssetListResult = {
+  total: number
+  list: StudioScriptAssetListItem[]
+  taskId: StudioScriptImportId | null
+  extractionStatus: number
+  extractionStatusName: string
+  polling: boolean
+  errorMessage: string
+}
+
+export type StudioScriptAssetListRequest = {
+  promise: Promise<StudioScriptAssetListResult>
+  cancel: () => void
+}
+
+const assetExtractEstimateRequests = new Map<string, Promise<StudioScriptAssetExtractEstimate>>()
+const assetEpisodeListRequests = new Map<string, Promise<StudioScriptAssetEpisode[]>>()
 
 function parseScriptFile(file: File): CancelablePromise<ApiEnvelope<StudioScriptParseResult>> {
   return __request(OpenAPI, {
@@ -220,6 +300,65 @@ function getScriptImportChapters(
   })
 }
 
+function getScriptAssetExtractEstimate(
+  params: StudioScriptAssetExtractEstimateParams,
+): CancelablePromise<ApiEnvelope<StudioScriptAssetExtractEstimate>> {
+  return __request(OpenAPI, {
+    method: 'GET',
+    url: '/api/v1/studio/scripts/imports/assets/extract/estimate',
+    query: {
+      scriptImportId: params.scriptImportId,
+    },
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function extractScriptAssets(
+  requestBody: StudioScriptAssetExtractRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'POST',
+    url: '/api/v1/studio/scripts/imports/assets/extract',
+    body: requestBody,
+    mediaType: 'application/json',
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function getScriptAssetEpisodes(
+  scriptImportId: StudioScriptImportId,
+): CancelablePromise<ApiEnvelope<StudioScriptAssetEpisode[]>> {
+  return __request(OpenAPI, {
+    method: 'GET',
+    url: '/api/v1/studio/scripts/imports/assets/episodes/list',
+    query: { scriptImportId },
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function getScriptAssetList(
+  params: StudioScriptAssetListParams,
+): CancelablePromise<ApiEnvelope<StudioScriptAssetListResult>> {
+  return __request(OpenAPI, {
+    method: 'GET',
+    url: '/api/v1/studio/scripts/imports/assets/list',
+    query: {
+      scriptImportId: params.scriptImportId,
+      chapterId: params.chapterId,
+      assetType: params.assetType,
+    },
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
 function getScriptImports(
   params: StudioScriptImportListParams,
 ): CancelablePromise<ApiEnvelope<StudioScriptImportList>> {
@@ -295,5 +434,77 @@ export const StudioScriptsApi = {
     const chapters = unwrapApiData<StudioScriptParseChapter[]>(response, 'Script chapters loading failed')
     return [...chapters].sort((left, right) =>
       (left.index ?? Number.MAX_SAFE_INTEGER) - (right.index ?? Number.MAX_SAFE_INTEGER))
+  },
+
+  getAssetExtractEstimate(
+    params: StudioScriptAssetExtractEstimateParams,
+    requestKey = '',
+  ): Promise<StudioScriptAssetExtractEstimate> {
+    const cacheKey = `${params.scriptImportId}:${requestKey}`
+    const pendingRequest = assetExtractEstimateRequests.get(cacheKey)
+    if (pendingRequest) return pendingRequest
+
+    const request = getScriptAssetExtractEstimate(params)
+      .then((response) => unwrapApiData<StudioScriptAssetExtractEstimate>(
+        response,
+        'Asset extraction credit estimate failed',
+      ))
+      .finally(() => {
+        if (assetExtractEstimateRequests.get(cacheKey) === request) {
+          assetExtractEstimateRequests.delete(cacheKey)
+        }
+      })
+    assetExtractEstimateRequests.set(cacheKey, request)
+    return request
+  },
+
+  async extractAssets(requestBody: StudioScriptAssetExtractRequest): Promise<void> {
+    const response = await extractScriptAssets(requestBody)
+    if ((response.code ?? 200) >= 400) {
+      throw new Error(response.message || 'Script asset extraction failed')
+    }
+  },
+
+  getAssetEpisodes(
+    scriptImportId: StudioScriptImportId,
+    requestKey = '',
+  ): Promise<StudioScriptAssetEpisode[]> {
+    const cacheKey = `${scriptImportId}:${requestKey}`
+    const pendingRequest = assetEpisodeListRequests.get(cacheKey)
+    if (pendingRequest) return pendingRequest
+
+    const request = getScriptAssetEpisodes(scriptImportId)
+      .then((response) => {
+        const episodes = unwrapApiData<StudioScriptAssetEpisode[]>(
+          response,
+          'Script asset episodes loading failed',
+        )
+        return [...episodes].sort((left, right) => left.index - right.index)
+      })
+      .finally(() => {
+        if (assetEpisodeListRequests.get(cacheKey) === request) {
+          assetEpisodeListRequests.delete(cacheKey)
+        }
+      })
+    assetEpisodeListRequests.set(cacheKey, request)
+    return request
+  },
+
+  requestAssetList(params: StudioScriptAssetListParams): StudioScriptAssetListRequest {
+    const request = getScriptAssetList(params)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        const status = response.code ?? 200
+        if (status >= 400 || response.data === null || response.data === undefined) {
+          const error = new Error(response.message || 'Script assets loading failed') as Error & {
+            status?: number
+          }
+          error.status = status
+          throw error
+        }
+        return response.data
+      }),
+    }
   },
 }

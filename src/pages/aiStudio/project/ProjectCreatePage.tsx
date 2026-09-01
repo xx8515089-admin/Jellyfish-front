@@ -11,9 +11,10 @@ import {
 } from '@ant-design/icons'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { getApiErrorMessage } from '../../../services/apiErrors'
-import { StudioChaptersService, StudioProjectsService } from '../../../services/generated'
 import { StudioScriptsApi } from '../../../services/studioScripts'
 import type {
+  StudioScriptAssetEpisode,
+  StudioScriptAssetExtractEstimate,
   StudioScriptImportId,
   StudioScriptImportListItem,
   StudioScriptParseChapter,
@@ -62,8 +63,6 @@ type EpisodeDraft = {
 }
 type ProjectCreateDraft = {
   currentStep: number
-  createdProjectId: string
-  createdChapterIds: Record<string, string>
   name: string
   script: string
   episodes: EpisodeDraft[]
@@ -73,6 +72,8 @@ type ProjectCreateDraft = {
   styleCategory: StyleCategoryKey
   style: string
   importedFileName: string
+  importedFileType?: string
+  aiModelId?: StudioScriptImportId | null
   scriptImportId: StudioScriptImportId | null
   selectedStyleKeys: Partial<Record<StyleCategoryKey, string>>
   targetMarket: string
@@ -184,6 +185,28 @@ const getScriptFileType = (fileName: string) => {
   return extension?.toLowerCase() || 'txt'
 }
 
+/** 兼容剧本接口不同阶段返回的模型 ID 结构。 */
+const getScriptAiModelId = (
+  source?: StudioScriptParseResult | null,
+): StudioScriptImportId | null => {
+  const directModelId = source?.aiModelId
+    ?? source?.ai_model_id
+    ?? source?.modelId
+    ?? source?.model_id
+  if (typeof directModelId === 'number' && Number.isFinite(directModelId)) return directModelId
+  if (typeof directModelId === 'string' && directModelId.trim()) return directModelId
+
+  const aiModel = source?.aiModel
+  if (typeof aiModel === 'number' && Number.isFinite(aiModel)) return aiModel
+  if (typeof aiModel === 'string' && aiModel.trim()) return aiModel
+  if (!aiModel || typeof aiModel !== 'object') return null
+
+  const nestedModelId = aiModel.id ?? aiModel.modelId ?? aiModel.model_id
+  if (typeof nestedModelId === 'number' && Number.isFinite(nestedModelId)) return nestedModelId
+  if (typeof nestedModelId === 'string' && nestedModelId.trim()) return nestedModelId
+  return null
+}
+
 /** 将后端从 1 开始的页面步骤转换为前端从 0 开始的步骤。 */
 const toCreationStepIndex = (currentStep?: number | null) => {
   const normalizedStep = Number(currentStep)
@@ -193,6 +216,8 @@ const toCreationStepIndex = (currentStep?: number | null) => {
 
 type BasicInfoSnapshotSource = {
   id?: StudioScriptImportId | null
+  fileName?: string | null
+  fileType?: string | null
   title?: string | null
   rawText?: string | null
   videoRatio?: string | null
@@ -208,6 +233,8 @@ const hasOwnNullableField = (source: object | null | undefined, field: PropertyK
 /** 生成可稳定比较的基础信息快照，用来识别本次进入页面后是否发生修改。 */
 const createBasicInfoSnapshot = (source: BasicInfoSnapshotSource) => JSON.stringify({
   id: source.id === null || source.id === undefined ? null : String(source.id),
+  fileName: source.fileName?.trim() ?? '',
+  fileType: source.fileType?.trim() ?? '',
   title: source.title?.trim() ?? '',
   rawText: (source.rawText ?? '').replace(/\r\n?/g, '\n'),
   videoRatio: source.videoRatio?.trim() || '9:16',
@@ -279,13 +306,19 @@ const ProjectCreatePage: React.FC = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const { token } = theme.useToken()
-  const balance = useAppStore((state) => state.user.apiRemaining)
+  const apiQuota = useAppStore((state) => state.user.apiQuota)
+  const isAdmin = useAppStore((state) => state.user.isAdmin)
+  const hasUnlimitedApiQuota = isAdmin && apiQuota === 0
+  const apiQuotaText = hasUnlimitedApiQuota ? '∞' : apiQuota.toLocaleString()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const episodeImportInputRef = useRef<HTMLInputElement>(null)
   const persistDraftOnUnmountRef = useRef(true)
   const projectDraftPersistEnabledRef = useRef(true)
   const basicInfoSubmissionRef = useRef(false)
+  const assetSubmissionRef = useRef(false)
   const chapterRestoreRequestRef = useRef(0)
+  const assetEpisodeRequestGenerationRef = useRef(0)
+  const assetExtractionStartedRef = useRef(false)
   const {
     options,
     videoRatioOptions,
@@ -343,11 +376,10 @@ const ProjectCreatePage: React.FC = () => {
   const [scriptImportId, setScriptImportId] = useState<StudioScriptImportId | null>(
     resumeSnapshot?.id ?? resumeImportId ?? (shouldRestoreProjectDraft ? restoredDraft?.scriptImportId : null) ?? null,
   )
-  const [createdProjectId, setCreatedProjectId] = useState(
-    shouldRestoreProjectDraft ? restoredDraft?.createdProjectId ?? '' : '',
-  )
-  const [createdChapterIds, setCreatedChapterIds] = useState<Record<string, string>>(
-    shouldRestoreProjectDraft ? restoredDraft?.createdChapterIds ?? {} : {},
+  const [aiModelId, setAiModelId] = useState<StudioScriptImportId | null>(
+    getScriptAiModelId(resumeDetail)
+      ?? (shouldRestoreProjectDraft ? restoredDraft?.aiModelId : null)
+      ?? null,
   )
   const [name, setName] = useState(
     resumeSnapshot ? resumeSnapshot.title ?? '' : shouldRestoreProjectDraft ? restoredDraft?.name ?? '' : '',
@@ -388,11 +420,16 @@ const ProjectCreatePage: React.FC = () => {
       }
       : shouldRestoreProjectDraft ? restoredDraft?.selectedStyleKeys ?? {} : {},
   )
-  const [importedFileName, setImportedFileName] = useState(
-    resumeSnapshot
-      ? resumeDetail?.fileName ?? resumeImport?.sourceFileName ?? ''
-      : shouldRestoreProjectDraft ? restoredDraft?.importedFileName ?? '' : '',
-  )
+  const initialImportedFileName = resumeSnapshot
+    ? resumeDetail?.fileName?.trim() || resumeImport?.sourceFileName?.trim() || ''
+    : shouldRestoreProjectDraft ? restoredDraft?.importedFileName?.trim() || '' : ''
+  const initialImportedFileType = resumeSnapshot
+    ? resumeDetail?.fileType?.trim() || getScriptFileType(initialImportedFileName)
+    : shouldRestoreProjectDraft
+      ? restoredDraft?.importedFileType?.trim() || getScriptFileType(initialImportedFileName)
+      : 'txt'
+  const [importedFileName, setImportedFileName] = useState(initialImportedFileName)
+  const [importedFileType, setImportedFileType] = useState(initialImportedFileType)
   const restoredDraftHasBasicInfo = shouldRestoreProjectDraft && Boolean(
     restoredDraft?.name?.trim()
     || restoredDraft?.script?.trim()
@@ -415,11 +452,15 @@ const ProjectCreatePage: React.FC = () => {
       return createBasicInfoSnapshot({
         ...resumeSnapshot,
         id: resumeSnapshot.id ?? resumeImportId,
+        fileName: initialImportedFileName || toManualScriptFileName(resumeSnapshot.title ?? ''),
+        fileType: initialImportedFileType,
         rawText: (resumeSnapshot.rawText ?? '').slice(0, MAX_SCRIPT_LENGTH),
       })
     }
     return createBasicInfoSnapshot({
       id: null,
+      fileName: toManualScriptFileName(''),
+      fileType: 'txt',
       title: '',
       rawText: '',
       videoRatio: '9:16',
@@ -441,6 +482,14 @@ const ProjectCreatePage: React.FC = () => {
     ),
   )
   const [chapterRestoreRetryToken, setChapterRestoreRetryToken] = useState(0)
+  const [assetExtractEstimate, setAssetExtractEstimate] = useState<StudioScriptAssetExtractEstimate | null>(null)
+  const [assetExtractEstimateLoading, setAssetExtractEstimateLoading] = useState(false)
+  const [assetExtractEstimateError, setAssetExtractEstimateError] = useState<unknown>()
+  const [assetExtractEstimateRetryToken, setAssetExtractEstimateRetryToken] = useState(0)
+  const [assetEpisodes, setAssetEpisodes] = useState<StudioScriptAssetEpisode[] | null>(null)
+  const [assetEpisodesLoading, setAssetEpisodesLoading] = useState(false)
+  const [assetEpisodesError, setAssetEpisodesError] = useState<unknown>()
+  const [assetEpisodesRetryToken, setAssetEpisodesRetryToken] = useState(0)
   const [parsingScript, setParsingScript] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [creatingEpisode, setCreatingEpisode] = useState(false)
@@ -457,8 +506,6 @@ const ProjectCreatePage: React.FC = () => {
 
   useProjectCreationDraft(PROJECT_CREATION_DRAFT_KEYS.project, {
     currentStep,
-    createdProjectId,
-    createdChapterIds,
     name,
     script,
     episodes,
@@ -468,6 +515,8 @@ const ProjectCreatePage: React.FC = () => {
     styleCategory,
     style,
     importedFileName,
+    importedFileType,
+    aiModelId,
     scriptImportId,
     selectedStyleKeys,
     targetMarket,
@@ -561,15 +610,20 @@ const ProjectCreatePage: React.FC = () => {
         if (!active) return
         const restoredImportId = detail.id ?? resumeImportId
         const restoredScript = (detail.rawText ?? '').slice(0, MAX_SCRIPT_LENGTH)
+        const restoredFileName = detail.fileName?.trim() || resumeImport?.sourceFileName?.trim() || ''
+        const restoredFileType = detail.fileType?.trim() || getScriptFileType(restoredFileName)
         const restoredCreationStep = detail.currentStep === null || detail.currentStep === undefined
           ? toCreationStepIndex(resumeImport?.currentStep)
           : toCreationStepIndex(detail.currentStep)
         appliedDetailImportIdRef.current = cacheKey
         setBasicInfoRestoreFailed(false)
         setScriptImportId(restoredImportId)
+        setAiModelId((current) => getScriptAiModelId(detail) ?? current)
         setBasicInfoBaseline(createBasicInfoSnapshot({
           ...detail,
           id: restoredImportId,
+          fileName: restoredFileName || toManualScriptFileName(detail.title ?? ''),
+          fileType: restoredFileType,
           rawText: restoredScript,
         }))
         setCurrentStep(restoredCreationStep)
@@ -577,7 +631,8 @@ const ProjectCreatePage: React.FC = () => {
         setScript(restoredScript)
         setRatio(detail.videoRatio ?? '9:16')
         setTargetMarket(detail.targetMarket ?? 'overseas')
-        setImportedFileName(detail.fileName?.trim() || resumeImport?.sourceFileName || '')
+        setImportedFileName(restoredFileName)
+        setImportedFileType(restoredFileType)
         setSelectedStyleKeys((current) => ({
           ...current,
           ...(hasOwnNullableField(detail, 'visualStyleId')
@@ -668,8 +723,104 @@ const ProjectCreatePage: React.FC = () => {
     scriptImportId,
   ])
 
+  const assetEstimateSourceKey = useMemo(
+    () => episodes.map((episode) => episode.id).join('|'),
+    [episodes],
+  )
+
+  useEffect(() => {
+    assetExtractionStartedRef.current = false
+    setAssetEpisodes(null)
+    setAssetEpisodesError(undefined)
+  }, [scriptImportId])
+
+  useEffect(() => {
+    if (currentStep !== 1) return
+
+    setAssetExtractEstimate(null)
+    setAssetExtractEstimateError(undefined)
+    if (scriptImportId === null) {
+      setAssetExtractEstimateLoading(false)
+      setAssetExtractEstimateError(new Error(l(
+        '缺少剧本导入 ID，无法估算资产提取积分',
+        'The script import ID is missing, so extraction credits cannot be estimated.',
+      )))
+      return
+    }
+
+    let active = true
+    setAssetExtractEstimateLoading(true)
+    void StudioScriptsApi.getAssetExtractEstimate({
+      scriptImportId,
+    }, assetEstimateSourceKey)
+      .then((estimate) => {
+        if (!active) return
+        if (estimate.alreadyStarted) assetExtractionStartedRef.current = true
+        setAssetExtractEstimate(estimate)
+      })
+      .catch((error) => {
+        if (!active) return
+        setAssetExtractEstimateError(error)
+      })
+      .finally(() => {
+        if (active) setAssetExtractEstimateLoading(false)
+      })
+
+    return () => { active = false }
+  }, [
+    assetEstimateSourceKey,
+    assetExtractEstimateRetryToken,
+    currentStep,
+    l,
+    scriptImportId,
+  ])
+
+  useEffect(() => {
+    if (currentStep !== 2 || assetEpisodes !== null) return
+
+    if (scriptImportId === null) {
+      setAssetEpisodesLoading(false)
+      setAssetEpisodesError(new Error(l(
+        '缺少剧本导入 ID，无法查询资产分集',
+        'The script import ID is missing, so asset episodes cannot be loaded.',
+      )))
+      return
+    }
+
+    let active = true
+    setAssetEpisodesLoading(true)
+    setAssetEpisodesError(undefined)
+    void StudioScriptsApi.getAssetEpisodes(
+      scriptImportId,
+      `restore:${assetEpisodesRetryToken}`,
+    )
+      .then((nextAssetEpisodes) => {
+        if (active) setAssetEpisodes(nextAssetEpisodes)
+      })
+      .catch((error) => {
+        if (active) setAssetEpisodesError(error)
+      })
+      .finally(() => {
+        if (active) setAssetEpisodesLoading(false)
+      })
+
+    return () => { active = false }
+  }, [assetEpisodes, assetEpisodesRetryToken, currentStep, l, scriptImportId])
+
   const scriptLength = script.length
   const activeEpisode = episodes[activeEpisodeIndex]
+  const assetStepEpisodes = useMemo(() => (assetEpisodes ?? []).map((assetEpisode, index) => {
+    const sourceEpisode = episodes[assetEpisode.index - 1]
+      ?? episodes.find((episode) => String(episode.id) === String(assetEpisode.id))
+      ?? episodes[index]
+    return {
+      id: String(assetEpisode.id),
+      title: assetEpisode.title?.trim()
+        || sourceEpisode?.title
+        || l(`第${assetEpisode.index}集`, `Episode ${assetEpisode.index}`),
+      rawText: sourceEpisode?.rawText ?? '',
+    }
+  }), [assetEpisodes, episodes, l])
 
   const getRatioShape = (value: string) => {
     const [rawWidth, rawHeight] = value.split(':').map(Number)
@@ -697,14 +848,19 @@ const ProjectCreatePage: React.FC = () => {
 
       markBasicInfoTouched()
       confirmedBasicInfoRef.current = null
-      setImportedFileName(parsed.fileName?.trim() || file.name)
+      const parsedFileName = parsed.fileName?.trim() || file.name
+      const parsedFileType = parsed.fileType?.trim() || getScriptFileType(parsedFileName)
+      setImportedFileName(parsedFileName)
+      setImportedFileType(parsedFileType)
       setScript(parsedText.slice(0, MAX_SCRIPT_LENGTH))
       setScriptImportId(parsed.id ?? null)
+      setAiModelId(getScriptAiModelId(parsed))
       if (parsed.id !== null && parsed.id !== undefined) {
         primeScriptImportDetail(parsed.id, {
           ...parsed,
           id: parsed.id,
-          fileName: parsed.fileName?.trim() || file.name,
+          fileName: parsedFileName,
+          fileType: parsedFileType,
           rawText: parsedText.slice(0, MAX_SCRIPT_LENGTH),
         })
         invalidateScriptImportChapters(parsed.id)
@@ -773,8 +929,12 @@ const ProjectCreatePage: React.FC = () => {
     }
   }
 
+  const basicInfoFileName = importedFileName.trim() || toManualScriptFileName(name)
+  const basicInfoFileType = importedFileType.trim() || getScriptFileType(basicInfoFileName)
   const currentBasicInfoSnapshot = useMemo(() => createBasicInfoSnapshot({
     id: scriptImportId,
+    fileName: basicInfoFileName,
+    fileType: basicInfoFileType,
     title: name,
     rawText: script,
     videoRatio: ratio,
@@ -782,6 +942,8 @@ const ProjectCreatePage: React.FC = () => {
     visualStyleId: selectedVisualStyleId,
     toneStyleId: selectedToneStyleId,
   }), [
+    basicInfoFileName,
+    basicInfoFileType,
     name,
     ratio,
     script,
@@ -840,6 +1002,8 @@ const ProjectCreatePage: React.FC = () => {
   const buildBasicInfoConfirmRequest = () => {
     return {
       id: scriptImportId,
+      fileName: basicInfoFileName,
+      fileType: basicInfoFileType,
       title: name.trim(),
       videoRatio: ratio,
       rawText: script,
@@ -850,11 +1014,10 @@ const ProjectCreatePage: React.FC = () => {
   }
 
   const buildBasicInfoSaveRequest = () => {
-    const sourceFileName = importedFileName.trim() || toManualScriptFileName(name)
     return {
       id: scriptImportId,
-      sourceFileName,
-      fileType: getScriptFileType(sourceFileName),
+      sourceFileName: basicInfoFileName,
+      fileType: basicInfoFileType,
       title: name.trim(),
       rawText: script,
       videoRatio: ratio,
@@ -891,13 +1054,14 @@ const ProjectCreatePage: React.FC = () => {
           ...requestBody,
           id: confirmedImportId,
         })
+        const confirmedAiModelId = getScriptAiModelId(confirmed) ?? aiModelId
         const confirmedDetail: StudioScriptParseResult = {
           ...confirmed,
           id: confirmedImportId,
+          aiModelId: confirmedAiModelId,
           currentStep: Math.max(2, Number(confirmed.currentStep) || 0),
-          fileName: confirmed.fileName?.trim()
-            || importedFileName.trim()
-            || toManualScriptFileName(requestBody.title),
+          fileName: confirmed.fileName?.trim() || requestBody.fileName,
+          fileType: confirmed.fileType?.trim() || requestBody.fileType,
           title: confirmed.title ?? requestBody.title,
           rawText: (confirmed.rawText ?? requestBody.rawText).slice(0, MAX_SCRIPT_LENGTH),
           videoRatio: confirmed.videoRatio ?? requestBody.videoRatio,
@@ -911,6 +1075,7 @@ const ProjectCreatePage: React.FC = () => {
         }
 
         setScriptImportId(confirmedImportId)
+        setAiModelId(confirmedAiModelId)
         setBasicInfoBaseline(confirmedSnapshot)
         confirmedBasicInfoRef.current = {
           importId: confirmedImportId,
@@ -989,6 +1154,8 @@ const ProjectCreatePage: React.FC = () => {
       setScriptImportId(persistedId)
       setBasicInfoBaseline(createBasicInfoSnapshot({
         id: persistedId,
+        fileName: saved?.fileName?.trim() || requestBody.sourceFileName,
+        fileType: saved?.fileType?.trim() || requestBody.fileType,
         title: saved?.title ?? requestBody.title,
         rawText: (saved?.rawText ?? requestBody.rawText).slice(0, MAX_SCRIPT_LENGTH),
         videoRatio: saved?.videoRatio ?? requestBody.videoRatio,
@@ -1003,6 +1170,7 @@ const ProjectCreatePage: React.FC = () => {
       primeScriptImportDetail(persistedId, {
         ...saved,
         id: persistedId,
+        aiModelId: getScriptAiModelId(saved) ?? aiModelId,
         currentStep: Math.max(1, Number(saved?.currentStep) || 0),
         fileName: saved?.fileName?.trim() || requestBody.sourceFileName,
         fileType: saved?.fileType ?? requestBody.fileType,
@@ -1118,7 +1286,8 @@ const ProjectCreatePage: React.FC = () => {
     }
   }
 
-  const handleCreateProject = async () => {
+  const handleExtractAssets = async () => {
+    if (assetSubmissionRef.current) return
     if (restoringBasicInfo || basicInfoRestoreFailed) {
       message.info(l('请先恢复完整的剧本基本信息', 'Restore the complete script information first.'))
       return
@@ -1139,83 +1308,58 @@ const ProjectCreatePage: React.FC = () => {
       message.warning(l('请填写每一集的剧本内容', 'Enter script content for every episode'))
       return
     }
+    const extractScriptImportId = scriptImportId
+    if (extractScriptImportId === null) {
+      message.warning(l(
+        '缺少剧本导入 ID，无法提取资产',
+        'The script import ID is missing, so assets cannot be extracted.',
+      ))
+      return
+    }
+
+    assetSubmissionRef.current = true
     setSubmitting(true)
+    let requestStage: 'extract' | 'assetEpisodes' = 'extract'
     try {
-      const projectStyle = options.stylesByVisual[visualStyle]?.some((item) => item.value === style)
-        ? style
-        : getDefaultStyle(visualStyle)
-      const projectSettings = {
-        name: name.trim(),
-        description: '',
-        style: projectStyle as ProjectStyle,
-        visual_style: visualStyle as ProjectVisualStyle,
-        unify_style: true,
-        progress: 0,
-        default_video_ratio: ratio,
-      }
-      let projectId = createdProjectId
-      if (projectId) {
-        await StudioProjectsService.updateProjectApiV1StudioProjectsProjectIdPatch({
-          projectId,
-          requestBody: projectSettings,
+      setAssetEpisodes(null)
+      setAssetEpisodesError(undefined)
+
+      if (!assetExtractionStartedRef.current && !assetExtractEstimate?.alreadyStarted) {
+        requestStage = 'extract'
+        await StudioScriptsApi.extractAssets({
+          scriptImportId: extractScriptImportId,
         })
-      } else {
-        const requestedProjectId = createId('project')
-        const projectResponse = await StudioProjectsService.createProjectApiV1StudioProjectsPost({
-          requestBody: {
-            id: requestedProjectId,
-            ...projectSettings,
-            seed: Math.floor(Math.random() * 100_000),
-          },
-        })
-        projectId = projectResponse.data?.id ?? requestedProjectId
+        assetExtractionStartedRef.current = true
       }
 
-      const chapterEntries = await Promise.all(
-        episodes.map(async (episode, index) => {
-          const existingChapterId = createdChapterIds[episode.id]
-          if (existingChapterId) {
-            await StudioChaptersService.updateChapterApiV1StudioChaptersChapterIdPatch({
-              chapterId: existingChapterId,
-              requestBody: {
-                project_id: projectId,
-                index: index + 1,
-                title: episode.title,
-                summary: '',
-                raw_text: episode.rawText,
-                storyboard_count: 0,
-                status: 'draft',
-              },
-            })
-            return [episode.id, existingChapterId] as const
-          }
-
-          const chapterId = createId('chapter')
-          await StudioChaptersService.createChapterApiV1StudioChaptersPost({
-            requestBody: {
-              id: chapterId,
-              project_id: projectId,
-              index: index + 1,
-              title: episode.title,
-              summary: '',
-              raw_text: episode.rawText,
-              storyboard_count: 0,
-              status: 'draft',
-            },
-          })
-          return [episode.id, chapterId] as const
-        }),
+      requestStage = 'assetEpisodes'
+      const assetEpisodeRequestKey = `after-extract:${++assetEpisodeRequestGenerationRef.current}`
+      const nextAssetEpisodes = await StudioScriptsApi.getAssetEpisodes(
+        extractScriptImportId,
+        assetEpisodeRequestKey,
       )
-
-      setCreatedProjectId(projectId)
-      setCreatedChapterIds(Object.fromEntries(chapterEntries))
+      if (!nextAssetEpisodes.length) {
+        throw new Error(l(
+          '资产提取完成，但未查询到资产分集',
+          'Asset extraction completed, but no asset episodes were returned.',
+        ))
+      }
+      setAssetEpisodes(nextAssetEpisodes)
       setCurrentStep(2)
-      message.success(createdProjectId
-        ? l('分集修改已保存', 'Episode changes saved')
-        : l('项目与剧本已保存', 'Project and script saved'))
-    } catch {
-      message.error(l('创建失败，请稍后重试', 'Creation failed. Please try again.'))
+      message.success(l('资产提取已提交，已进入资产确认', 'Asset extraction submitted. Entered asset confirmation.'))
+    } catch (error) {
+      if (requestStage === 'extract') {
+        setAssetExtractEstimate(null)
+        setAssetExtractEstimateRetryToken((current) => current + 1)
+      }
+      message.error(getApiErrorMessage(
+        error,
+        requestStage === 'extract'
+          ? l('资产提取失败，请稍后重试', 'Asset extraction failed. Please try again.')
+          : l('资产分集加载失败，请稍后重试', 'Asset episodes failed to load. Please try again.'),
+      ))
     } finally {
+      assetSubmissionRef.current = false
       setSubmitting(false)
     }
   }
@@ -1278,6 +1422,20 @@ const ProjectCreatePage: React.FC = () => {
   const styleSelectionReady = !studioStyleOptionsLoading
     && !studioStyleOptionsError
     && Boolean(selectedVisualStyle && selectedToneStyle)
+  const assetEstimatePending = currentStep === 1
+    && !assetExtractEstimateError
+    && (assetExtractEstimateLoading || !assetExtractEstimate)
+  const requiredCreditsText = assetExtractEstimate
+    ? Number(assetExtractEstimate.requiredCredits).toLocaleString(undefined, {
+      maximumFractionDigits: 2,
+    })
+    : ''
+  const assetEstimateErrorMessage = assetExtractEstimateError
+    ? getApiErrorMessage(
+      assetExtractEstimateError,
+      l('资产提取积分估算失败，点击重试', 'Credit estimation failed. Click to retry.'),
+    )
+    : ''
   const canProceed = !restoringBasicInfo
     && !basicInfoRestoreFailed
     && styleSelectionReady
@@ -1287,7 +1445,11 @@ const ProjectCreatePage: React.FC = () => {
         ? !restoringImport
           && episodes.length > 0
           && episodes.every((episode) => episode.title.trim() && episode.rawText.trim())
-        : Boolean(createdProjectId))
+        : currentStep === 2
+          ? !assetEpisodesLoading
+            && !assetEpisodesError
+            && assetStepEpisodes.length > 0
+          : true)
 
   const handleNext = () => {
     if (currentStep === 0) {
@@ -1295,10 +1457,15 @@ const ProjectCreatePage: React.FC = () => {
       return
     }
     if (currentStep === 1) {
-      void handleCreateProject()
+      if (!assetExtractEstimate) {
+        setAssetExtractEstimateError(undefined)
+        setAssetExtractEstimateRetryToken((current) => current + 1)
+        return
+      }
+      void handleExtractAssets()
       return
     }
-    if (currentStep === 2 && createdProjectId) {
+    if (currentStep === 2) {
       setCurrentStep(3)
       return
     }
@@ -1310,6 +1477,12 @@ const ProjectCreatePage: React.FC = () => {
     || restoringImport
     || episodes.length === 0
     || !styleSelectionReady
+    || (currentStep === 2 && (
+      assetEpisodesLoading
+      || Boolean(assetEpisodesError)
+      || assetEpisodes === null
+      || assetStepEpisodes.length === 0
+    ))
   const renderWorkflowRestoreState = () => {
     if (restoringBasicInfo) {
       return (
@@ -1361,6 +1534,44 @@ const ProjectCreatePage: React.FC = () => {
           <span>{l('原风格已不可用，请重新选择', 'A saved style is no longer available.')}</span>
           <Button onClick={() => setCurrentStep(0)}>
             {l('返回基本信息', 'Return to Basics')}
+          </Button>
+        </div>
+      )
+    }
+    if (currentStep === 2 && assetEpisodesError) {
+      return (
+        <div className="project-create-page__restore-state is-empty" role="alert">
+          <span>{getApiErrorMessage(
+            assetEpisodesError,
+            l('资产分集加载失败', 'Failed to load asset episodes'),
+          )}</span>
+          <Button onClick={() => {
+            setAssetEpisodesError(undefined)
+            setAssetEpisodes(null)
+            setAssetEpisodesRetryToken((current) => current + 1)
+          }}>
+            {l('重试加载资产分集', 'Retry asset episodes')}
+          </Button>
+        </div>
+      )
+    }
+    if (currentStep === 2 && (assetEpisodesLoading || assetEpisodes === null)) {
+      return (
+        <div className="project-create-page__restore-state" role="status">
+          <Spin />
+          <span>{l('正在加载资产分集...', 'Loading asset episodes...')}</span>
+        </div>
+      )
+    }
+    if (currentStep === 2 && assetStepEpisodes.length === 0) {
+      return (
+        <div className="project-create-page__restore-state is-empty">
+          <span>{l('暂无资产分集数据', 'No asset episode data')}</span>
+          <Button onClick={() => {
+            setAssetEpisodes(null)
+            setAssetEpisodesRetryToken((current) => current + 1)
+          }}>
+            {l('重试加载资产分集', 'Retry asset episodes')}
           </Button>
         </div>
       )
@@ -1427,12 +1638,14 @@ const ProjectCreatePage: React.FC = () => {
         <div className="project-create-page__header-actions">
           <div
             className="project-create-page__balance"
-            aria-label={l(`余额 ${balance.toLocaleString()}`, `Balance ${balance.toLocaleString()}`)}
+            aria-label={hasUnlimitedApiQuota
+              ? l('余额无限', 'Unlimited balance')
+              : l(`余额 ${apiQuotaText}`, `Balance ${apiQuotaText}`)}
           >
             <span className="project-create-page__balance-label">{l('余额', 'Balance')}</span>
             <span className="project-create-page__balance-value">
               <ThunderboltFilled />
-              <strong>{balance.toLocaleString()}</strong>
+              <strong>{apiQuotaText}</strong>
             </span>
           </div>
           {currentStep === 3 && (
@@ -1442,11 +1655,33 @@ const ProjectCreatePage: React.FC = () => {
             type="primary"
             icon={<ArrowRightOutlined />}
             iconPosition="end"
-            disabled={!canProceed || submitting || parsingScript}
-            loading={submitting}
+            disabled={!canProceed || submitting || parsingScript || creatingEpisode || assetEstimatePending}
+            loading={submitting || assetEstimatePending || (currentStep === 2 && assetEpisodesLoading)}
+            title={currentStep === 1
+              ? assetEstimateErrorMessage
+                || (assetExtractEstimate
+                  ? l(
+                    `点击后预计消耗 ${requiredCreditsText} 积分`,
+                    `Estimated cost on click: ${requiredCreditsText} credits`,
+                  )
+                  : undefined)
+              : undefined}
             onClick={handleNext}
           >
-            {currentStep === 3 ? l('导出剪辑表', 'Export edit list') : l('下一步', 'Next')}
+            {currentStep === 3
+              ? l('导出剪辑表', 'Export edit list')
+              : currentStep === 1 && assetExtractEstimateError
+                ? l('重试积分估算', 'Retry estimate')
+                : currentStep === 1 && assetExtractEstimate
+                  ? (
+                    <span className="project-create-page__next-with-cost">
+                      <span>{l('下一步', 'Next')}</span>
+                      <span className="project-create-page__next-cost">
+                        {l('预计', 'Est.')} <ThunderboltFilled /> {requiredCreditsText}
+                      </span>
+                    </span>
+                  )
+                  : l('下一步', 'Next')}
           </Button>
         </div>
       </header>
@@ -1701,7 +1936,12 @@ const ProjectCreatePage: React.FC = () => {
           </section>
         </main>
       ) : currentStep === 2 ? (
-        <ProjectAssetsStep episodes={episodes} ratio={ratio} styleName={visualStyleName} />
+        <ProjectAssetsStep
+          scriptImportId={scriptImportId}
+          episodes={assetStepEpisodes}
+          ratio={ratio}
+          styleName={visualStyleName}
+        />
       ) : (
         <ProjectClipEditingStep
           episodes={episodes}

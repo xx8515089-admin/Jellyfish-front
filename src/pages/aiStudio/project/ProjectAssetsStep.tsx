@@ -16,6 +16,13 @@ import {
 } from '@ant-design/icons'
 import { useBilingualText } from '../../../i18n/useBilingualText'
 import { StudioEntitiesApi } from '../../../services/studioEntities'
+import { StudioScriptsApi } from '../../../services/studioScripts'
+import type {
+  StudioScriptAssetListRequest,
+  StudioScriptAssetListResult,
+  StudioScriptAssetType,
+  StudioScriptImportId,
+} from '../../../services/studioScripts'
 import AssetGenerationWorkspace from './AssetGenerationWorkspace'
 import ImageViewer from './ImageViewer'
 import VoiceLibraryModal from './VoiceLibraryModal'
@@ -23,6 +30,7 @@ import StudioSelect from './StudioSelect'
 import {
   PROJECT_CREATION_DRAFT_KEYS,
   buildEpisodeSourceSignature,
+  readFullProjectCreationDraft,
   readProjectCreationDraft,
   useProjectCreationDraft,
 } from './projectCreationDraft'
@@ -36,6 +44,7 @@ export type AssetEpisodeSource = {
 
 type AssetKind = 'role' | 'scene' | 'prop'
 type AssetScope = 'overview' | string
+type AssetOverrideField = 'name' | 'prompt' | 'imageUrl'
 
 type AssetDraft = {
   id: string
@@ -44,6 +53,29 @@ type AssetDraft = {
   episodeIds: string[]
   imageUrl?: string
   prompt?: string
+  source?: 'fallback' | 'manual' | 'remote'
+  assetCode?: string
+  aliases?: string[]
+  description?: string
+  status?: number
+  coverFileId?: StudioScriptImportId
+  overrideFields?: AssetOverrideField[]
+}
+
+type RemoteAssetsByScope = Record<string, Partial<Record<AssetKind, AssetDraft[]>>>
+
+type AssetPollingLane = {
+  loaded: boolean
+  loading: boolean
+  polling: boolean
+  extractionStatus: number | null
+  statusName: string
+  errorMessage: string
+}
+
+type AssetPollingState = {
+  scopeId: AssetScope | null
+  lanes: Record<StudioScriptAssetType, AssetPollingLane>
 }
 
 type AssetsStepDraft = {
@@ -54,9 +86,11 @@ type AssetsStepDraft = {
   model: string
   resolution: string
   completedEpisodeIds: string[]
+  hiddenRemoteAssetIds?: string[]
 }
 
 type ProjectAssetsStepProps = {
+  scriptImportId: StudioScriptImportId | null
   episodes: AssetEpisodeSource[]
   ratio?: string
   styleName?: string
@@ -86,6 +120,102 @@ const KIND_LABELS: Record<AssetKind, { zh: string; en: string }> = {
   scene: { zh: '场景', en: 'Scenes' },
   prop: { zh: '道具', en: 'Props' },
 }
+
+const ASSET_TYPES = [1, 2, 3] as const satisfies readonly StudioScriptAssetType[]
+const ASSET_KIND_BY_TYPE: Record<StudioScriptAssetType, AssetKind> = {
+  1: 'role',
+  2: 'scene',
+  3: 'prop',
+}
+const ASSET_POLL_INTERVAL_MS = 3000
+const ASSET_POLL_REQUEST_TIMEOUT_MS = 30_000
+const ASSET_POLL_MAX_DURATION_MS = 15 * 60 * 1000
+const ASSET_POLL_MAX_FAILURES = 3
+
+const createAssetPollingState = (
+  scopeId: AssetScope | null = null,
+  active = false,
+): AssetPollingState => ({
+  scopeId,
+  lanes: {
+    1: {
+      loaded: false,
+      loading: active,
+      polling: active,
+      extractionStatus: null,
+      statusName: '',
+      errorMessage: '',
+    },
+    2: {
+      loaded: false,
+      loading: active,
+      polling: active,
+      extractionStatus: null,
+      statusName: '',
+      errorMessage: '',
+    },
+    3: {
+      loaded: false,
+      loading: active,
+      polling: active,
+      extractionStatus: null,
+      statusName: '',
+      errorMessage: '',
+    },
+  },
+})
+
+const getPollingErrorMessage = (error: unknown) => (
+  error instanceof Error && error.message.trim() ? error.message : 'Asset loading failed'
+)
+
+const getErrorStatus = (error: unknown) => {
+  if (!error || typeof error !== 'object' || !('status' in error)) return null
+  const status = Number((error as { status?: unknown }).status)
+  return Number.isFinite(status) ? status : null
+}
+
+const waitForAssetListRequest = (
+  request: StudioScriptAssetListRequest,
+): Promise<StudioScriptAssetListResult> => {
+  let timer: number | null = null
+  const timeout = new Promise<never>((_, reject) => {
+    timer = window.setTimeout(() => {
+      request.cancel()
+      reject(new Error('Asset polling request timed out'))
+    }, ASSET_POLL_REQUEST_TIMEOUT_MS)
+  })
+  return Promise.race([request.promise, timeout]).finally(() => {
+    if (timer !== null) window.clearTimeout(timer)
+  })
+}
+
+const mapRemoteAssets = (
+  result: StudioScriptAssetListResult,
+  assetType: StudioScriptAssetType,
+  scriptImportId: StudioScriptImportId,
+  queryEpisodeId: string | undefined,
+  episodes: AssetEpisodeSource[],
+): AssetDraft[] => result.list.map((item) => {
+  const relatedEpisodeIds = new Set((item.appearedEpisodes ?? [])
+    .map((episodeIndex) => episodes[episodeIndex - 1]?.id)
+    .filter((episodeId): episodeId is string => Boolean(episodeId)))
+  if (queryEpisodeId) relatedEpisodeIds.add(queryEpisodeId)
+  return {
+    id: `remote:${scriptImportId}:${assetType}:${item.id}`,
+    kind: ASSET_KIND_BY_TYPE[assetType],
+    name: item.name,
+    episodeIds: [...relatedEpisodeIds],
+    imageUrl: item.coverUrl?.trim() || undefined,
+    prompt: item.createPrompt?.trim() || undefined,
+    source: 'remote',
+    assetCode: item.assetCode?.trim() || undefined,
+    aliases: item.aliases ?? undefined,
+    description: item.description?.trim() || undefined,
+    status: item.status ?? undefined,
+    coverFileId: item.coverFileId ?? undefined,
+  }
+})
 
 const GENERATION_UNIT_COST = 6
 const isAssetKind = (value: unknown): value is AssetKind => (
@@ -126,6 +256,7 @@ function extractAssets(episodes: AssetEpisodeSource[]): AssetDraft[] {
       kind,
       name,
       episodeIds: [episodeId],
+      source: 'fallback',
     })
   }
 
@@ -159,28 +290,42 @@ function buildAssetPrompt(asset: AssetDraft, episodes: AssetEpisodeSource[]) {
     : subjectPrompt
 }
 
-export default function ProjectAssetsStep({ episodes, ratio = '9:16', styleName = '' }: ProjectAssetsStepProps) {
+export default function ProjectAssetsStep({
+  scriptImportId,
+  episodes,
+  ratio = '9:16',
+  styleName = '',
+}: ProjectAssetsStepProps) {
   const l = useBilingualText()
   const imageInputRef = useRef<HTMLInputElement>(null)
   const localAssetInputRef = useRef<HTMLInputElement>(null)
-  const sourceSignature = useMemo(() => buildEpisodeSourceSignature(episodes), [episodes])
+  const episodeSourceSignature = useMemo(() => buildEpisodeSourceSignature(episodes), [episodes])
+  const sourceSignature = useMemo(
+    () => `${scriptImportId ?? 'local'}:${episodeSourceSignature}`,
+    [episodeSourceSignature, scriptImportId],
+  )
   const [restoredDraft] = useState(() =>
     readProjectCreationDraft<AssetsStepDraft>(PROJECT_CREATION_DRAFT_KEYS.assets))
   const canRestoreDraft = restoredDraft?.sourceSignature === sourceSignature
-  const restoredScope = canRestoreDraft
-    && (restoredDraft.scope === 'overview' || episodes.some((episode) => episode.id === restoredDraft.scope))
-    ? restoredDraft.scope
-    : episodes[0]?.id ?? 'overview'
-  const [scope, setScope] = useState<AssetScope>(restoredScope)
+  const [scope, setScope] = useState<AssetScope>(episodes[0]?.id ?? 'overview')
   const [kind, setKind] = useState<AssetKind>(
     canRestoreDraft && isAssetKind(restoredDraft.kind) ? restoredDraft.kind : 'role',
   )
   const [assets, setAssets] = useState<AssetDraft[]>(() => (
     canRestoreDraft && Array.isArray(restoredDraft.assets)
       ? restoredDraft.assets
-      : extractAssets(episodes)
+      : scriptImportId === null ? extractAssets(episodes) : []
   ))
+  const [remoteAssetsByScope, setRemoteAssetsByScope] = useState<RemoteAssetsByScope>({})
+  const [hiddenRemoteAssetIds, setHiddenRemoteAssetIds] = useState<Set<string>>(() => new Set(
+    canRestoreDraft && Array.isArray(restoredDraft.hiddenRemoteAssetIds)
+      ? restoredDraft.hiddenRemoteAssetIds
+      : [],
+  ))
+  const [assetPollingState, setAssetPollingState] = useState(() => createAssetPollingState())
+  const [assetPollingRetryToken, setAssetPollingRetryToken] = useState(0)
   const [imageTargetId, setImageTargetId] = useState<string>()
+  const [imageTargetSnapshot, setImageTargetSnapshot] = useState<AssetDraft>()
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const [localImportWorkspaceOpen, setLocalImportWorkspaceOpen] = useState(false)
   const [localImportName, setLocalImportName] = useState('')
@@ -190,8 +335,10 @@ export default function ProjectAssetsStep({ episodes, ratio = '9:16', styleName 
   const [localImportPreviewOpen, setLocalImportPreviewOpen] = useState(false)
   const [generationWorkspaceOpen, setGenerationWorkspaceOpen] = useState(false)
   const [generationAssetId, setGenerationAssetId] = useState<string>()
+  const [generationAssetSnapshot, setGenerationAssetSnapshot] = useState<AssetDraft>()
   const [personalImportOpen, setPersonalImportOpen] = useState(false)
   const [personalImportTargetId, setPersonalImportTargetId] = useState<string>()
+  const [personalImportTargetSnapshot, setPersonalImportTargetSnapshot] = useState<AssetDraft>()
   const [personalAssets, setPersonalAssets] = useState<PersonalAsset[]>([])
   const [personalAssetId, setPersonalAssetId] = useState('')
   const [personalAssetsLoading, setPersonalAssetsLoading] = useState(false)
@@ -205,6 +352,7 @@ export default function ProjectAssetsStep({ episodes, ratio = '9:16', styleName 
       : [],
   ))
   const sourceSignatureRef = useRef(sourceSignature)
+  const assetPollingGenerationRef = useRef(0)
 
   useProjectCreationDraft(PROJECT_CREATION_DRAFT_KEYS.assets, {
     sourceSignature,
@@ -214,16 +362,228 @@ export default function ProjectAssetsStep({ episodes, ratio = '9:16', styleName 
     model,
     resolution,
     completedEpisodeIds: [...completedEpisodeIds],
+    hiddenRemoteAssetIds: [...hiddenRemoteAssetIds],
   })
+
+  useEffect(() => {
+    let active = true
+    void readFullProjectCreationDraft<AssetsStepDraft>(PROJECT_CREATION_DRAFT_KEYS.assets)
+      .then((fullDraft) => {
+        if (!active || fullDraft?.sourceSignature !== sourceSignature || !Array.isArray(fullDraft.assets)) {
+          return
+        }
+        const fullAssetsById = new Map(fullDraft.assets.map((asset) => [asset.id, asset]))
+        setAssets((current) => {
+          let changed = false
+          const hydrated = current.map((asset) => {
+            if (asset.imageUrl) return asset
+            const fullAsset = fullAssetsById.get(asset.id)
+            if (!fullAsset?.imageUrl) return asset
+            changed = true
+            return { ...asset, imageUrl: fullAsset.imageUrl }
+          })
+          return changed ? hydrated : current
+        })
+      })
+    return () => { active = false }
+  }, [sourceSignature])
 
   useEffect(() => {
     if (sourceSignatureRef.current === sourceSignature) return
     sourceSignatureRef.current = sourceSignature
     setScope(episodes[0]?.id ?? 'overview')
     setKind('role')
-    setAssets(extractAssets(episodes))
+    setAssets(scriptImportId === null ? extractAssets(episodes) : [])
+    setRemoteAssetsByScope({})
+    setHiddenRemoteAssetIds(new Set())
     setCompletedEpisodeIds(new Set())
-  }, [episodes, sourceSignature])
+    setGenerationWorkspaceOpen(false)
+    setGenerationAssetId(undefined)
+    setGenerationAssetSnapshot(undefined)
+    setPersonalImportOpen(false)
+    setPersonalImportTargetId(undefined)
+    setPersonalImportTargetSnapshot(undefined)
+    setImageTargetId(undefined)
+    setImageTargetSnapshot(undefined)
+    setLocalImportWorkspaceOpen(false)
+    setLocalImportPreviewOpen(false)
+    setLocalImportName('')
+    setLocalImportImage(undefined)
+    setLocalImportFileName('')
+    setLocalImportDragging(false)
+    setVoiceLibraryOpen(false)
+  }, [episodes, scriptImportId, sourceSignature])
+
+  useEffect(() => {
+    const selectedEpisode = scope === 'overview'
+      ? undefined
+      : episodes.find((episode) => episode.id === scope)
+    const pollingScopeId: AssetScope | null = scope === 'overview'
+      ? 'overview'
+      : selectedEpisode?.id ?? null
+    const generation = ++assetPollingGenerationRef.current
+
+    if (scriptImportId === null || pollingScopeId === null) {
+      setAssetPollingState(createAssetPollingState(pollingScopeId))
+      return () => {
+        if (assetPollingGenerationRef.current === generation) {
+          assetPollingGenerationRef.current += 1
+        }
+      }
+    }
+
+    let disposed = false
+    let startTimer: number | null = null
+    const startedAt = Date.now()
+    const timers = new Map<StudioScriptAssetType, number>()
+    const requests = new Map<StudioScriptAssetType, StudioScriptAssetListRequest>()
+    const isActive = () => !disposed && assetPollingGenerationRef.current === generation
+    const patchLane = (assetType: StudioScriptAssetType, patch: Partial<AssetPollingLane>) => {
+      if (!isActive()) return
+      setAssetPollingState((current) => current.scopeId === pollingScopeId
+        ? {
+          scopeId: current.scopeId,
+          lanes: {
+            ...current.lanes,
+            [assetType]: { ...current.lanes[assetType], ...patch },
+          },
+        }
+        : current)
+    }
+    const scheduleLane = (
+      assetType: StudioScriptAssetType,
+      failureCount: number,
+      delayMs: number,
+    ): void => {
+      if (!isActive()) return
+      const timer = window.setTimeout(() => {
+        timers.delete(assetType)
+        void runLane(assetType, failureCount)
+      }, delayMs)
+      timers.set(assetType, timer)
+    }
+    const runLane = async (
+      assetType: StudioScriptAssetType,
+      failureCount = 0,
+    ): Promise<void> => {
+      if (!isActive()) return
+      if (Date.now() - startedAt >= ASSET_POLL_MAX_DURATION_MS) {
+        patchLane(assetType, {
+          loading: false,
+          polling: false,
+          errorMessage: l('资产生成轮询超时，请手动重试', 'Asset polling timed out. Retry manually.'),
+        })
+        return
+      }
+
+      patchLane(assetType, { loading: true, polling: true })
+      const request = StudioScriptsApi.requestAssetList({
+        scriptImportId,
+        chapterId: selectedEpisode?.id,
+        assetType,
+      })
+      requests.set(assetType, request)
+
+      try {
+        const result = await waitForAssetListRequest(request)
+        if (!isActive() || requests.get(assetType) !== request) return
+
+        const assetKind = ASSET_KIND_BY_TYPE[assetType]
+        const nextAssets = mapRemoteAssets(
+          result,
+          assetType,
+          scriptImportId,
+          selectedEpisode?.id,
+          episodes,
+        )
+        setRemoteAssetsByScope((current) => ({
+          [pollingScopeId]: {
+            ...current[pollingScopeId],
+            [assetKind]: nextAssets,
+          },
+        }))
+        const resultErrorMessage = result.errorMessage?.trim() || ''
+        const terminalStatusError = !result.polling && result.extractionStatus !== 3
+          ? resultErrorMessage || l(
+            `资产生成未成功（${result.extractionStatusName || result.extractionStatus}），请重试`,
+            `Asset generation did not complete (${result.extractionStatusName || result.extractionStatus}). Retry.`,
+          )
+          : resultErrorMessage
+        patchLane(assetType, {
+          loaded: true,
+          loading: false,
+          polling: result.polling,
+          extractionStatus: result.extractionStatus,
+          statusName: result.extractionStatusName?.trim() || '',
+          errorMessage: terminalStatusError,
+        })
+        if (result.polling) {
+          scheduleLane(assetType, 0, ASSET_POLL_INTERVAL_MS)
+        }
+      } catch (error) {
+        if (!isActive()) return
+        const nextFailureCount = failureCount + 1
+        const status = getErrorStatus(error)
+        const shouldStop = status === 401
+          || status === 403
+          || nextFailureCount >= ASSET_POLL_MAX_FAILURES
+        patchLane(assetType, {
+          loading: false,
+          polling: !shouldStop,
+          errorMessage: getPollingErrorMessage(error),
+        })
+        if (!shouldStop) {
+          const retryDelay = Math.min(
+            ASSET_POLL_INTERVAL_MS * 2 ** (nextFailureCount - 1),
+            12_000,
+          )
+          scheduleLane(assetType, nextFailureCount, retryDelay)
+        }
+      } finally {
+        if (requests.get(assetType) === request) requests.delete(assetType)
+      }
+    }
+
+    setAssetPollingState(createAssetPollingState(pollingScopeId, true))
+    setRemoteAssetsByScope((current) => ({
+      [pollingScopeId]: current[pollingScopeId] ?? {},
+    }))
+    startTimer = window.setTimeout(() => {
+      startTimer = null
+      ASSET_TYPES.forEach((assetType) => void runLane(assetType))
+    }, 0)
+
+    return () => {
+      disposed = true
+      if (assetPollingGenerationRef.current === generation) {
+        assetPollingGenerationRef.current += 1
+      }
+      if (startTimer !== null) window.clearTimeout(startTimer)
+      timers.forEach((timer) => window.clearTimeout(timer))
+      timers.clear()
+      requests.forEach((request) => request.cancel())
+      requests.clear()
+    }
+  }, [assetPollingRetryToken, episodes, l, scope, scriptImportId, sourceSignature])
+
+  useEffect(() => {
+    if (scope === 'overview' || assetPollingState.scopeId !== scope) return
+    const lanes = ASSET_TYPES.map((assetType) => assetPollingState.lanes[assetType])
+    const completed = lanes.every((lane) => (
+      lane.loaded
+      && !lane.loading
+      && !lane.polling
+      && lane.extractionStatus === 3
+      && !lane.errorMessage
+    ))
+    if (!completed) return
+    setCompletedEpisodeIds((current) => {
+      if (current.has(scope)) return current
+      const next = new Set(current)
+      next.add(scope)
+      return next
+    })
+  }, [assetPollingState, scope])
 
   useEffect(() => {
     if (!localImportWorkspaceOpen) return
@@ -243,9 +603,56 @@ export default function ProjectAssetsStep({ episodes, ratio = '9:16', styleName 
     return () => document.removeEventListener('keydown', closeOnEscape)
   }, [localImportPreviewOpen, localImportWorkspaceOpen])
 
-  const scopedAssets = useMemo(() => assets.filter((item) => (
-    scope === 'overview' || item.episodeIds.length === 0 || item.episodeIds.includes(scope)
-  )), [assets, scope])
+  const remoteScopedAssets = useMemo(() => {
+    const remoteAssets = Object.values(remoteAssetsByScope[scope] ?? {})
+      .flatMap((items) => items ?? [])
+    const deduplicated = new Map<string, AssetDraft>()
+    remoteAssets.forEach((asset) => {
+      const existing = deduplicated.get(asset.id)
+      deduplicated.set(asset.id, existing
+        ? {
+          ...existing,
+          ...asset,
+          episodeIds: [...new Set([...existing.episodeIds, ...asset.episodeIds])],
+        }
+        : asset)
+    })
+    return [...deduplicated.values()]
+  }, [remoteAssetsByScope, scope])
+  const scopedAssets = useMemo(() => {
+    const merged = new Map(remoteScopedAssets.map((asset) => [asset.id, asset]))
+    const remoteAssetIds = new Set(merged.keys())
+    assets
+      .filter((item) => (
+        item.source === 'remote'
+          ? remoteAssetIds.has(item.id)
+          : scope === 'overview'
+            || item.episodeIds.length === 0
+            || item.episodeIds.includes(scope)
+      ))
+      .forEach((asset) => {
+        const remoteAsset = merged.get(asset.id)
+        if (!remoteAsset) {
+          merged.set(asset.id, asset)
+          return
+        }
+
+        const overrideFields = new Set<AssetOverrideField>(
+          asset.overrideFields ?? ['name', 'prompt', 'imageUrl'],
+        )
+        const mergedAsset: AssetDraft = {
+          ...remoteAsset,
+          source: 'remote',
+          overrideFields: [...overrideFields],
+          episodeIds: [...new Set([...remoteAsset.episodeIds, ...asset.episodeIds])],
+        }
+        if (overrideFields.has('name')) mergedAsset.name = asset.name
+        if (overrideFields.has('prompt')) mergedAsset.prompt = asset.prompt
+        if (overrideFields.has('imageUrl')) mergedAsset.imageUrl = asset.imageUrl
+        merged.set(asset.id, mergedAsset)
+      })
+    return [...merged.values()].filter((asset) => !hiddenRemoteAssetIds.has(asset.id))
+  }, [assets, hiddenRemoteAssetIds, remoteScopedAssets, scope])
   const counts = useMemo(() => ({
     role: scopedAssets.filter((item) => item.kind === 'role').length,
     scene: scopedAssets.filter((item) => item.kind === 'scene').length,
@@ -263,9 +670,44 @@ export default function ProjectAssetsStep({ episodes, ratio = '9:16', styleName 
   )), [personalAssetFilters, personalAssets])
 
   const currentEpisode = episodes.find((episode) => episode.id === scope)
-  const generationAsset = assets.find((asset) => asset.id === generationAssetId)
-  const totalAssets = assets.length
+  const generationAsset = scopedAssets.find((asset) => asset.id === generationAssetId)
+    ?? (generationAssetSnapshot?.id === generationAssetId ? generationAssetSnapshot : undefined)
+  const totalAssets = scopedAssets.length
   const generationCost = scopedAssets.length * GENERATION_UNIT_COST
+  const saveAssetOverride = (asset: AssetDraft, changedFields: AssetOverrideField[]) => {
+    setAssets((current) => {
+      const existingIndex = current.findIndex((item) => item.id === asset.id)
+      if (asset.source !== 'remote') {
+        if (existingIndex < 0) return [...current, asset]
+        return current.map((item, index) => index === existingIndex ? asset : item)
+      }
+
+      const existing = existingIndex >= 0 ? current[existingIndex] : undefined
+      const overrideFields = [...new Set([
+        ...(existing?.overrideFields ?? []),
+        ...changedFields,
+      ])]
+      const nextOverride: AssetDraft = {
+        id: asset.id,
+        kind: asset.kind,
+        name: existing?.name ?? asset.name,
+        episodeIds: [...new Set([...(existing?.episodeIds ?? []), ...asset.episodeIds])],
+        source: 'remote',
+        overrideFields,
+      }
+      if (overrideFields.includes('name')) {
+        nextOverride.name = changedFields.includes('name') ? asset.name : existing?.name ?? asset.name
+      }
+      if (overrideFields.includes('prompt')) {
+        nextOverride.prompt = changedFields.includes('prompt') ? asset.prompt : existing?.prompt
+      }
+      if (overrideFields.includes('imageUrl')) {
+        nextOverride.imageUrl = changedFields.includes('imageUrl') ? asset.imageUrl : existing?.imageUrl
+      }
+      if (existingIndex < 0) return [...current, nextOverride]
+      return current.map((item, index) => index === existingIndex ? nextOverride : item)
+    })
+  }
 
   const handleImageImport = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -275,31 +717,39 @@ export default function ProjectAssetsStep({ episodes, ratio = '9:16', styleName 
       message.error(l('请选择图片文件', 'Choose an image file'))
       return
     }
+    const targetAsset = scopedAssets.find((asset) => asset.id === imageTargetId)
+      ?? (imageTargetSnapshot?.id === imageTargetId ? imageTargetSnapshot : undefined)
+    if (!targetAsset) return
     const reader = new FileReader()
     reader.onload = () => {
       if (typeof reader.result !== 'string') return
-      setAssets((current) => current.map((item) => (
-        item.id === imageTargetId ? { ...item, imageUrl: reader.result as string } : item
-      )))
+      saveAssetOverride({ ...targetAsset, imageUrl: reader.result }, ['imageUrl'])
       setImageTargetId(undefined)
+      setImageTargetSnapshot(undefined)
     }
     reader.readAsDataURL(file)
   }
 
   const openImageImport = (assetId: string) => {
+    setImageTargetSnapshot(scopedAssets.find((asset) => asset.id === assetId))
     setImageTargetId(assetId)
     imageInputRef.current?.click()
   }
 
-  const appendAsset = (asset: Pick<AssetDraft, 'name' | 'imageUrl'>) => {
+  const appendAsset = (asset: Pick<AssetDraft, 'name' | 'imageUrl' | 'prompt'>) => {
+    const localAssetId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
     setAssets((current) => [
       ...current,
       {
-        id: `${kind}-${Date.now()}`,
+        id: `${kind}-${localAssetId}`,
         kind,
         name: asset.name,
         episodeIds: scope === 'overview' ? [] : [scope],
         imageUrl: asset.imageUrl,
+        prompt: asset.prompt,
+        source: 'manual',
       },
     ])
   }
@@ -364,6 +814,9 @@ export default function ProjectAssetsStep({ episodes, ratio = '9:16', styleName 
 
   const openPersonalImport = async (targetAssetId?: string) => {
     setPersonalImportTargetId(targetAssetId)
+    setPersonalImportTargetSnapshot(targetAssetId
+      ? scopedAssets.find((asset) => asset.id === targetAssetId)
+      : undefined)
     setPersonalImportOpen(true)
     setPersonalAssetId('')
     setPersonalAssetFilters(EMPTY_PERSONAL_FILTERS)
@@ -405,16 +858,22 @@ export default function ProjectAssetsStep({ episodes, ratio = '9:16', styleName 
       return
     }
     if (personalImportTargetId) {
-      setAssets((current) => current.map((asset) => (
-        asset.id === personalImportTargetId
-          ? { ...asset, imageUrl: selected.imageUrl }
-          : asset
-      )))
+      const targetAsset = scopedAssets.find((asset) => asset.id === personalImportTargetId)
+        ?? (personalImportTargetSnapshot?.id === personalImportTargetId
+          ? personalImportTargetSnapshot
+          : undefined)
+      if (!targetAsset) return
+      if (!selected.imageUrl) {
+        message.warning(l('选中的资产没有可用图片', 'The selected asset has no usable image'))
+        return
+      }
+      saveAssetOverride({ ...targetAsset, imageUrl: selected.imageUrl }, ['imageUrl'])
     } else {
       appendAsset({ name: selected.name, imageUrl: selected.imageUrl })
     }
     setPersonalImportOpen(false)
     setPersonalImportTargetId(undefined)
+    setPersonalImportTargetSnapshot(undefined)
     setPersonalAssetId('')
     message.success(l('个人空间资产已导入', 'Personal asset imported'))
   }
@@ -423,6 +882,7 @@ export default function ProjectAssetsStep({ episodes, ratio = '9:16', styleName 
     setAddMenuOpen(false)
     if (key === 'generate') {
       setGenerationAssetId(undefined)
+      setGenerationAssetSnapshot(undefined)
       setGenerationWorkspaceOpen(true)
       return
     }
@@ -434,6 +894,7 @@ export default function ProjectAssetsStep({ episodes, ratio = '9:16', styleName 
   }
 
   const openAssetWorkspace = (asset: AssetDraft) => {
+    setGenerationAssetSnapshot(asset)
     setGenerationAssetId(asset.id)
     setGenerationWorkspaceOpen(true)
   }
@@ -474,7 +935,16 @@ export default function ProjectAssetsStep({ episodes, ratio = '9:16', styleName 
       okText: l('删除', 'Delete'),
       cancelText: l('取消', 'Cancel'),
       okButtonProps: { danger: true },
-      onOk: () => setAssets((current) => current.filter((item) => item.id !== asset.id)),
+      onOk: () => {
+        setAssets((current) => current.filter((item) => item.id !== asset.id))
+        if (asset.source === 'remote') {
+          setHiddenRemoteAssetIds((current) => {
+            const next = new Set(current)
+            next.add(asset.id)
+            return next
+          })
+        }
+      },
     })
   }
 
@@ -518,6 +988,27 @@ export default function ProjectAssetsStep({ episodes, ratio = '9:16', styleName 
   const scopeTitle = scope === 'overview'
     ? l(`全剧总览：已智能提取出全剧资产共${totalAssets}个`, `Overview: ${totalAssets} assets extracted`)
     : l(`${currentEpisode?.title ?? '当前剧集'}已智能提取资产共${scopedAssets.length}个`, `${currentEpisode?.title ?? 'Current episode'}: ${scopedAssets.length} assets extracted`)
+  const pollingLanes = assetPollingState.scopeId === scope
+    ? ASSET_TYPES.map((assetType) => assetPollingState.lanes[assetType])
+    : []
+  const assetPollingActive = pollingLanes.some((lane) => lane.loading || lane.polling)
+  const assetPollingErrorMessage = pollingLanes.find((lane) => (
+    lane.errorMessage && !lane.loading && !lane.polling
+  ))?.errorMessage ?? ''
+  const assetPollingStatusNames = [...new Set(
+    pollingLanes.map((lane) => lane.statusName).filter(Boolean),
+  )].join(' / ')
+  const summaryDescription = assetPollingErrorMessage
+    ? l(
+      `部分资产查询失败：${assetPollingErrorMessage}${assetPollingActive ? '，其他类型仍在生成' : ''}`,
+      `Some asset queries failed: ${assetPollingErrorMessage}${assetPollingActive ? '; other types are still generating' : ''}`,
+    )
+    : assetPollingActive
+      ? l(
+        `正在轮询角色、场景和道具资产${assetPollingStatusNames ? `（${assetPollingStatusNames}）` : ''}…`,
+        `Polling character, scene, and prop assets${assetPollingStatusNames ? ` (${assetPollingStatusNames})` : ''}…`,
+      )
+      : l('可通过修改提示词重绘不满意的图片，确保角场景符合剧本设定。', 'Adjust prompts and regenerate images to match the script settings.')
 
   return (
     <main className="project-assets-step">
@@ -554,9 +1045,14 @@ export default function ProjectAssetsStep({ episodes, ratio = '9:16', styleName 
         <header className="project-assets-step__summary">
           <div className="project-assets-step__summary-copy">
             <strong>{scopeTitle}</strong>
-            <span>{l('可通过修改提示词重绘不满意的图片，确保角色场景符合剧本设定。', 'Adjust prompts and regenerate images to match the script settings.')}</span>
+            <span>{summaryDescription}</span>
           </div>
           <div className="project-assets-step__generation-settings">
+            {assetPollingErrorMessage && (
+              <Button onClick={() => setAssetPollingRetryToken((current) => current + 1)}>
+                {l('重试资产查询', 'Retry asset query')}
+              </Button>
+            )}
             <StudioSelect
               className="project-assets-step__model-select"
               value={model}
@@ -875,7 +1371,7 @@ export default function ProjectAssetsStep({ episodes, ratio = '9:16', styleName 
             name: generationAsset.name,
             prompt: buildAssetPrompt(generationAsset, episodes),
             imageUrl: generationAsset.imageUrl,
-            description: l(
+            description: generationAsset.description || l(
               `${generationAsset.name}的${KIND_LABELS[generationAsset.kind].zh}设定，可结合右侧提示词继续调整并重新生成。`,
               `${generationAsset.name} ${KIND_LABELS[generationAsset.kind].en.toLowerCase()} design. Refine the prompt and regenerate as needed.`,
             ),
@@ -885,20 +1381,23 @@ export default function ProjectAssetsStep({ episodes, ratio = '9:16', styleName 
           onClose={() => {
             setGenerationWorkspaceOpen(false)
             setGenerationAssetId(undefined)
+            setGenerationAssetSnapshot(undefined)
           }}
           onGenerate={(assetName, assetPrompt) => {
             if (generationAssetId) {
-              setAssets((current) => current.map((asset) => (
-                asset.id === generationAssetId
-                  ? { ...asset, name: assetName, prompt: assetPrompt }
-                  : asset
-              )))
+              if (generationAsset) {
+                saveAssetOverride(
+                  { ...generationAsset, name: assetName, prompt: assetPrompt },
+                  ['name', 'prompt'],
+                )
+              }
             } else {
-              appendAsset({ name: assetName })
+              appendAsset({ name: assetName, prompt: assetPrompt })
             }
             requestGeneration(1)
             setGenerationWorkspaceOpen(false)
             setGenerationAssetId(undefined)
+            setGenerationAssetSnapshot(undefined)
           }}
         />
       )}
@@ -913,6 +1412,7 @@ export default function ProjectAssetsStep({ episodes, ratio = '9:16', styleName 
         onCancel={() => {
           setPersonalImportOpen(false)
           setPersonalImportTargetId(undefined)
+          setPersonalImportTargetSnapshot(undefined)
         }}
       >
         <div className="project-assets-space-import__filters">

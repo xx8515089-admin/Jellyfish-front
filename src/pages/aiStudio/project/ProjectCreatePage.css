@@ -202,6 +202,28 @@
   min-width: 82px;
 }
 
+.project-create-page__next-with-cost,
+.project-create-page__next-cost {
+  display: inline-flex;
+  align-items: center;
+}
+
+.project-create-page__next-with-cost {
+  gap: 8px;
+}
+
+.project-create-page__next-cost {
+  gap: 3px;
+  padding-left: 8px;
+  border-left: 1px solid currentColor;
+  font-size: 11px;
+  opacity: 0.82;
+}
+
+.project-create-page__next-cost .anticon {
+  font-size: 10px;
+}
+
 .project-create-page__main {
   min-height: 0;
   flex: 1;

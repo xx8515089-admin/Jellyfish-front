@@ -1,4 +1,5 @@
 .project-assets-step {
+  --project-assets-gutter: clamp(16px, 1.25vw, 32px);
   min-height: 0;
   flex: 1;
   display: grid;
@@ -89,7 +90,14 @@
   align-items: center;
   gap: 7px;
   overflow-y: auto;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.project-assets-step__scope-nav > div::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .project-assets-step__workspace {
@@ -101,15 +109,15 @@
 }
 
 .project-assets-step__summary {
-  min-height: 66px;
-  margin: 12px 8px 0;
+  min-height: 62px;
+  margin: 12px var(--project-assets-gutter) 0;
   padding: 9px 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
   border: 1px solid color-mix(in srgb, var(--project-create-primary) 16%, #d7e0e8);
-  border-radius: 8px;
+  border-radius: 10px;
   background: color-mix(in srgb, var(--project-create-primary) 5%, #fff);
 }
 
@@ -143,19 +151,19 @@
 }
 
 .project-assets-step__model-select {
-  width: 210px;
+  width: 176px;
 }
 
 .project-assets-step__resolution-select {
-  width: 88px;
+  width: 76px;
 }
 
 .project-assets-step__generation-settings .ant-select-single {
-  height: 40px;
+  height: 36px;
 }
 
 .project-assets-step__generation-settings .ant-select-single .ant-select-selector {
-  height: 40px;
+  height: 36px;
   padding: 0 14px;
   border: 0;
   border-radius: 8px;
@@ -170,7 +178,7 @@
   color: #344054;
   font-size: 13px;
   font-weight: 500;
-  line-height: 40px;
+  line-height: 36px;
 }
 
 .project-assets-step__generation-settings .ant-select-arrow {
@@ -195,8 +203,8 @@
 }
 
 .project-assets-step__generation-settings .ant-btn {
-  min-width: 194px;
-  height: 40px;
+  min-width: 184px;
+  height: 36px;
   padding-inline: 16px;
   display: inline-flex;
   align-items: center;
@@ -219,21 +227,37 @@
 .project-assets-step__content {
   min-height: 0;
   flex: 1;
-  padding: 14px 14px 24px;
+  padding: 12px var(--project-assets-gutter) 24px;
   overflow-y: auto;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.project-assets-step__content::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.project-assets-step__content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.project-assets-step__content::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #c7ced7;
 }
 
 .project-assets-step__tabs {
-  width: min(352px, 100%);
+  width: min(336px, 100%);
   height: 36px;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
   padding: 3px;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   overflow: hidden;
   gap: 3px;
   border: 1px solid #e0e5eb;
-  border-radius: 8px;
+  border-radius: 9px;
   background: #e9edf2;
 }
 
@@ -287,18 +311,18 @@
 
 .project-assets-step__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, 268px);
-  align-items: start;
-  gap: 18px 16px;
+  grid-template-columns: repeat(auto-fill, minmax(clamp(250px, 11vw, 280px), 1fr));
+  align-items: stretch;
+  gap: 16px;
 }
 
 .project-assets-step__card,
 .project-assets-step__add-card {
   min-width: 0;
-  height: 210px;
+  height: 214px;
   overflow: hidden;
   border: 1px solid #dce3eb;
-  border-radius: 8px;
+  border-radius: 10px;
   background: #fff;
 }
 
@@ -313,7 +337,7 @@
 .project-assets-step__card:hover {
   border-color: #c7d1de;
   box-shadow: 0 8px 20px rgba(16, 24, 40, 0.09);
-  transform: translateY(-2px);
+  transform: translateY(-1px);
 }
 
 .project-assets-step__card:focus-visible {
@@ -323,8 +347,8 @@
 
 .project-assets-step__card-preview {
   position: relative;
-  height: 160px;
-  flex: 0 0 160px;
+  height: 168px;
+  flex: 0 0 168px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -338,7 +362,7 @@
 .project-assets-step__empty-mark {
   display: inline-flex;
   color: #98a2b3;
-  font-size: 28px;
+  font-size: 22px;
   line-height: 1;
   transform: translateY(-1px);
 }
@@ -363,21 +387,21 @@
 
 .project-assets-step__card-actions {
   position: absolute;
-  right: 22px;
-  bottom: 22px;
-  left: 22px;
+  right: 16px;
+  bottom: 16px;
+  left: 16px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 7px;
+  gap: 8px;
 }
 
 .project-assets-step__card-actions .ant-btn {
-  height: 28px;
+  height: 30px;
   min-width: 0;
   padding-inline: 7px;
   overflow: hidden;
   border-radius: 5px;
-  font-size: 11px;
+  font-size: 12px;
   text-overflow: ellipsis;
 }
 
@@ -386,9 +410,9 @@
 }
 
 .project-assets-step__card footer {
-  height: 48px;
-  flex: 0 0 48px;
-  padding: 0 8px 0 12px;
+  height: 44px;
+  flex: 0 0 44px;
+  padding: 0 8px 0 10px;
   display: flex;
   align-items: center;
   gap: 3px;
@@ -493,6 +517,7 @@
   position: relative;
   padding: 0;
   display: block;
+  border-style: dashed;
   color: #536176;
   font-size: 13px;
   font-weight: 600;
@@ -1329,6 +1354,11 @@
 
   .project-assets-step__grid {
     grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 12px;
+  }
+
+  .project-assets-step__content {
+    padding: 12px;
   }
 
   .project-assets-space-import__filters {

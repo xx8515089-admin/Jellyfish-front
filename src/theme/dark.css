@@ -948,6 +948,151 @@ code {
   color: var(--jf-text-soft) !important;
 }
 
+/* Voice library follows the same neutral surface hierarchy as the project workspace. */
+.voice-library-modal {
+  --voice-library-primary: var(--jf-accent);
+}
+
+.voice-library-modal .ant-modal-body {
+  background: var(--jf-bg-soft) !important;
+}
+
+.voice-library-modal .ant-modal-close {
+  color: var(--jf-muted) !important;
+}
+
+.voice-library-modal .ant-modal-close:hover {
+  background: var(--jf-panel-2) !important;
+  color: var(--jf-text) !important;
+}
+
+.voice-library-modal .voice-library-modal__toolbar,
+.voice-library-modal .voice-library-modal__footer {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-border-soft) !important;
+}
+
+.voice-library-modal .voice-library-modal__count {
+  background: var(--jf-panel-2) !important;
+  color: var(--jf-muted) !important;
+}
+
+.voice-library-modal .voice-library-modal__filters .studio-select.studio-select.ant-select-single .ant-select-selector {
+  min-height: 36px;
+  background: var(--jf-panel-2) !important;
+  border: 1px solid var(--jf-border) !important;
+  color: var(--jf-text-soft) !important;
+  box-shadow: none !important;
+}
+
+.voice-library-modal .voice-library-modal__filters .studio-select.studio-select.ant-select-single:not(.ant-select-disabled):hover .ant-select-selector,
+.voice-library-modal .voice-library-modal__filters .studio-select.studio-select.ant-select-focused .ant-select-selector,
+.voice-library-modal .voice-library-modal__filters .studio-select.studio-select.ant-select-open .ant-select-selector {
+  background: var(--jf-panel-3) !important;
+  border-color: var(--jf-accent-border) !important;
+}
+
+.voice-library-modal .voice-library-modal__list {
+  background: var(--jf-bg-soft) !important;
+  border-color: var(--jf-border-soft) !important;
+  scrollbar-color: var(--jf-border) transparent;
+}
+
+.voice-library-modal .voice-library-modal__list::-webkit-scrollbar-thumb {
+  background: var(--jf-border) !important;
+}
+
+.voice-library-modal .voice-library-modal__list::-webkit-scrollbar-thumb:hover {
+  background: var(--jf-panel-3) !important;
+}
+
+.voice-library-modal .voice-library-modal__voice {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-text-soft) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2) !important;
+}
+
+.voice-library-modal .voice-library-modal__voice strong {
+  color: var(--jf-text-soft) !important;
+}
+
+.voice-library-modal .voice-library-modal__voice:hover {
+  background: var(--jf-panel-2) !important;
+  border-color: var(--jf-accent-border) !important;
+  color: var(--jf-text) !important;
+  box-shadow: 0 7px 18px rgba(0, 0, 0, 0.24) !important;
+}
+
+.voice-library-modal .voice-library-modal__voice:hover strong,
+.voice-library-modal .voice-library-modal__voice.is-selected strong {
+  color: var(--jf-text) !important;
+}
+
+.voice-library-modal .voice-library-modal__voice.is-selected {
+  background: var(--jf-selected) !important;
+  border-color: var(--jf-accent-border) !important;
+  color: var(--jf-text) !important;
+  box-shadow: inset 0 0 0 1px var(--jf-border-soft) !important;
+}
+
+.voice-library-modal .voice-library-modal__preview-icon {
+  background: var(--jf-panel-2) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-muted) !important;
+  box-shadow: none !important;
+}
+
+.voice-library-modal .voice-library-modal__voice:hover .voice-library-modal__preview-icon {
+  background: var(--jf-panel-3) !important;
+  border-color: var(--jf-accent-border) !important;
+  color: var(--jf-text-soft) !important;
+  box-shadow: none !important;
+}
+
+.voice-library-modal .voice-library-modal__voice.is-selected .voice-library-modal__preview-icon {
+  background: var(--jf-accent) !important;
+  border-color: var(--jf-accent) !important;
+  color: #111111 !important;
+  box-shadow: none !important;
+}
+
+.voice-library-modal .voice-library-modal__voice small {
+  background: var(--jf-accent-soft) !important;
+  border-color: var(--jf-border-soft) !important;
+  color: var(--jf-muted) !important;
+}
+
+.voice-library-modal .voice-library-modal__selected-mark {
+  color: var(--jf-text-soft) !important;
+}
+
+.voice-library-modal .voice-library-modal__selection-status {
+  color: var(--jf-muted) !important;
+}
+
+.voice-library-modal .voice-library-modal__footer .ant-btn-primary:disabled {
+  background: var(--jf-panel-2) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-subtle) !important;
+  box-shadow: none !important;
+  opacity: 1;
+}
+
+.voice-library-modal .voice-library-modal__footer .ant-btn-primary:not(:disabled) {
+  background: var(--jf-accent) !important;
+  border-color: var(--jf-accent) !important;
+  color: #111111 !important;
+  box-shadow: none !important;
+}
+
+.voice-library-modal .voice-library-modal__footer .ant-btn-primary:not(:disabled):hover,
+.voice-library-modal .voice-library-modal__footer .ant-btn-primary:not(:disabled):focus-visible {
+  background: var(--jf-accent-strong) !important;
+  border-color: var(--jf-accent-strong) !important;
+  color: #111111 !important;
+}
+
 .studio-select.studio-select.ant-select-disabled .ant-select-selector {
   background: #0d0d0d !important;
   color: var(--jf-subtle) !important;
@@ -1041,6 +1186,597 @@ code {
   border-color: var(--jf-accent-border) !important;
   color: var(--jf-text) !important;
   box-shadow: none !important;
+}
+
+/* Asset overview uses explicit surfaces so the shared dark fallbacks do not flatten its UI. */
+.project-assets-step .project-assets-step__scope-nav {
+  background: var(--jf-bg-soft) !important;
+  border-color: var(--jf-border-soft) !important;
+}
+
+.project-assets-step .project-assets-step__scope-nav button {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: var(--jf-muted) !important;
+  box-shadow: none !important;
+}
+
+.project-assets-step .project-assets-step__scope-nav button.is-completed:not(.is-selected) {
+  background: var(--jf-accent-soft) !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.project-assets-step .project-assets-step__scope-nav button:hover {
+  background: var(--jf-panel-2) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.project-assets-step .project-assets-step__scope-nav button.is-selected {
+  background: var(--jf-selected) !important;
+  border-color: var(--jf-accent-border) !important;
+  color: var(--jf-text) !important;
+  box-shadow: inset 0 0 0 1px var(--jf-border-soft) !important;
+}
+
+.project-assets-step .project-assets-step__summary {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-border-soft) !important;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.025) !important;
+}
+
+.project-assets-step .studio-select.studio-select.ant-select-single .ant-select-selector {
+  background: var(--jf-panel-2) !important;
+  border: 1px solid var(--jf-border) !important;
+  color: var(--jf-text) !important;
+}
+
+.project-assets-step .studio-select.studio-select.ant-select-single:not(.ant-select-disabled):hover .ant-select-selector,
+.project-assets-step .studio-select.studio-select.ant-select-single.ant-select-focused .ant-select-selector,
+.project-assets-step .studio-select.studio-select.ant-select-single.ant-select-open .ant-select-selector {
+  background: var(--jf-panel-3) !important;
+  border-color: var(--jf-accent-border) !important;
+}
+
+.project-assets-step .project-assets-step__generation-settings .ant-btn-primary {
+  background: var(--jf-panel-3) !important;
+  border-color: var(--jf-accent-border) !important;
+  color: var(--jf-text) !important;
+  box-shadow: none !important;
+}
+
+.project-assets-step .project-assets-step__generation-settings .ant-btn-primary:hover,
+.project-assets-step .project-assets-step__generation-settings .ant-btn-primary:focus-visible {
+  background: color-mix(in srgb, var(--jf-panel-3) 86%, var(--jf-text)) !important;
+  border-color: var(--jf-accent-border) !important;
+  color: var(--jf-text) !important;
+}
+
+.project-assets-step .project-assets-step__content {
+  background: linear-gradient(180deg, var(--jf-bg-soft) 0, var(--jf-bg) 180px) !important;
+  scrollbar-color: var(--jf-border) transparent;
+}
+
+.project-assets-step .project-assets-step__content::-webkit-scrollbar-thumb {
+  background: var(--jf-border) !important;
+}
+
+.project-assets-step .project-assets-step__content::-webkit-scrollbar-thumb:hover {
+  background: var(--jf-panel-3) !important;
+}
+
+.project-assets-step .project-assets-step__tabs {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-border) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025) !important;
+}
+
+.project-assets-step .project-assets-step__tabs button {
+  background: transparent !important;
+  color: var(--jf-muted) !important;
+}
+
+.project-assets-step .project-assets-step__tabs button:hover {
+  background: var(--jf-accent-soft) !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.project-assets-step .project-assets-step__tabs button.is-selected {
+  background: var(--jf-panel-3) !important;
+  color: var(--jf-text) !important;
+  box-shadow:
+    inset 0 0 0 1px var(--jf-border),
+    0 1px 2px rgba(0, 0, 0, 0.28) !important;
+}
+
+.project-assets-step .project-assets-step__tabs button small {
+  background: var(--jf-accent-soft) !important;
+  color: var(--jf-muted) !important;
+}
+
+.project-assets-step .project-assets-step__tabs button.is-selected small {
+  background: var(--jf-selected-hover) !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.project-assets-step .project-assets-step__card,
+.project-assets-step .project-assets-step__add-card {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-text-soft) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24) !important;
+}
+
+.project-assets-step .project-assets-step__card:hover {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-accent-border) !important;
+  color: var(--jf-text) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28) !important;
+  transform: translateY(-1px);
+}
+
+.project-assets-step .project-assets-step__card-preview,
+.project-assets-step .project-assets-step__card-preview:hover {
+  background-color: var(--jf-bg-soft) !important;
+  border-color: var(--jf-border-soft) !important;
+  color: var(--jf-muted) !important;
+  box-shadow: none !important;
+}
+
+.project-assets-step .project-assets-step__card:not(.has-image) .project-assets-step__card-preview {
+  background-image: radial-gradient(circle at 50% 45%, var(--jf-panel-2), var(--jf-bg-soft) 68%) !important;
+}
+
+.project-assets-step .project-assets-step__empty-mark {
+  color: var(--jf-muted) !important;
+}
+
+.project-assets-step .project-assets-step__card-actions,
+.project-assets-step .project-assets-step__card-actions:hover {
+  background: transparent !important;
+  border: 0 !important;
+  color: inherit !important;
+  box-shadow: none !important;
+}
+
+.project-assets-step .project-assets-step__card-actions .ant-btn-default {
+  background: var(--jf-panel-2) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-text-soft) !important;
+  box-shadow: none !important;
+}
+
+.project-assets-step .project-assets-step__card-actions .ant-btn-default:hover {
+  background: var(--jf-panel-3) !important;
+  border-color: var(--jf-accent-border) !important;
+  color: var(--jf-text) !important;
+}
+
+.project-assets-step .project-assets-step__card-actions .ant-btn-primary {
+  background: var(--jf-panel-3) !important;
+  border-color: var(--jf-accent-border) !important;
+  color: var(--jf-text) !important;
+  box-shadow: none !important;
+}
+
+.project-assets-step .project-assets-step__card-actions .ant-btn-primary:hover {
+  background: color-mix(in srgb, var(--jf-panel-3) 86%, var(--jf-text)) !important;
+  border-color: var(--jf-accent-border) !important;
+  color: var(--jf-text) !important;
+}
+
+.project-assets-step .project-assets-step__card footer {
+  background: var(--jf-panel) !important;
+  border-top-color: var(--jf-border-soft) !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.project-assets-step .project-assets-step__card footer strong {
+  color: var(--jf-text-soft) !important;
+}
+
+.project-assets-step .project-assets-step__card footer .project-assets-step__voice-button {
+  background: var(--jf-panel-2) !important;
+  border: 1px solid var(--jf-border) !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.project-assets-step .project-assets-step__card footer .project-assets-step__voice-button:hover {
+  background: var(--jf-panel-3) !important;
+  border-color: var(--jf-accent-border) !important;
+  color: var(--jf-text) !important;
+}
+
+.project-assets-step .project-assets-step__card footer .project-assets-step__more-button {
+  background: transparent !important;
+  color: var(--jf-muted) !important;
+}
+
+.project-assets-step .project-assets-step__card footer .project-assets-step__more-button:hover,
+.project-assets-step .project-assets-step__card footer .project-assets-step__more-button.ant-dropdown-open {
+  background: var(--jf-accent-soft) !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.project-assets-step .project-assets-step__add-card:hover,
+.project-assets-step .project-assets-step__add-card.is-open {
+  background: var(--jf-panel-2) !important;
+  border-color: var(--jf-accent-border) !important;
+}
+
+.project-assets-step .project-assets-step__add-trigger,
+.project-assets-step .project-assets-step__add-card.is-open .project-assets-step__add-trigger {
+  background: transparent !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.project-assets-step .project-assets-step__add-trigger-mark {
+  background: var(--jf-panel-2) !important;
+  color: var(--jf-text-soft) !important;
+}
+
+/* Asset generation workspace uses the shared neutral dark hierarchy throughout. */
+.asset-generation-workspace .asset-generation-workspace__header {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-border-soft) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__header .ant-btn {
+  color: var(--jf-muted) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__header .ant-btn:hover {
+  background: var(--jf-panel-2) !important;
+  color: var(--jf-text) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__body,
+.asset-generation-workspace .asset-generation-workspace__stage {
+  background: var(--jf-bg) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__stage {
+  background: linear-gradient(180deg, var(--jf-bg-soft) 0, var(--jf-bg) 180px) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__preview,
+.asset-generation-workspace .asset-generation-workspace__preview.has-image {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-muted) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__preview:not(.has-image) {
+  background-image: radial-gradient(circle at 50% 45%, var(--jf-panel-2), var(--jf-panel) 62%) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__main-badge {
+  background: var(--jf-accent) !important;
+  color: #111111 !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__history {
+  background: transparent !important;
+  border: 0 !important;
+  color: var(--jf-muted) !important;
+  box-shadow: none !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__history button {
+  background: var(--jf-panel-2) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-muted) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__history button:hover:not(:disabled) {
+  background: var(--jf-panel-2) !important;
+  border-color: var(--jf-accent-border) !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__history button:disabled {
+  background: var(--jf-panel-2) !important;
+  border-color: var(--jf-border-soft) !important;
+  color: var(--jf-subtle) !important;
+  opacity: 1;
+}
+
+.asset-generation-workspace .asset-generation-workspace__panel,
+.asset-generation-workspace .asset-generation-workspace__form-scroll {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-border) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__name-inputs .ant-input {
+  background: var(--jf-panel-2) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-text) !important;
+  box-shadow: none !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__name-inputs .ant-input:hover,
+.asset-generation-workspace .asset-generation-workspace__name-inputs .ant-input:focus {
+  background: var(--jf-panel-3) !important;
+  border-color: var(--jf-accent-border) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__character-name.is-locked.ant-input-disabled {
+  background: var(--jf-bg-soft) !important;
+  border-color: var(--jf-border-soft) !important;
+  color: var(--jf-muted) !important;
+  -webkit-text-fill-color: var(--jf-muted) !important;
+  opacity: 1;
+}
+
+.asset-generation-workspace .asset-generation-workspace__field > span {
+  color: var(--jf-text) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__field > span small {
+  color: var(--jf-muted) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__reference,
+.asset-generation-workspace .asset-generation-workspace__reference-add {
+  background: var(--jf-panel-2) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-muted) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__reference-add:hover {
+  background: var(--jf-panel-3) !important;
+  border-color: var(--jf-accent-border) !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__prompt-heading-actions > button {
+  background: transparent !important;
+  color: var(--jf-muted) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__prompt-heading-actions > button:hover,
+.asset-generation-workspace .asset-generation-workspace__prompt-heading-actions > button:focus-visible {
+  background: var(--jf-accent-soft) !important;
+  color: var(--jf-text) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__rewrite-trigger-label {
+  color: var(--jf-text-soft) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__prompt-editor {
+  background: var(--jf-panel-2) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-text-soft) !important;
+  box-shadow: none !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__prompt-editor:focus-within {
+  border-color: var(--jf-accent-border) !important;
+  box-shadow: 0 0 0 2px var(--jf-accent-soft) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__prompt-editor textarea.ant-input {
+  background: transparent !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__prompt-options {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-border-soft) !important;
+}
+
+.asset-generation-workspace .studio-select.studio-select.ant-select-single .ant-select-selector {
+  background: var(--jf-panel-2) !important;
+  border: 1px solid var(--jf-border) !important;
+  color: var(--jf-text-soft) !important;
+  box-shadow: none !important;
+}
+
+.asset-generation-workspace .studio-select.studio-select.ant-select-single:not(.ant-select-disabled):hover .ant-select-selector,
+.asset-generation-workspace .studio-select.studio-select.ant-select-focused .ant-select-selector,
+.asset-generation-workspace .studio-select.studio-select.ant-select-open .ant-select-selector {
+  background: var(--jf-panel-3) !important;
+  border-color: var(--jf-accent-border) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__look-rail {
+  background: var(--jf-bg-soft) !important;
+  border-color: var(--jf-border-soft) !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__look-rail button {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-muted) !important;
+  box-shadow: none !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__look-rail button:hover:not(:disabled) {
+  background: var(--jf-panel-2) !important;
+  border-color: var(--jf-accent-border) !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__look-add,
+.asset-generation-workspace .asset-generation-workspace__look-add:hover {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-muted) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__look-add-wrap.is-open .asset-generation-workspace__look-add {
+  background: var(--jf-selected) !important;
+  border-color: var(--jf-accent-border) !important;
+  color: var(--jf-text) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__look-add:disabled,
+.asset-generation-workspace .asset-generation-workspace__look-add:disabled:hover {
+  background: var(--jf-bg-soft) !important;
+  border-color: var(--jf-border-soft) !important;
+  color: var(--jf-subtle) !important;
+  opacity: 1;
+}
+
+.asset-generation-workspace .asset-generation-workspace__look-menu {
+  background: var(--jf-panel-2) !important;
+  border-color: var(--jf-border) !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__look-menu button {
+  background: transparent !important;
+  border: 0 !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__look-menu button:hover,
+.asset-generation-workspace .asset-generation-workspace__look-menu button:focus-visible {
+  background: var(--jf-panel-3) !important;
+  color: var(--jf-text) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__look-main {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-muted) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__look-preview {
+  background: var(--jf-bg-soft) !important;
+  color: var(--jf-muted) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__look-name {
+  background: color-mix(in srgb, var(--jf-panel) 92%, transparent) !important;
+  border-color: var(--jf-border-soft) !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__look-main.is-selected {
+  background: var(--jf-selected) !important;
+  border-color: var(--jf-accent-border) !important;
+  color: var(--jf-text) !important;
+  box-shadow: inset 0 0 0 1px var(--jf-border-soft) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__look-main.is-selected .asset-generation-workspace__look-name {
+  color: var(--jf-text) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__footer {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-border-soft) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__footer .ant-btn-primary {
+  background: var(--jf-panel-3) !important;
+  border-color: var(--jf-accent-border) !important;
+  color: var(--jf-text) !important;
+  box-shadow: none !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__footer .ant-btn-primary:hover:not(:disabled),
+.asset-generation-workspace .asset-generation-workspace__footer .ant-btn-primary:focus-visible:not(:disabled) {
+  background: color-mix(in srgb, var(--jf-panel-3) 86%, var(--jf-text)) !important;
+  color: var(--jf-text) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__footer .ant-btn-primary:disabled {
+  background: var(--jf-panel-2) !important;
+  border-color: var(--jf-border-soft) !important;
+  color: var(--jf-subtle) !important;
+  box-shadow: none !important;
+  opacity: 1;
+}
+
+.asset-generation-workspace .asset-generation-workspace__description-dialog {
+  background: var(--jf-bg-soft) !important;
+  border-color: var(--jf-border) !important;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.48) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__description-header,
+.asset-generation-workspace .asset-generation-workspace__rewrite-panel > header {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-border-soft) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__description-header button,
+.asset-generation-workspace .asset-generation-workspace__rewrite-panel > header button {
+  background: transparent !important;
+  color: var(--jf-muted) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__description-header button:hover,
+.asset-generation-workspace .asset-generation-workspace__rewrite-panel > header button:hover {
+  background: var(--jf-panel-2) !important;
+  color: var(--jf-text) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__description-body {
+  background: var(--jf-bg-soft) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__description-references {
+  scrollbar-color: var(--jf-border) transparent;
+}
+
+.asset-generation-workspace .asset-generation-workspace__description-references > button,
+.asset-generation-workspace .asset-generation-workspace__description-references > div,
+.asset-generation-workspace .asset-generation-workspace__description-references .asset-generation-workspace__description-reference-add {
+  background: var(--jf-panel-2) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-muted) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__description-references > button:hover,
+.asset-generation-workspace .asset-generation-workspace__description-references .asset-generation-workspace__description-reference-add:hover {
+  background: var(--jf-panel-3) !important;
+  border-color: var(--jf-accent-border) !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__description-references > button.is-selected {
+  background: var(--jf-selected) !important;
+  border-color: var(--jf-accent-border) !important;
+  box-shadow: inset 0 0 0 1px var(--jf-border-soft) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__description-editor,
+.asset-generation-workspace .asset-generation-workspace__rewrite-editor,
+.asset-generation-workspace .asset-generation-workspace__rewrite-request-editor {
+  background: var(--jf-panel-2) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-text-soft) !important;
+  box-shadow: none !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__description-editor:focus-within,
+.asset-generation-workspace .asset-generation-workspace__rewrite-editor:focus-within,
+.asset-generation-workspace .asset-generation-workspace__rewrite-request-editor:focus-within {
+  border-color: var(--jf-accent-border) !important;
+  box-shadow: 0 0 0 2px var(--jf-accent-soft) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__description-editor textarea.ant-input,
+.asset-generation-workspace .asset-generation-workspace__rewrite-editor textarea.ant-input,
+.asset-generation-workspace .asset-generation-workspace__rewrite-request-editor textarea.ant-input {
+  background: transparent !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__description-options {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-border-soft) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__rewrite-panel {
+  background: var(--jf-bg-soft) !important;
+  border-color: var(--jf-border) !important;
+  box-shadow: -18px 0 50px rgba(0, 0, 0, 0.42) !important;
 }
 
 .project-clip-editor__batch-footer > button,

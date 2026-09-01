@@ -49,6 +49,7 @@ const VOICE_PRESETS: VoicePreset[] = [
 export default function VoiceLibraryModal({ open, onCancel }: VoiceLibraryModalProps) {
   const l = useBilingualText()
   const [selectedVoiceId, setSelectedVoiceId] = useState<string>()
+  const selectedVoice = VOICE_PRESETS.find((voice) => voice.id === selectedVoiceId)
 
   useEffect(() => {
     if (open) setSelectedVoiceId(undefined)
@@ -58,14 +59,17 @@ export default function VoiceLibraryModal({ open, onCancel }: VoiceLibraryModalP
     <Modal
       open={open}
       centered
-      width={760}
+      width={820}
       title={l('音色库', 'Voice library')}
       footer={null}
       rootClassName="voice-library-modal"
       onCancel={onCancel}
     >
       <div className="voice-library-modal__toolbar">
-        <strong className="voice-library-modal__category">{l('系统音色', 'System voices')}</strong>
+        <strong className="voice-library-modal__category">
+          <span>{l('系统音色', 'System voices')}</span>
+          <span className="voice-library-modal__count">{VOICE_PRESETS.length}</span>
+        </strong>
         <div className="voice-library-modal__filters">
           <StudioSelect
             defaultValue="all"
@@ -117,14 +121,21 @@ export default function VoiceLibraryModal({ open, onCancel }: VoiceLibraryModalP
             <span className="voice-library-modal__preview-icon" aria-hidden="true">
               <CaretRightFilled />
             </span>
-            <strong>{voice.name}</strong>
-            {voice.adjustable && <small>{l('可调情绪', 'Adjustable')}</small>}
+            <span className="voice-library-modal__voice-copy">
+              <strong title={voice.name}>{voice.name}</strong>
+              {voice.adjustable && <small>{l('可调情绪', 'Adjustable')}</small>}
+            </span>
             {selectedVoiceId === voice.id && <CheckOutlined className="voice-library-modal__selected-mark" />}
           </div>
         ))}
       </div>
 
       <footer className="voice-library-modal__footer">
+        <span className="voice-library-modal__selection-status" aria-live="polite">
+          {selectedVoice
+            ? l(`已选择：${selectedVoice.name}`, `Selected: ${selectedVoice.name}`)
+            : l('请选择一个音色', 'Select a voice')}
+        </span>
         <Button type="primary" disabled={!selectedVoiceId}>{l('应用', 'Apply')}</Button>
       </footer>
     </Modal>
