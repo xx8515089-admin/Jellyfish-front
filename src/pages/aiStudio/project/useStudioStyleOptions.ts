@@ -36,9 +36,9 @@ async function loadStudioStyleOptions(force = false): Promise<StudioStyleOptionG
 }
 
 /** 暴露两类在线风格列表，以及创建自定义风格后使用的刷新方法。 */
-export function useStudioStyleOptions() {
+export function useStudioStyleOptions(enabled = true) {
   const [options, setOptions] = useState<StudioStyleOptionGroups>(cachedOptions ?? EMPTY_OPTIONS)
-  const [loading, setLoading] = useState(!cachedOptions)
+  const [loading, setLoading] = useState(enabled && !cachedOptions)
   const [error, setError] = useState<unknown>()
   const mountedRef = useRef(true)
 
@@ -62,7 +62,10 @@ export function useStudioStyleOptions() {
 
   useEffect(() => {
     mountedRef.current = true
-    if (cachedOptions) {
+    if (!enabled) {
+      setLoading(false)
+      setError(undefined)
+    } else if (cachedOptions) {
       setOptions(cachedOptions)
       setError(undefined)
       setLoading(false)
@@ -72,7 +75,7 @@ export function useStudioStyleOptions() {
     return () => {
       mountedRef.current = false
     }
-  }, [applyOptions])
+  }, [applyOptions, enabled])
 
   return { options, loading, error, refresh }
 }

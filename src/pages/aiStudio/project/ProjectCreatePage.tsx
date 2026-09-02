@@ -33,6 +33,8 @@ import ProjectClipEditingStep from './ProjectClipEditingStep'
 import {
   PROJECT_CREATION_DRAFT_KEYS,
   clearProjectCreationDrafts,
+  holdProjectCreationDraftWrites,
+  readFullProjectCreationDraft,
   readProjectCreationDraft,
   useProjectCreationDraft,
 } from './projectCreationDraft'
@@ -64,7 +66,9 @@ type ProjectCreateDraft = {
   currentStep: number
   name: string
   script: string
+  scriptLength?: number
   episodes: EpisodeDraft[]
+  episodeCount?: number
   activeEpisodeIndex: number
   ratio: string
   styleCategory: StyleCategoryKey
@@ -79,6 +83,12 @@ type ProjectCreateRouteState = {
   scriptImport?: StudioScriptImportListItem
   scriptImportDetail?: StudioScriptParseResult
   chapters?: StudioScriptParseChapter[]
+}
+type PendingChapterCreation = {
+  scriptImportId: string
+  editRevision: number
+  previousEpisodeIds: string[]
+  createdChapterIds: string[]
 }
 type DisplayedStyle = {
   key: string
@@ -211,38 +221,9 @@ const toCreationStepIndex = (currentStep?: number | null) => {
   return Math.min(3, Math.max(0, Math.trunc(normalizedStep) - 1))
 }
 
-type BasicInfoSnapshotSource = {
-  id?: StudioScriptImportId | null
-  fileName?: string | null
-  fileType?: string | null
-  title?: string | null
-  rawText?: string | null
-  videoRatio?: string | null
-  targetMarket?: string | null
-  visualStyleId?: StudioScriptImportId | null
-  toneStyleId?: StudioScriptImportId | null
-}
-
 const hasOwnNullableField = (source: object | null | undefined, field: PropertyKey) => (
   Boolean(source && Object.prototype.hasOwnProperty.call(source, field))
 )
-
-/** 生成可稳定比较的基础信息快照，用来识别本次进入页面后是否发生修改。 */
-const createBasicInfoSnapshot = (source: BasicInfoSnapshotSource) => JSON.stringify({
-  id: source.id === null || source.id === undefined ? null : String(source.id),
-  fileName: source.fileName?.trim() ?? '',
-  fileType: source.fileType?.trim() ?? '',
-  title: source.title?.trim() ?? '',
-  rawText: (source.rawText ?? '').replace(/\r\n?/g, '\n'),
-  videoRatio: source.videoRatio?.trim() || '9:16',
-  targetMarket: source.targetMarket?.trim() || 'overseas',
-  visualStyleId: source.visualStyleId === null || source.visualStyleId === undefined
-    ? null
-    : String(source.visualStyleId),
-  toneStyleId: source.toneStyleId === null || source.toneStyleId === undefined
-    ? null
-    : String(source.toneStyleId),
-})
 
 /** 风格选项尚未加载完成时，从选中键中恢复后端风格 ID。 */
 const getStyleIdFromSelectionKey = (key?: string): StudioScriptImportId | null => {
@@ -310,19 +291,14 @@ const ProjectCreatePage: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const episodeImportInputRef = useRef<HTMLInputElement>(null)
   const persistDraftOnUnmountRef = useRef(true)
-  const projectDraftPersistEnabledRef = useRef(true)
+  const projectDraftPersistEnabledRef = useRef(false)
   const basicInfoSubmissionRef = useRef(false)
+  const chapterSubmissionRef = useRef(false)
   const assetSubmissionRef = useRef(false)
   const chapterRestoreRequestRef = useRef(0)
+  const chapterMutationRevisionRef = useRef(0)
   const assetExtractionStartedRef = useRef(false)
   const workflowNavigationRevisionRef = useRef(0)
-  const {
-    options: studioStyleOptions,
-    loading: studioStyleOptionsLoading,
-    error: studioStyleOptionsError,
-    refresh: refreshStudioStyleOptions,
-  } = useStudioStyleOptions()
-
   const [resumePayload] = useState<ProjectCreateRouteState | null>(() => {
     const candidate = location.state as ProjectCreateRouteState | null
     return candidate?.scriptImport?.id !== null && candidate?.scriptImport?.id !== undefined
@@ -342,7 +318,7 @@ const ProjectCreatePage: React.FC = () => {
   )
   const confirmedBasicInfoRef = useRef<{
     importId: StudioScriptImportId
-    snapshot: string
+    editRevision: number
   } | null>(null)
   const resumeChapters = Array.isArray(resumePayload?.chapters)
     ? resumePayload.chapters
@@ -352,7 +328,21 @@ const ProjectCreatePage: React.FC = () => {
   const [restoredDraft] = useState(() =>
     readProjectCreationDraft<ProjectCreateDraft>(PROJECT_CREATION_DRAFT_KEYS.project))
   const shouldRestoreProjectDraft = !isResumingScriptImport && !resumeSnapshot
-  projectDraftPersistEnabledRef.current = shouldRestoreProjectDraft && persistDraftOnUnmountRef.current
+  const restoredDraftExpectedScriptLength = Math.max(0, Number(restoredDraft?.scriptLength) || 0)
+  const restoredDraftExpectedEpisodeCount = Math.max(
+    0,
+    Number(restoredDraft?.episodeCount) || (
+      Number(restoredDraft?.currentStep) > 0 && (restoredDraft?.episodes?.length ?? 0) === 0 ? 1 : 0
+    ),
+  )
+  const restoredDraftNeedsFullHydration = shouldRestoreProjectDraft && Boolean(
+    restoredDraftExpectedScriptLength > (restoredDraft?.script?.length ?? 0)
+    || restoredDraftExpectedEpisodeCount > (restoredDraft?.episodes?.length ?? 0),
+  )
+  const [restoringLocalDraft, setRestoringLocalDraft] = useState(shouldRestoreProjectDraft)
+  const [localDraftRestoreFailed, setLocalDraftRestoreFailed] = useState(false)
+  const [localDraftWriteError, setLocalDraftWriteError] = useState<unknown>()
+  const [localDraftRestoreRetryToken, setLocalDraftRestoreRetryToken] = useState(0)
   const restoredEpisodes = resumeSnapshot
     ? toEpisodeDrafts(
       resumeChapters,
@@ -411,6 +401,8 @@ const ProjectCreatePage: React.FC = () => {
       }
       : shouldRestoreProjectDraft ? restoredDraft?.selectedStyleKeys ?? {} : {},
   )
+  const selectedStyleKeysRef = useRef(selectedStyleKeys)
+  selectedStyleKeysRef.current = selectedStyleKeys
   const initialImportedFileName = resumeSnapshot
     ? resumeDetail?.fileName?.trim() || resumeImport?.sourceFileName?.trim() || ''
     : shouldRestoreProjectDraft ? restoredDraft?.importedFileName?.trim() || '' : ''
@@ -424,12 +416,16 @@ const ProjectCreatePage: React.FC = () => {
   const restoredDraftHasBasicInfo = shouldRestoreProjectDraft && Boolean(
     restoredDraft?.name?.trim()
     || restoredDraft?.script?.trim()
+    || restoredDraftExpectedScriptLength > 0
+    || restoredDraftExpectedEpisodeCount > 0
     || restoredDraft?.importedFileName?.trim()
     || (restoredDraft?.scriptImportId !== null && restoredDraft?.scriptImportId !== undefined),
   )
   const [basicInfoTouched, setBasicInfoTouched] = useState(restoredDraftHasBasicInfo)
   const basicInfoTouchedRef = useRef(restoredDraftHasBasicInfo)
+  const basicInfoEditRevisionRef = useRef(restoredDraftHasBasicInfo ? 1 : 0)
   const markBasicInfoTouched = useCallback(() => {
+    basicInfoEditRevisionRef.current += 1
     if (basicInfoTouchedRef.current) return
     basicInfoTouchedRef.current = true
     setBasicInfoTouched(true)
@@ -438,28 +434,6 @@ const ProjectCreatePage: React.FC = () => {
     basicInfoTouchedRef.current = false
     setBasicInfoTouched(false)
   }, [])
-  const [basicInfoBaseline, setBasicInfoBaseline] = useState<string | null>(() => {
-    if (resumeSnapshot) {
-      return createBasicInfoSnapshot({
-        ...resumeSnapshot,
-        id: resumeSnapshot.id ?? resumeImportId,
-        fileName: initialImportedFileName || toManualScriptFileName(resumeSnapshot.title ?? ''),
-        fileType: initialImportedFileType,
-        rawText: (resumeSnapshot.rawText ?? '').slice(0, MAX_SCRIPT_LENGTH),
-      })
-    }
-    return createBasicInfoSnapshot({
-      id: null,
-      fileName: toManualScriptFileName(''),
-      fileType: 'txt',
-      title: '',
-      rawText: '',
-      videoRatio: '9:16',
-      targetMarket: 'overseas',
-      visualStyleId: null,
-      toneStyleId: null,
-    })
-  })
   const [restoringBasicInfo, setRestoringBasicInfo] = useState(
     isResumingScriptImport && !resumeDetail,
   )
@@ -477,6 +451,7 @@ const ProjectCreatePage: React.FC = () => {
   const [assetExtractEstimateLoading, setAssetExtractEstimateLoading] = useState(false)
   const [assetExtractEstimateError, setAssetExtractEstimateError] = useState<unknown>()
   const [assetExtractEstimateRetryToken, setAssetExtractEstimateRetryToken] = useState(0)
+  const assetEstimateRequestRevisionRef = useRef(0)
   const [assetEpisodes, setAssetEpisodes] = useState<StudioScriptAssetEpisode[] | null>(null)
   const [assetEpisodesLoading, setAssetEpisodesLoading] = useState(false)
   const [assetEpisodesError, setAssetEpisodesError] = useState<unknown>()
@@ -484,18 +459,39 @@ const ProjectCreatePage: React.FC = () => {
   const [parsingScript, setParsingScript] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [creatingEpisode, setCreatingEpisode] = useState(false)
+  const [chapterRefreshPending, setChapterRefreshPending] = useState(false)
   const [parsingEpisodeFile, setParsingEpisodeFile] = useState(false)
   const [episodeImportOpen, setEpisodeImportOpen] = useState(false)
   const [episodeImportText, setEpisodeImportText] = useState('')
   const [episodeImportFileName, setEpisodeImportFileName] = useState('')
+  const episodeImportEditRevisionRef = useRef(0)
+  const pendingChapterCreationRef = useRef<PendingChapterCreation | null>(null)
+  const clearPendingChapterCreation = useCallback((expected?: PendingChapterCreation) => {
+    if (expected && pendingChapterCreationRef.current !== expected) return false
+    pendingChapterCreationRef.current = null
+    setChapterRefreshPending(false)
+    return true
+  }, [])
   const [customStyleModalOpen, setCustomStyleModalOpen] = useState(false)
   const [exitConfirmOpen, setExitConfirmOpen] = useState(false)
   const basicInfoInteractionLocked = restoringBasicInfo
+    || restoringLocalDraft
+    || localDraftRestoreFailed
     || basicInfoRestoreFailed
     || parsingScript
     || submitting
+  const styleOptionsEnabled = !restoringBasicInfo
+    && !restoringLocalDraft
+    && !localDraftRestoreFailed
+    && (currentStep === 0 || currentStep === 3)
+  const {
+    options: studioStyleOptions,
+    loading: studioStyleOptionsLoading,
+    error: studioStyleOptionsError,
+    refresh: refreshStudioStyleOptions,
+  } = useStudioStyleOptions(styleOptionsEnabled)
 
-  useProjectCreationDraft(PROJECT_CREATION_DRAFT_KEYS.project, {
+  const projectDraft = useMemo<ProjectCreateDraft>(() => ({
     currentStep,
     name,
     script,
@@ -509,7 +505,193 @@ const ProjectCreatePage: React.FC = () => {
     scriptImportId,
     selectedStyleKeys,
     targetMarket,
-  }, 350, projectDraftPersistEnabledRef)
+  }), [
+    activeEpisodeIndex,
+    aiModelId,
+    currentStep,
+    episodes,
+    importedFileName,
+    importedFileType,
+    name,
+    ratio,
+    script,
+    scriptImportId,
+    selectedStyleKeys,
+    styleCategory,
+    targetMarket,
+  ])
+  const compactProjectDraft = useMemo<ProjectCreateDraft>(() => ({
+    // localStorage 只保留同步恢复所需的元数据；完整剧本和分集正文仅写入 IndexedDB。
+    currentStep: projectDraft.currentStep,
+    name: projectDraft.name,
+    script: '',
+    scriptLength: projectDraft.script.length,
+    episodes: [],
+    episodeCount: projectDraft.episodes.length,
+    activeEpisodeIndex: 0,
+    ratio: projectDraft.ratio,
+    styleCategory: projectDraft.styleCategory,
+    importedFileName: projectDraft.importedFileName,
+    importedFileType: projectDraft.importedFileType,
+    aiModelId: projectDraft.aiModelId,
+    scriptImportId: projectDraft.scriptImportId,
+    selectedStyleKeys: projectDraft.selectedStyleKeys,
+    targetMarket: projectDraft.targetMarket,
+  }), [projectDraft])
+  const latestProjectDraftRef = useRef(projectDraft)
+  latestProjectDraftRef.current = projectDraft
+  const handleFullDraftWriteSettled = useCallback((error?: unknown) => {
+    setLocalDraftWriteError(error)
+  }, [])
+  const flushProjectDraft = useProjectCreationDraft(
+    PROJECT_CREATION_DRAFT_KEYS.project,
+    projectDraft,
+    350,
+    projectDraftPersistEnabledRef,
+    compactProjectDraft,
+    handleFullDraftWriteSettled,
+  )
+
+  useEffect(() => {
+    if (!shouldRestoreProjectDraft) {
+      projectDraftPersistEnabledRef.current = false
+      setLocalDraftRestoreFailed(false)
+      setRestoringLocalDraft(false)
+      return undefined
+    }
+
+    let active = true
+    let restoreBlocked = false
+    const hydrationBaseline = latestProjectDraftRef.current
+    projectDraftPersistEnabledRef.current = false
+    setLocalDraftRestoreFailed(false)
+    setRestoringLocalDraft(true)
+
+    void readFullProjectCreationDraft<ProjectCreateDraft>(PROJECT_CREATION_DRAFT_KEYS.project)
+      .then((fullDraft) => {
+        if (!active) return
+        if (!fullDraft) {
+          if (restoredDraftNeedsFullHydration) {
+            restoreBlocked = true
+            setLocalDraftRestoreFailed(true)
+          }
+          return
+        }
+        if (latestProjectDraftRef.current !== hydrationBaseline) {
+          restoreBlocked = true
+          setLocalDraftRestoreFailed(true)
+          return
+        }
+
+        const nextEpisodes = Array.isArray(fullDraft.episodes)
+          ? fullDraft.episodes.flatMap((episode, index) => {
+            if (!episode || typeof episode !== 'object') return []
+            const id = typeof episode.id === 'string' && episode.id
+              ? episode.id
+              : createId(`restored_episode_${index + 1}`)
+            return [{
+              id,
+              title: typeof episode.title === 'string'
+                ? episode.title.slice(0, MAX_NAME_LENGTH)
+                : `第${index + 1}集`,
+              rawText: typeof episode.rawText === 'string'
+                ? episode.rawText.slice(0, MAX_EPISODE_LENGTH)
+                : '',
+            }]
+          })
+          : []
+        const nextScriptImportId = (
+          typeof fullDraft.scriptImportId === 'number' && Number.isFinite(fullDraft.scriptImportId)
+        ) || (
+          typeof fullDraft.scriptImportId === 'string' && fullDraft.scriptImportId.trim()
+        )
+          ? fullDraft.scriptImportId
+          : null
+        const nextAiModelId = (
+          typeof fullDraft.aiModelId === 'number' && Number.isFinite(fullDraft.aiModelId)
+        ) || (
+          typeof fullDraft.aiModelId === 'string' && fullDraft.aiModelId.trim()
+        )
+          ? fullDraft.aiModelId
+          : null
+        const nextName = typeof fullDraft.name === 'string'
+          ? fullDraft.name.slice(0, MAX_NAME_LENGTH)
+          : ''
+        const nextScript = typeof fullDraft.script === 'string'
+          ? fullDraft.script.slice(0, MAX_SCRIPT_LENGTH)
+          : ''
+        const nextImportedFileName = typeof fullDraft.importedFileName === 'string'
+          ? fullDraft.importedFileName
+          : ''
+        const restoredFileType = typeof fullDraft.importedFileType === 'string'
+          ? fullDraft.importedFileType.trim()
+          : ''
+        const nextImportedFileType = restoredFileType || getScriptFileType(nextImportedFileName)
+        const nextActiveEpisodeIndex = Math.min(
+          Math.max(0, Math.trunc(Number(fullDraft.activeEpisodeIndex) || 0)),
+          Math.max(0, nextEpisodes.length - 1),
+        )
+        const nextStep = nextEpisodes.length > 0
+          ? Math.min(3, Math.max(0, Math.trunc(Number(fullDraft.currentStep) || 0)))
+          : 0
+        const nextSelectedStyleKeys = fullDraft.selectedStyleKeys
+          && typeof fullDraft.selectedStyleKeys === 'object'
+          ? {
+            ...(typeof fullDraft.selectedStyleKeys.visual === 'string'
+              ? { visual: fullDraft.selectedStyleKeys.visual }
+              : {}),
+            ...(typeof fullDraft.selectedStyleKeys.tone === 'string'
+              ? { tone: fullDraft.selectedStyleKeys.tone }
+              : {}),
+          }
+          : {}
+        const hasBasicInfo = Boolean(
+          nextName.trim()
+          || nextScript.trim()
+          || nextImportedFileName.trim()
+          || nextScriptImportId !== null
+        )
+
+        setCurrentStep(nextStep)
+        setScriptImportId(nextScriptImportId)
+        setAiModelId(nextAiModelId)
+        setName(nextName)
+        setScript(nextScript)
+        setEpisodes(nextEpisodes)
+        setActiveEpisodeIndex(nextActiveEpisodeIndex)
+        setRatio(typeof fullDraft.ratio === 'string' && FALLBACK_RATIOS.includes(fullDraft.ratio)
+          ? fullDraft.ratio
+          : '9:16')
+        setTargetMarket(typeof fullDraft.targetMarket === 'string'
+          ? fullDraft.targetMarket
+          : 'overseas')
+        setStyleCategory(fullDraft.styleCategory === 'tone' ? 'tone' : 'visual')
+        setImportedFileName(nextImportedFileName)
+        setImportedFileType(nextImportedFileType)
+        setSelectedStyleKeys(nextSelectedStyleKeys)
+        basicInfoEditRevisionRef.current = hasBasicInfo ? 1 : 0
+        confirmedBasicInfoRef.current = null
+        basicInfoTouchedRef.current = hasBasicInfo
+        setBasicInfoTouched(hasBasicInfo)
+      })
+      .finally(() => {
+        if (!active) return
+        setRestoringLocalDraft(false)
+        if (restoreBlocked) return
+        const changedWhileHydrating = latestProjectDraftRef.current !== hydrationBaseline
+        projectDraftPersistEnabledRef.current = persistDraftOnUnmountRef.current
+        if (changedWhileHydrating) flushProjectDraft()
+      })
+
+    return () => { active = false }
+  }, [
+    flushProjectDraft,
+    localDraftRestoreRetryToken,
+    restoredDraftExpectedEpisodeCount,
+    restoredDraftExpectedScriptLength,
+    restoredDraftNeedsFullHydration,
+    shouldRestoreProjectDraft,
+  ])
 
   const ratioOptions = FALLBACK_RATIOS
 
@@ -549,28 +731,34 @@ const ProjectCreatePage: React.FC = () => {
   const visualStyleName = selectedVisualStyle?.value ?? ''
   const toneStyleName = selectedToneStyle?.value ?? ''
   useEffect(() => {
+    if (restoringLocalDraft) return
     if (!ratioOptions.includes(ratio)) {
       setRatio(ratioOptions[0] ?? '16:9')
     }
-  }, [ratio, ratioOptions])
+  }, [ratio, ratioOptions, restoringLocalDraft])
 
   useEffect(() => {
-    if (studioStyleOptionsLoading || studioStyleOptionsError) return
+    if (!styleOptionsEnabled || studioStyleOptionsLoading || studioStyleOptionsError) return
     setSelectedStyleKeys((current) => {
       const visual = resolveStyleSelectionKey('visual', current.visual, displayedStylesByCategory.visual)
       const tone = resolveStyleSelectionKey('tone', current.tone, displayedStylesByCategory.tone)
       if (visual === current.visual && tone === current.tone) return current
       return { ...current, visual, tone }
     })
-  }, [displayedStylesByCategory, studioStyleOptionsError, studioStyleOptionsLoading])
+  }, [
+    displayedStylesByCategory,
+    studioStyleOptionsError,
+    studioStyleOptionsLoading,
+    styleOptionsEnabled,
+  ])
 
   useEffect(() => {
-    if (!studioStyleOptionsError) return
+    if (!styleOptionsEnabled || !studioStyleOptionsError) return
     message.error(getApiErrorMessage(
       studioStyleOptionsError,
       l('风格选项加载失败', 'Failed to load style options'),
     ))
-  }, [l, studioStyleOptionsError])
+  }, [l, studioStyleOptionsError, styleOptionsEnabled])
 
   useEffect(() => {
     if (resumeImportId === null || resumeImportId === undefined) return
@@ -604,13 +792,8 @@ const ProjectCreatePage: React.FC = () => {
             : restoredImportId
         ))
         setAiModelId((current) => getScriptAiModelId(detail) ?? current)
-        setBasicInfoBaseline(createBasicInfoSnapshot({
-          ...detail,
-          id: restoredImportId,
-          fileName: restoredFileName || toManualScriptFileName(detail.title ?? ''),
-          fileType: restoredFileType,
-          rawText: restoredScript,
-        }))
+        basicInfoEditRevisionRef.current = 0
+        confirmedBasicInfoRef.current = null
         if (workflowNavigationRevisionRef.current === navigationRevision) {
           setCurrentStep(restoredCreationStep)
         }
@@ -668,7 +851,8 @@ const ProjectCreatePage: React.FC = () => {
 
   useEffect(() => {
     if (
-      restoringBasicInfo
+      restoringLocalDraft
+      || restoringBasicInfo
       || basicInfoRestoreFailed
       || scriptImportId === null
       || (currentStep !== 1 && currentStep !== 3)
@@ -707,18 +891,22 @@ const ProjectCreatePage: React.FC = () => {
     episodes.length,
     l,
     restoringBasicInfo,
+    restoringLocalDraft,
     scriptImportId,
   ])
 
   useEffect(() => {
+    chapterMutationRevisionRef.current += 1
     assetExtractionStartedRef.current = false
+    clearPendingChapterCreation()
     setAssetEpisodes(null)
     setAssetEpisodesError(undefined)
-  }, [scriptImportId])
+  }, [clearPendingChapterCreation, scriptImportId])
 
   useEffect(() => {
     if (
       currentStep !== 1
+      || restoringLocalDraft
       || restoringBasicInfo
       || basicInfoRestoreFailed
       || restoringImport
@@ -737,19 +925,21 @@ const ProjectCreatePage: React.FC = () => {
     }
 
     let active = true
+    const requestRevision = ++assetEstimateRequestRevisionRef.current
     setAssetExtractEstimateLoading(true)
     void StudioScriptsApi.getAssetExtractEstimate({ scriptImportId })
       .then((estimate) => {
-        if (!active) return
-        assetExtractionStartedRef.current = estimate.alreadyStarted
+        if (!active || assetEstimateRequestRevisionRef.current !== requestRevision) return
         setAssetExtractEstimate(estimate)
       })
       .catch((error) => {
-        if (!active) return
+        if (!active || assetEstimateRequestRevisionRef.current !== requestRevision) return
         setAssetExtractEstimateError(error)
       })
       .finally(() => {
-        if (active) setAssetExtractEstimateLoading(false)
+        if (active && assetEstimateRequestRevisionRef.current === requestRevision) {
+          setAssetExtractEstimateLoading(false)
+        }
       })
 
     return () => { active = false }
@@ -761,11 +951,12 @@ const ProjectCreatePage: React.FC = () => {
     l,
     restoringBasicInfo,
     restoringImport,
+    restoringLocalDraft,
     scriptImportId,
   ])
 
   useEffect(() => {
-    if (currentStep !== 2 || assetEpisodes !== null) return
+    if (currentStep !== 2 || restoringLocalDraft || assetEpisodes !== null) return
 
     if (scriptImportId === null) {
       setAssetEpisodesLoading(false)
@@ -801,7 +992,14 @@ const ProjectCreatePage: React.FC = () => {
       if (requestStartTimer !== null) window.clearTimeout(requestStartTimer)
       request?.cancel()
     }
-  }, [assetEpisodes, assetEpisodesRetryToken, currentStep, l, scriptImportId])
+  }, [
+    assetEpisodes,
+    assetEpisodesRetryToken,
+    currentStep,
+    l,
+    restoringLocalDraft,
+    scriptImportId,
+  ])
 
   const scriptLength = script.length
   const activeEpisode = episodes[activeEpisodeIndex]
@@ -904,39 +1102,24 @@ const ProjectCreatePage: React.FC = () => {
 
   const basicInfoFileName = importedFileName.trim() || toManualScriptFileName(name)
   const basicInfoFileType = importedFileType.trim() || getScriptFileType(basicInfoFileName)
-  const currentBasicInfoSnapshot = useMemo(() => createBasicInfoSnapshot({
-    id: scriptImportId,
-    fileName: basicInfoFileName,
-    fileType: basicInfoFileType,
-    title: name,
-    rawText: script,
-    videoRatio: ratio,
-    targetMarket,
-    visualStyleId: selectedVisualStyleId,
-    toneStyleId: selectedToneStyleId,
-  }), [
-    basicInfoFileName,
-    basicInfoFileType,
-    name,
-    ratio,
-    script,
-    scriptImportId,
-    selectedToneStyleId,
-    selectedVisualStyleId,
-    targetMarket,
-  ])
   const hasBasicInfoContent = Boolean(
     name.trim()
-    || script.trim()
+    || script.length
     || importedFileName.trim()
     || scriptImportId !== null
   )
-  const hasUnsavedBasicInfo = hasBasicInfoContent
-    && basicInfoTouched
-    && basicInfoBaseline !== null
-    && currentBasicInfoSnapshot !== basicInfoBaseline
+  const hasUnsavedBasicInfo = (hasBasicInfoContent && basicInfoTouched)
+    || (restoredDraftNeedsFullHydration && (restoringLocalDraft || localDraftRestoreFailed))
 
   const validateBasicInfo = () => {
+    if (restoringLocalDraft) {
+      message.info(l('正在恢复本地草稿，请稍候', 'The local draft is still being restored'))
+      return false
+    }
+    if (localDraftRestoreFailed) {
+      message.warning(l('完整本地草稿恢复失败，请先重试', 'The complete local draft failed to restore. Retry first.'))
+      return false
+    }
     if (restoringBasicInfo) {
       message.info(l('正在恢复剧本基本信息，请稍候', 'Script information is still being restored'))
       return false
@@ -1007,8 +1190,9 @@ const ProjectCreatePage: React.FC = () => {
     setSubmitting(true)
     let requestStage: 'confirm' | 'chapters' = 'confirm'
     try {
+      const submissionEditRevision = basicInfoEditRevisionRef.current
       const requestBody = buildBasicInfoConfirmRequest()
-      const reusableConfirmation = confirmedBasicInfoRef.current?.snapshot === currentBasicInfoSnapshot
+      const reusableConfirmation = confirmedBasicInfoRef.current?.editRevision === submissionEditRevision
         ? confirmedBasicInfoRef.current
         : null
       let confirmedImportId = reusableConfirmation?.importId
@@ -1023,10 +1207,6 @@ const ProjectCreatePage: React.FC = () => {
           ))
         }
 
-        const confirmedSnapshot = createBasicInfoSnapshot({
-          ...requestBody,
-          id: confirmedImportId,
-        })
         const confirmedAiModelId = getScriptAiModelId(confirmed) ?? aiModelId
         const confirmedDetail: StudioScriptParseResult = {
           ...confirmed,
@@ -1049,18 +1229,34 @@ const ProjectCreatePage: React.FC = () => {
 
         setScriptImportId(confirmedImportId)
         setAiModelId(confirmedAiModelId)
-        setBasicInfoBaseline(confirmedSnapshot)
         confirmedBasicInfoRef.current = {
           importId: confirmedImportId,
-          snapshot: confirmedSnapshot,
+          editRevision: submissionEditRevision,
         }
-        resetBasicInfoTouched()
+        if (basicInfoEditRevisionRef.current === submissionEditRevision) {
+          resetBasicInfoTouched()
+        }
         primeScriptImportDetail(confirmedImportId, confirmedDetail)
         invalidateScriptImportChapters(confirmedImportId)
       }
 
+      if (basicInfoEditRevisionRef.current !== submissionEditRevision) {
+        message.info(l(
+          '基础信息在提交期间发生了变化，请再次点击“下一步”确认最新内容',
+          'Basic information changed while submitting. Click “Next” again to confirm the latest content.',
+        ))
+        return
+      }
+
       requestStage = 'chapters'
       const chapters = await StudioScriptsApi.getChapters(confirmedImportId)
+      if (basicInfoEditRevisionRef.current !== submissionEditRevision) {
+        message.info(l(
+          '基础信息在提交期间发生了变化，请再次点击“下一步”确认最新内容',
+          'Basic information changed while submitting. Click “Next” again to confirm the latest content.',
+        ))
+        return
+      }
       if (!chapters.length) {
         invalidateScriptImportChapters(confirmedImportId)
         message.warning(l(
@@ -1101,12 +1297,56 @@ const ProjectCreatePage: React.FC = () => {
     }
   }
 
-  const leaveProjectCreation = () => {
+  const clearLocalProjectDrafts = async () => {
+    const releaseDraftWriteHold = holdProjectCreationDraftWrites()
     persistDraftOnUnmountRef.current = false
     projectDraftPersistEnabledRef.current = false
-    clearProjectCreationDrafts()
+    const cleared = await clearProjectCreationDrafts()
+    if (!cleared) {
+      releaseDraftWriteHold()
+      persistDraftOnUnmountRef.current = true
+      projectDraftPersistEnabledRef.current = !restoringLocalDraft && !localDraftRestoreFailed
+      message.error(l(
+        '未能确认本地草稿已完全清除，已停止退出，请重试',
+        'The local draft could not be confirmed as fully cleared. Exit was stopped; retry.',
+      ))
+      return null
+    }
+    return releaseDraftWriteHold
+  }
+
+  const leaveProjectCreation = async () => {
+    const releaseDraftWriteHold = await clearLocalProjectDrafts()
+    if (!releaseDraftWriteHold) return
     setExitConfirmOpen(false)
     navigate('/projects')
+    const fallbackReleaseTimer = window.setTimeout(releaseDraftWriteHold, 1000)
+    window.requestAnimationFrame(() => {
+      window.clearTimeout(fallbackReleaseTimer)
+      window.setTimeout(releaseDraftWriteHold, 0)
+    })
+  }
+
+  const confirmDiscardFailedLocalDraft = () => {
+    Modal.confirm({
+      centered: true,
+      title: l('放弃此本地草稿？', 'Discard this local draft?'),
+      content: l(
+        '完整正文无法恢复。放弃后会清除本机中的这份草稿并重新开始，此操作不可撤销。',
+        'The complete content could not be restored. Discarding clears this local draft and starts over. This cannot be undone.',
+      ),
+      okText: l('放弃并重新开始', 'Discard and restart'),
+      cancelText: l('取消', 'Cancel'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        const releaseDraftWriteHold = await clearLocalProjectDrafts()
+        if (!releaseDraftWriteHold) {
+          throw new Error('Failed to clear the local project draft')
+        }
+        // 页面销毁前保持冻结，防止 pagehide/unmount 再次写回刚删除的草稿。
+        window.location.reload()
+      },
+    })
   }
 
   const handleSaveAndExit = async () => {
@@ -1125,21 +1365,6 @@ const ProjectCreatePage: React.FC = () => {
         ))
       }
       setScriptImportId(persistedId)
-      setBasicInfoBaseline(createBasicInfoSnapshot({
-        id: persistedId,
-        fileName: saved?.fileName?.trim() || requestBody.sourceFileName,
-        fileType: saved?.fileType?.trim() || requestBody.fileType,
-        title: saved?.title ?? requestBody.title,
-        rawText: (saved?.rawText ?? requestBody.rawText).slice(0, MAX_SCRIPT_LENGTH),
-        videoRatio: saved?.videoRatio ?? requestBody.videoRatio,
-        targetMarket: saved?.targetMarket ?? requestBody.targetMarket,
-        visualStyleId: hasOwnNullableField(saved, 'visualStyleId')
-          ? saved?.visualStyleId
-          : requestBody.visualStyleId,
-        toneStyleId: hasOwnNullableField(saved, 'toneStyleId')
-          ? saved?.toneStyleId
-          : requestBody.toneStyleId,
-      }))
       primeScriptImportDetail(persistedId, {
         ...saved,
         id: persistedId,
@@ -1161,7 +1386,7 @@ const ProjectCreatePage: React.FC = () => {
       invalidateScriptImportChapters(persistedId)
       resetBasicInfoTouched()
       message.success(l('基础信息已保存', 'Basic information saved'))
-      leaveProjectCreation()
+      await leaveProjectCreation()
     } catch (error) {
       message.error(getApiErrorMessage(error, l('保存基础信息失败', 'Failed to save basic information')))
     } finally {
@@ -1170,17 +1395,34 @@ const ProjectCreatePage: React.FC = () => {
     }
   }
 
-  const closeEpisodeImport = () => {
-    if (parsingEpisodeFile) return
+  const resetEpisodeImport = () => {
+    episodeImportEditRevisionRef.current += 1
     setEpisodeImportOpen(false)
     setEpisodeImportText('')
     setEpisodeImportFileName('')
   }
 
+  const closeEpisodeImport = () => {
+    if (
+      parsingEpisodeFile
+      || creatingEpisode
+      || chapterRefreshPending
+      || chapterSubmissionRef.current
+      || pendingChapterCreationRef.current
+    ) return
+    resetEpisodeImport()
+  }
+
   const handleEpisodeFileImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     event.target.value = ''
-    if (!file) return
+    if (
+      !file
+      || submitting
+      || assetSubmissionRef.current
+      || chapterRefreshPending
+      || pendingChapterCreationRef.current
+    ) return
 
     setEpisodeImportFileName(file.name)
     setParsingEpisodeFile(true)
@@ -1188,6 +1430,7 @@ const ProjectCreatePage: React.FC = () => {
       const parsed = await StudioScriptsApi.parseChapterFile(file)
       const parsedText = parsed.rawText ?? ''
       setEpisodeImportFileName(parsed.fileName?.trim() || file.name)
+      episodeImportEditRevisionRef.current += 1
       setEpisodeImportText(parsedText.slice(0, MAX_SCRIPT_LENGTH))
       if (!parsedText.trim()) {
         message.warning(l('解析完成，但未返回剧本内容', 'Parsing completed, but no script content was returned'))
@@ -1202,29 +1445,53 @@ const ProjectCreatePage: React.FC = () => {
   }
 
   const handleImportEpisodes = async () => {
-    if (restoringImport) {
-      message.info(l('正在恢复分集数据，请稍候', 'Episodes are still being restored'))
+    if (chapterSubmissionRef.current) return
+    if (submitting || assetSubmissionRef.current) {
+      message.info(l('资产提取正在提交，请稍候', 'Asset extraction is being submitted. Please wait.'))
       return
     }
-    if (!episodeImportText.trim()) {
-      message.warning(l('请输入剧集内容', 'Enter episode content'))
+    if (restoringLocalDraft || restoringImport) {
+      message.info(l('正在恢复分集数据，请稍候', 'Episodes are still being restored'))
       return
     }
     if (scriptImportId === null) {
       message.warning(l('缺少剧本导入 ID，请重新解析剧本', 'Missing script import ID. Parse the script again.'))
       return
     }
+    const importKey = String(scriptImportId)
+    const currentPendingCreation = pendingChapterCreationRef.current?.scriptImportId === importKey
+      ? pendingChapterCreationRef.current
+      : null
+    if (!episodeImportText.trim() && !currentPendingCreation) {
+      message.warning(l('请输入剧集内容', 'Enter episode content'))
+      return
+    }
 
+    chapterSubmissionRef.current = true
     setCreatingEpisode(true)
     chapterRestoreRequestRef.current += 1
-    try {
-      const previousEpisodeIds = new Set(episodes.map((episode) => episode.id))
-      const createdChapters = await StudioScriptsApi.createChapter({
-        scriptImportId,
-        rawText: episodeImportText,
-      })
-      invalidateScriptImportChapters(scriptImportId)
+    const submissionEditRevision = episodeImportEditRevisionRef.current
+    let requestStage: 'create' | 'list' = 'create'
+
+    const refreshCreatedChapters = async (pending: PendingChapterCreation) => {
       const chapters = await StudioScriptsApi.getChapters(scriptImportId)
+      const returnedChapterIds = new Set(chapters
+        .map((chapter) => chapter.id)
+        .filter((id): id is StudioScriptImportId => id !== null && id !== undefined)
+        .map(String))
+      const previousEpisodeIds = new Set(pending.previousEpisodeIds)
+      const creationVisible = pending.createdChapterIds.length > 0
+        ? pending.createdChapterIds.every((id) => returnedChapterIds.has(id))
+        : chapters.length > previousEpisodeIds.size
+          || [...returnedChapterIds].some((id) => !previousEpisodeIds.has(id))
+
+      if (!creationVisible) {
+        throw new Error(l(
+          '剧集已提交，但列表尚未更新，请稍后重试刷新',
+          'The episode was submitted, but the list is not updated yet. Retry shortly.',
+        ))
+      }
+
       primeScriptImportChapters(scriptImportId, chapters)
       const cachedImportDetail = readCachedScriptImportDetail(scriptImportId)
       if (cachedImportDetail) {
@@ -1237,56 +1504,98 @@ const ProjectCreatePage: React.FC = () => {
         chapters,
         (episodeNumber) => l(`第${episodeNumber}集`, `Episode ${episodeNumber}`),
       )
-      const createdImportChapterIds = new Set(createdChapters
-        .map((chapter) => chapter.id)
-        .filter((id): id is StudioScriptImportId => id !== null && id !== undefined)
-        .map(String))
+      const createdChapterIds = new Set(pending.createdChapterIds)
       const createdEpisodeIndex = nextEpisodes.findIndex((episode) =>
-        createdImportChapterIds.has(episode.id))
-      const appendedEpisodeIndex = nextEpisodes.findIndex((episode) => !previousEpisodeIds.has(episode.id))
+        createdChapterIds.has(episode.id))
+      const appendedEpisodeIndex = nextEpisodes.findIndex((episode) =>
+        !previousEpisodeIds.has(episode.id))
       setEpisodes(nextEpisodes)
       setActiveEpisodeIndex(createdEpisodeIndex >= 0
         ? createdEpisodeIndex
         : appendedEpisodeIndex >= 0
           ? appendedEpisodeIndex
           : Math.max(0, nextEpisodes.length - 1))
-      closeEpisodeImport()
+      return nextEpisodes
+    }
+
+    try {
+      let baseEpisodes = episodes
+      const pendingCreation = pendingChapterCreationRef.current?.scriptImportId === importKey
+        ? pendingChapterCreationRef.current
+        : null
+      if (pendingCreation) {
+        requestStage = 'list'
+        baseEpisodes = await refreshCreatedChapters(pendingCreation)
+        clearPendingChapterCreation(pendingCreation)
+        if (pendingCreation.editRevision === submissionEditRevision) {
+          resetEpisodeImport()
+          message.success(l('剧集已新增', 'Episode added'))
+          return
+        }
+      }
+
+      requestStage = 'create'
+      const previousEpisodeIds = new Set(baseEpisodes.map((episode) => episode.id))
+      const createdChapters = await StudioScriptsApi.createChapter({
+        scriptImportId,
+        rawText: episodeImportText,
+      })
+      const createdChapterIds = createdChapters
+        .map((chapter) => chapter.id)
+        .filter((id): id is StudioScriptImportId => id !== null && id !== undefined)
+        .map(String)
+        .filter((id) => !previousEpisodeIds.has(id))
+      const nextPendingCreation: PendingChapterCreation = {
+        scriptImportId: importKey,
+        editRevision: submissionEditRevision,
+        previousEpisodeIds: [...previousEpisodeIds],
+        createdChapterIds,
+      }
+      pendingChapterCreationRef.current = nextPendingCreation
+      setChapterRefreshPending(true)
+
+      // create 已经改变了分集，即使后续列表回显失败，也必须重新估算并允许重新提取资产。
+      chapterMutationRevisionRef.current += 1
+      assetExtractionStartedRef.current = false
+      assetEstimateRequestRevisionRef.current += 1
+      StudioScriptsApi.invalidateAssetExtractEstimate(scriptImportId)
+      setAssetExtractEstimate(null)
+      setAssetExtractEstimateLoading(false)
+      setAssetExtractEstimateError(undefined)
+      setAssetExtractEstimateRetryToken((current) => current + 1)
+      setAssetEpisodes(null)
+      setAssetEpisodesError(undefined)
+      invalidateScriptImportChapters(scriptImportId)
+      requestStage = 'list'
+      await refreshCreatedChapters(nextPendingCreation)
+      clearPendingChapterCreation(nextPendingCreation)
+      resetEpisodeImport()
       message.success(l('剧集已新增', 'Episode added'))
     } catch (error) {
-      message.error(getApiErrorMessage(error, l('新增剧集失败', 'Failed to add episode')))
+      message.error(getApiErrorMessage(
+        error,
+        requestStage === 'list'
+          ? l('剧集已新增，但列表刷新失败，请重试', 'The episode was added, but the list refresh failed. Retry.')
+          : l('新增剧集失败', 'Failed to add episode'),
+      ))
     } finally {
+      chapterSubmissionRef.current = false
       setCreatingEpisode(false)
     }
   }
 
   const handleExtractAssets = async () => {
     if (assetSubmissionRef.current) return
-    if (
-      assetExtractEstimate
-      && !assetExtractEstimate.alreadyStarted
-      && !assetExtractEstimate.unlimited
-      && !assetExtractEstimate.sufficient
-    ) {
-      message.warning(l(
-        `积分不足，还差 ${Number(assetExtractEstimate.deficitCredits).toLocaleString()} 积分`,
-        `Insufficient credits. ${Number(assetExtractEstimate.deficitCredits).toLocaleString()} more required.`,
-      ))
+    if (chapterSubmissionRef.current || creatingEpisode) {
+      message.info(l('新增剧集正在提交，请稍候', 'New episodes are being submitted. Please wait.'))
       return
     }
-    if (restoringBasicInfo || basicInfoRestoreFailed) {
+    if (chapterRefreshPending || pendingChapterCreationRef.current) {
+      message.info(l('请先重试刷新新增剧集', 'Retry refreshing the newly added episodes first.'))
+      return
+    }
+    if (restoringLocalDraft || restoringBasicInfo || basicInfoRestoreFailed) {
       message.info(l('请先恢复完整的剧本基本信息', 'Restore the complete script information first.'))
-      return
-    }
-    if (studioStyleOptionsLoading) {
-      message.info(l('正在加载风格选项，请稍候', 'Style options are still loading'))
-      return
-    }
-    if (studioStyleOptionsError) {
-      message.warning(l('风格选项加载失败，请先重试', 'Style options failed to load. Retry first.'))
-      return
-    }
-    if (!selectedVisualStyle || !selectedToneStyle) {
-      message.warning(l('原风格已不可用，请返回基本信息重新选择', 'A saved style is unavailable. Return to Basics and select again.'))
       return
     }
     if (!episodes.length || episodes.some((episode) => !episode.rawText.trim())) {
@@ -1302,16 +1611,25 @@ const ProjectCreatePage: React.FC = () => {
       return
     }
 
+    const extractionChapterRevision = chapterMutationRevisionRef.current
     assetSubmissionRef.current = true
     setSubmitting(true)
     try {
       setAssetEpisodes(null)
       setAssetEpisodesError(undefined)
 
-      if (!assetExtractionStartedRef.current && !assetExtractEstimate?.alreadyStarted) {
+      if (!assetExtractionStartedRef.current) {
         await StudioScriptsApi.extractAssets({
           scriptImportId: extractScriptImportId,
         })
+        if (chapterMutationRevisionRef.current !== extractionChapterRevision) {
+          assetExtractionStartedRef.current = false
+          message.info(l(
+            '分集已发生变化，请重新点击下一步提取最新资产',
+            'Episodes changed. Click Next again to extract the latest assets.',
+          ))
+          return
+        }
         assetExtractionStartedRef.current = true
       }
 
@@ -1380,9 +1698,14 @@ const ProjectCreatePage: React.FC = () => {
       const value = created.name?.trim() || draft.name.trim()
       markBasicInfoTouched()
       if (created.id !== null && created.id !== undefined) {
+        const createdStyleKey = `${customStyleType}:${created.id}`
+        selectedStyleKeysRef.current = {
+          ...selectedStyleKeysRef.current,
+          [customStyleCategory]: createdStyleKey,
+        }
         setSelectedStyleKeys((current) => ({
           ...current,
-          [customStyleCategory]: `${customStyleType}:${created.id}`,
+          [customStyleCategory]: createdStyleKey,
         }))
       }
       setCustomStyleModalOpen(false)
@@ -1392,9 +1715,16 @@ const ProjectCreatePage: React.FC = () => {
           (created.id !== null && created.id !== undefined && String(item.id) === String(created.id))
           || item.name.trim() === value)
         if (!createdOption) return
+        const createdStyleKey = `${createdOption.styleType}:${createdOption.id}`
+        if (selectedStyleKeysRef.current[customStyleCategory] === createdStyleKey) return
+        markBasicInfoTouched()
+        selectedStyleKeysRef.current = {
+          ...selectedStyleKeysRef.current,
+          [customStyleCategory]: createdStyleKey,
+        }
         setSelectedStyleKeys((current) => ({
           ...current,
-          [customStyleCategory]: `${createdOption.styleType}:${createdOption.id}`,
+          [customStyleCategory]: createdStyleKey,
         }))
       }).catch(() => undefined)
     } catch (error) {
@@ -1405,7 +1735,8 @@ const ProjectCreatePage: React.FC = () => {
     }
   }
 
-  const hasRequiredBasicInfo = Boolean(name.trim() && script.trim() && ratio)
+  // 输入阶段只做 O(1) 的长度判断；全空白校验留到用户点击提交时执行。
+  const hasRequiredBasicInfo = Boolean(name.trim() && script.length && ratio)
   const styleSelectionReady = !studioStyleOptionsLoading
     && !studioStyleOptionsError
     && Boolean(selectedVisualStyle && selectedToneStyle)
@@ -1423,28 +1754,25 @@ const ProjectCreatePage: React.FC = () => {
       l('资产提取积分估算失败，点击重试', 'Credit estimation failed. Click to retry.'),
     )
     : ''
-  const assetCreditsInsufficient = Boolean(
-    assetExtractEstimate
-    && !assetExtractEstimate.alreadyStarted
-    && !assetExtractEstimate.unlimited
-    && !assetExtractEstimate.sufficient,
-  )
   const assetStepReady = !assetEpisodesLoading
     && !assetEpisodesError
     && assetStepEpisodes.length > 0
   const canProceed = currentStep === 2
-    ? assetStepReady
-    : !restoringBasicInfo
+    ? !restoringLocalDraft && !localDraftRestoreFailed && assetStepReady
+    : !restoringLocalDraft
+      && !localDraftRestoreFailed
+      && !restoringBasicInfo
       && !basicInfoRestoreFailed
-      && styleSelectionReady
       && (currentStep === 0
-        ? hasRequiredBasicInfo
+        ? styleSelectionReady && hasRequiredBasicInfo
         : currentStep === 1
           ? !restoringImport
-            && !assetCreditsInsufficient
+            && !chapterRefreshPending
             && episodes.length > 0
             && episodes.every((episode) => episode.title.trim() && episode.rawText.trim())
-          : true)
+          : currentStep === 3
+            ? styleSelectionReady
+            : true)
 
   const handleNext = () => {
     if (currentStep === 0) {
@@ -1481,14 +1809,37 @@ const ProjectCreatePage: React.FC = () => {
       || assetEpisodes === null
       || assetStepEpisodes.length === 0
     )
-    : restoringBasicInfo
+    : restoringLocalDraft
+      || localDraftRestoreFailed
+      || restoringBasicInfo
       || basicInfoRestoreFailed
-      || !styleSelectionReady
+      || (currentStep === 3 && !styleSelectionReady)
       || ((currentStep === 1 || currentStep === 3) && (
         restoringImport
         || episodes.length === 0
       ))
   const renderWorkflowRestoreState = () => {
+    if (restoringLocalDraft) {
+      return (
+        <div className="project-create-page__restore-state" role="status">
+          <Spin />
+          <span>{l('正在恢复本地草稿...', 'Restoring local draft...')}</span>
+        </div>
+      )
+    }
+    if (localDraftRestoreFailed) {
+      return (
+        <div className="project-create-page__restore-state is-empty" role="alert">
+          <span>{l('完整本地草稿恢复失败，已暂停自动保存以保护原草稿', 'The complete local draft failed to restore. Autosave is paused to protect it.')}</span>
+          <Button onClick={() => setLocalDraftRestoreRetryToken((current) => current + 1)}>
+            {l('重试恢复草稿', 'Retry draft restoration')}
+          </Button>
+          <Button danger onClick={confirmDiscardFailedLocalDraft}>
+            {l('放弃此草稿', 'Discard draft')}
+          </Button>
+        </div>
+      )
+    }
     if (currentStep === 2 && assetEpisodesError) {
       return (
         <div className="project-create-page__restore-state is-empty" role="alert">
@@ -1553,7 +1904,7 @@ const ProjectCreatePage: React.FC = () => {
         </div>
       )
     }
-    if (studioStyleOptionsLoading) {
+    if (currentStep === 3 && studioStyleOptionsLoading) {
       return (
         <div className="project-create-page__restore-state" role="status">
           <Spin />
@@ -1561,7 +1912,7 @@ const ProjectCreatePage: React.FC = () => {
         </div>
       )
     }
-    if (studioStyleOptionsError) {
+    if (currentStep === 3 && studioStyleOptionsError) {
       return (
         <div className="project-create-page__restore-state is-empty" role="alert">
           <span>{l('风格选项加载失败', 'Failed to load style options')}</span>
@@ -1571,7 +1922,7 @@ const ProjectCreatePage: React.FC = () => {
         </div>
       )
     }
-    if (!selectedVisualStyle || !selectedToneStyle) {
+    if (currentStep === 3 && (!selectedVisualStyle || !selectedToneStyle)) {
       return (
         <div className="project-create-page__restore-state is-empty" role="alert">
           <span>{l('原风格已不可用，请重新选择', 'A saved style is no longer available.')}</span>
@@ -1607,13 +1958,17 @@ const ProjectCreatePage: React.FC = () => {
             className="project-create-page__close"
             icon={<CloseOutlined />}
             aria-label={l('返回项目列表', 'Back to projects')}
-            disabled={parsingScript || submitting || creatingEpisode || parsingEpisodeFile}
+            disabled={restoringLocalDraft || parsingScript || submitting || creatingEpisode || parsingEpisodeFile}
             onClick={() => {
+              if (localDraftRestoreFailed) {
+                confirmDiscardFailedLocalDraft()
+                return
+              }
               if (currentStep === 0 && hasUnsavedBasicInfo) {
                 setExitConfirmOpen(true)
                 return
               }
-              leaveProjectCreation()
+              void leaveProjectCreation()
             }}
           />
           <ol className={`project-create-page__steps${currentStep === 3 ? ' is-final-step' : ''}`} aria-label={l('创建步骤', 'Creation steps')}>
@@ -1625,7 +1980,8 @@ const ProjectCreatePage: React.FC = () => {
                 <button
                   type="button"
                   className="project-create-page__step-button"
-                  disabled={!((currentStep === 2 && index === 1) || (currentStep === 3 && index === 2))}
+                  disabled={restoringLocalDraft
+                    || !((currentStep === 2 && index === 1) || (currentStep === 3 && index === 2))}
                   title={currentStep === 2 && index === 1
                     ? l('返回剧本分集', 'Back to episodes')
                     : currentStep === 3 && index === 2
@@ -1670,12 +2026,6 @@ const ProjectCreatePage: React.FC = () => {
             loading={submitting || assetEstimatePending || (currentStep === 2 && assetEpisodesLoading)}
             title={currentStep === 1
               ? assetEstimateErrorMessage
-                || (assetCreditsInsufficient && assetExtractEstimate
-                  ? l(
-                    `积分不足，还差 ${Number(assetExtractEstimate.deficitCredits).toLocaleString()} 积分`,
-                    `Insufficient credits. ${Number(assetExtractEstimate.deficitCredits).toLocaleString()} more required.`,
-                  )
-                  : '')
                 || (assetExtractEstimate
                   ? l(
                     `点击后预计消耗 ${requiredCreditsText} 积分`,
@@ -1703,12 +2053,42 @@ const ProjectCreatePage: React.FC = () => {
         </div>
       </header>
 
+      {Boolean(localDraftWriteError) && !restoringLocalDraft && !localDraftRestoreFailed && (
+        <div className="project-create-page__draft-warning" role="alert">
+          <span>{l(
+            '完整草稿未能写入本地数据库，请重试保存；当前页面内容不受影响。',
+            'The complete draft could not be saved to the local database. Retry saving; the current page content is unaffected.',
+          )}</span>
+          <Button size="small" onClick={flushProjectDraft}>
+            {l('重试保存草稿', 'Retry draft save')}
+          </Button>
+        </div>
+      )}
+
       {currentStep === 0 ? <main
         className="project-create-page__main"
-        aria-busy={restoringBasicInfo || parsingScript || submitting}
+        aria-busy={restoringLocalDraft || restoringBasicInfo || parsingScript || submitting}
       >
         <section className="project-create-page__form" aria-label={l('基本信息', 'Basic information')}>
-          {restoringBasicInfo ? (
+          {restoringLocalDraft ? (
+            <div className="project-create-page__basic-restore" role="status">
+              <Spin size="small" />
+              <span>{l('正在恢复本地草稿...', 'Restoring local draft...')}</span>
+            </div>
+          ) : localDraftRestoreFailed ? (
+            <div className="project-create-page__basic-restore is-error" role="alert">
+              <span>{l('完整本地草稿恢复失败，已暂停自动保存', 'The complete local draft failed to restore. Autosave is paused.')}</span>
+              <Button
+                size="small"
+                onClick={() => setLocalDraftRestoreRetryToken((current) => current + 1)}
+              >
+                {l('重试', 'Retry')}
+              </Button>
+              <Button danger size="small" onClick={confirmDiscardFailedLocalDraft}>
+                {l('放弃草稿', 'Discard')}
+              </Button>
+            </div>
+          ) : restoringBasicInfo ? (
             <div className="project-create-page__basic-restore" role="status">
               <Spin size="small" />
               <span>{l('正在恢复剧本基本信息...', 'Restoring script information...')}</span>
@@ -1903,9 +2283,10 @@ const ProjectCreatePage: React.FC = () => {
               aria-label={l('重新导入剧本', 'Import another script')}
               title={l('重新导入剧本', 'Import another script')}
               disabled={restoringBasicInfo
+                || restoringLocalDraft
                 || basicInfoRestoreFailed
                 || restoringImport
-                || !styleSelectionReady
+                || submitting
                 || creatingEpisode
                 || parsingEpisodeFile}
               onClick={() => setEpisodeImportOpen(true)}
@@ -1989,7 +2370,7 @@ const ProjectCreatePage: React.FC = () => {
           <h2>{l('确认退出？', 'Exit creation?')}</h2>
           <p>{l('基础信息的内容尚未保存，是否直接退出？', 'Your basic information has not been saved. Exit anyway?')}</p>
           <div className="project-create-page__exit-actions">
-            <Button disabled={submitting} onClick={leaveProjectCreation}>
+            <Button disabled={submitting} onClick={() => void leaveProjectCreation()}>
               {l('直接退出', 'Exit without saving')}
             </Button>
             <Button
@@ -2017,7 +2398,12 @@ const ProjectCreatePage: React.FC = () => {
       >
         <header className="project-create-page__episode-import-header">
           <h2>{l('新增剧集', 'Add episodes')}</h2>
-          <button type="button" aria-label={l('关闭', 'Close')} disabled={parsingEpisodeFile} onClick={closeEpisodeImport}>
+          <button
+            type="button"
+            aria-label={l('关闭', 'Close')}
+            disabled={submitting || creatingEpisode || parsingEpisodeFile || chapterRefreshPending}
+            onClick={closeEpisodeImport}
+          >
             <CloseOutlined />
           </button>
         </header>
@@ -2026,7 +2412,7 @@ const ProjectCreatePage: React.FC = () => {
             <Button
               icon={<PlusOutlined />}
               loading={parsingEpisodeFile}
-              disabled={creatingEpisode || parsingEpisodeFile}
+              disabled={submitting || creatingEpisode || parsingEpisodeFile || chapterRefreshPending}
               onClick={() => episodeImportInputRef.current?.click()}
             >
               {l('上传剧本', 'Upload script')}
@@ -2038,16 +2424,19 @@ const ProjectCreatePage: React.FC = () => {
               type="file"
               accept={SCRIPT_IMPORT_ACCEPT}
               hidden
-              disabled={creatingEpisode || parsingEpisodeFile}
+              disabled={submitting || creatingEpisode || parsingEpisodeFile || chapterRefreshPending}
               onChange={handleEpisodeFileImport}
             />
           </div>
           <textarea
             value={episodeImportText}
-            disabled={creatingEpisode || parsingEpisodeFile}
+            disabled={submitting || creatingEpisode || parsingEpisodeFile || chapterRefreshPending}
             maxLength={MAX_SCRIPT_LENGTH}
             placeholder={l('请输入剧集内容...', 'Enter episode content...')}
-            onChange={(event) => setEpisodeImportText(event.target.value)}
+            onChange={(event) => {
+              episodeImportEditRevisionRef.current += 1
+              setEpisodeImportText(event.target.value)
+            }}
           />
         </div>
         <footer className="project-create-page__episode-import-footer">
@@ -2055,10 +2444,15 @@ const ProjectCreatePage: React.FC = () => {
           <Button
             type="primary"
             loading={creatingEpisode}
-            disabled={!episodeImportText.trim() || restoringImport || creatingEpisode || parsingEpisodeFile || scriptImportId === null}
+            disabled={(!episodeImportText.length && !chapterRefreshPending)
+              || restoringImport
+              || submitting
+              || creatingEpisode
+              || parsingEpisodeFile
+              || scriptImportId === null}
             onClick={() => void handleImportEpisodes()}
           >
-            {l('提交', 'Submit')}
+            {chapterRefreshPending ? l('重试刷新', 'Retry refresh') : l('提交', 'Submit')}
           </Button>
         </footer>
       </Modal>

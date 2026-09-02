@@ -12,9 +12,21 @@ type DraftEnvelope<T> = {
   data: T
 }
 
+type FullDraftWriteSettled = (error?: unknown) => void
+type QueuedFullDraftWrite = {
+  draft: DraftEnvelope<unknown>
+  onSettled?: FullDraftWriteSettled
+}
+
 let draftDatabasePromise: Promise<IDBDatabase> | undefined
-const queuedFullDrafts = new Map<string, DraftEnvelope<unknown>>()
+const queuedFullDrafts = new Map<string, QueuedFullDraftWrite>()
 const activeFullDraftWrites = new Set<string>()
+const activeFullDraftWriteWorkers = new Map<string, Promise<void>>()
+let lastDraftTimestamp = 0
+let namespaceClearedAt = 0
+const keyClearedAt = new Map<string, number>()
+let namespaceWriteSuspensions = 0
+const keyWriteSuspensions = new Map<string, number>()
 
 export const PROJECT_CREATION_DRAFT_KEYS = {
   project: 'jellyfish:project-creation:v2:project',
@@ -28,6 +40,51 @@ const LEGACY_PROJECT_CREATION_DRAFT_KEYS = [
   'jellyfish:project-creation:v1:assets',
   'jellyfish:project-creation:v1:clips',
 ] as const
+
+const PROJECT_CREATION_DRAFT_PREFIXES = [
+  'jellyfish:project-creation:v2:',
+  'jellyfish:project-creation:v1:',
+] as const
+
+const createDraftTimestamp = () => {
+  lastDraftTimestamp = Math.max(Date.now(), lastDraftTimestamp + 1)
+  return lastDraftTimestamp
+}
+
+const draftWasCleared = (key: string, updatedAt: number) => updatedAt <= Math.max(
+  namespaceClearedAt,
+  keyClearedAt.get(key) ?? 0,
+)
+
+const draftWritesSuspended = (key: string) => namespaceWriteSuspensions > 0
+  || (keyWriteSuspensions.get(key) ?? 0) > 0
+
+const suspendDraftWrites = (keys: readonly string[], wholeNamespace: boolean) => {
+  if (wholeNamespace) namespaceWriteSuspensions += 1
+  keys.forEach((key) => {
+    keyWriteSuspensions.set(key, (keyWriteSuspensions.get(key) ?? 0) + 1)
+  })
+}
+
+const resumeDraftWrites = (keys: readonly string[], wholeNamespace: boolean) => {
+  if (wholeNamespace) namespaceWriteSuspensions = Math.max(0, namespaceWriteSuspensions - 1)
+  keys.forEach((key) => {
+    const remaining = (keyWriteSuspensions.get(key) ?? 0) - 1
+    if (remaining > 0) keyWriteSuspensions.set(key, remaining)
+    else keyWriteSuspensions.delete(key)
+  })
+}
+
+/** 跨页面卸载临时冻结整个创建草稿命名空间，避免子步骤 cleanup 把刚清除的草稿写回。 */
+export const holdProjectCreationDraftWrites = () => {
+  namespaceWriteSuspensions += 1
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    namespaceWriteSuspensions = Math.max(0, namespaceWriteSuspensions - 1)
+  }
+}
 
 export const getProjectCreationDraftKey = (
   baseKey: string,
@@ -86,64 +143,114 @@ const getDraftDatabase = () => {
 }
 
 const writeFullDraft = async <T,>(key: string, draft: DraftEnvelope<T>) => {
+  if (draftWritesSuspended(key) || draftWasCleared(key, draft.updatedAt)) return false
+  const database = await getDraftDatabase()
+  if (draftWritesSuspended(key) || draftWasCleared(key, draft.updatedAt)) return false
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(DRAFT_STORE_NAME, 'readwrite')
+    transaction.objectStore(DRAFT_STORE_NAME).put(draft, key)
+    transaction.oncomplete = () => resolve()
+    transaction.onerror = () => reject(transaction.error)
+    transaction.onabort = () => reject(transaction.error)
+  })
+  return true
+}
+
+const notifyFullDraftWriteSettled = (
+  callback: FullDraftWriteSettled | undefined,
+  error?: unknown,
+) => {
   try {
-    const database = await getDraftDatabase()
-    await new Promise<void>((resolve, reject) => {
-      const transaction = database.transaction(DRAFT_STORE_NAME, 'readwrite')
-      transaction.objectStore(DRAFT_STORE_NAME).put(draft, key)
-      transaction.oncomplete = () => resolve()
-      transaction.onerror = () => reject(transaction.error)
-      transaction.onabort = () => reject(transaction.error)
-    })
+    callback?.(error)
   } catch {
-    // 精简的 localStorage 草稿仍可恢复所有非图片编辑数据。
+    // 草稿状态通知不能中断后续队列写入。
   }
 }
 
 /** 同一草稿有在途写入时只保留最新快照，避免高频修改堆积 IndexedDB 事务。 */
-const queueFullDraftWrite = <T,>(key: string, draft: DraftEnvelope<T>) => {
-  queuedFullDrafts.set(key, draft as DraftEnvelope<unknown>)
+const queueFullDraftWrite = <T,>(
+  key: string,
+  draft: DraftEnvelope<T>,
+  onSettled?: FullDraftWriteSettled,
+) => {
+  queuedFullDrafts.set(key, {
+    draft: draft as DraftEnvelope<unknown>,
+    onSettled,
+  })
   if (activeFullDraftWrites.has(key)) return
 
   activeFullDraftWrites.add(key)
-  void (async () => {
+  const worker = (async () => {
     try {
       while (queuedFullDrafts.has(key)) {
-        const latestDraft = queuedFullDrafts.get(key)
+        const latestWrite = queuedFullDrafts.get(key)
         queuedFullDrafts.delete(key)
-        if (latestDraft) await writeFullDraft(key, latestDraft)
+        if (!latestWrite) continue
+        try {
+          const written = await writeFullDraft(key, latestWrite.draft)
+          if (written) notifyFullDraftWriteSettled(latestWrite.onSettled)
+        } catch (error) {
+          notifyFullDraftWriteSettled(latestWrite.onSettled, error)
+        }
       }
     } finally {
       activeFullDraftWrites.delete(key)
     }
   })()
+  activeFullDraftWriteWorkers.set(key, worker)
+  void worker.finally(() => {
+    if (activeFullDraftWriteWorkers.get(key) === worker) {
+      activeFullDraftWriteWorkers.delete(key)
+    }
+  })
 }
 
-const deleteFullDrafts = async (keys: readonly string[]) => {
+const deleteFullDrafts = async (
+  keys: readonly string[],
+  prefixes: readonly string[] = [],
+) => {
   try {
     const database = await getDraftDatabase()
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction(DRAFT_STORE_NAME, 'readwrite')
       const store = transaction.objectStore(DRAFT_STORE_NAME)
       keys.forEach((key) => store.delete(key))
+      if (prefixes.length > 0) {
+        const cursorRequest = store.openKeyCursor()
+        cursorRequest.onsuccess = () => {
+          const cursor = cursorRequest.result
+          if (!cursor) return
+          const storedKey = String(cursor.primaryKey)
+          if (prefixes.some((prefix) => storedKey.startsWith(prefix))) {
+            store.delete(cursor.primaryKey)
+          }
+          cursor.continue()
+        }
+      }
       transaction.oncomplete = () => resolve()
       transaction.onerror = () => reject(transaction.error)
       transaction.onabort = () => reject(transaction.error)
     })
+    return true
   } catch {
-    // 对同步首屏恢复路径而言，清除 localStorage 已经足够。
+    return false
   }
 }
 
-const persistDraft = <T,>(key: string, value: T) => {
-  if (typeof window === 'undefined') return
+const persistDraft = <T,>(
+  key: string,
+  value: T,
+  compactValue: unknown = value,
+  onFullDraftWriteSettled?: FullDraftWriteSettled,
+) => {
+  if (typeof window === 'undefined' || draftWritesSuspended(key)) return false
 
   try {
-    const updatedAt = Date.now()
-    const compactDraft: DraftEnvelope<T> = {
+    const updatedAt = createDraftTimestamp()
+    const compactDraft: DraftEnvelope<unknown> = {
       version: DRAFT_VERSION,
       updatedAt,
-      data: value,
+      data: compactValue,
     }
     const fullDraft: DraftEnvelope<T> = {
       version: DRAFT_VERSION,
@@ -151,23 +258,33 @@ const persistDraft = <T,>(key: string, value: T) => {
       data: value,
     }
 
+    const serializedCompactDraft = JSON.stringify(compactDraft, (_property, childValue) => {
+      if (
+        typeof childValue === 'string'
+        && childValue.startsWith('data:')
+        && childValue.length > LARGE_DATA_URL_LENGTH
+      ) {
+        return undefined
+      }
+      return childValue
+    })
     try {
-      window.localStorage.setItem(key, JSON.stringify(compactDraft, (_property, childValue) => {
-        if (
-          typeof childValue === 'string'
-          && childValue.startsWith('data:')
-          && childValue.length > LARGE_DATA_URL_LENGTH
-        ) {
-          return undefined
-        }
-        return childValue
-      }))
+      window.localStorage.setItem(key, serializedCompactDraft)
     } catch {
-      // localStorage 已满时，IndexedDB 仍可保留完整草稿。
+      // 先移除可能占空间的旧同步副本，再用精简草稿重试一次。
+      try {
+        window.localStorage.removeItem(key)
+        window.localStorage.setItem(key, serializedCompactDraft)
+      } catch {
+        // localStorage 完全不可用或仍然已满时，完整草稿继续写入 IndexedDB。
+      }
     }
-    queueFullDraftWrite(key, fullDraft)
-  } catch {
+    queueFullDraftWrite(key, fullDraft, onFullDraftWriteSettled)
+    return true
+  } catch (error) {
+    notifyFullDraftWriteSettled(onFullDraftWriteSettled, error)
     // 草稿持久化绝不能阻塞编辑操作。
+    return false
   }
 }
 
@@ -178,16 +295,58 @@ export const readProjectCreationDraft = <T,>(key: string): T | undefined => {
 export const clearProjectCreationDrafts = (
   keys: readonly string[] = DEFAULT_PROJECT_CREATION_DRAFT_KEYS,
 ) => {
-  if (typeof window === 'undefined') return
+  if (typeof window === 'undefined') return Promise.resolve(true)
 
-  const keysToClear = keys === DEFAULT_PROJECT_CREATION_DRAFT_KEYS
-    ? [...keys, ...LEGACY_PROJECT_CREATION_DRAFT_KEYS]
+  const clearingDefaultDrafts = keys === DEFAULT_PROJECT_CREATION_DRAFT_KEYS
+  const clearTimestamp = createDraftTimestamp()
+  const localNamespaceKeys: string[] = []
+  let localDraftsCleared = true
+  if (clearingDefaultDrafts) {
+    try {
+      for (let index = 0; index < window.localStorage.length; index += 1) {
+        const storedKey = window.localStorage.key(index)
+        if (
+          storedKey
+          && PROJECT_CREATION_DRAFT_PREFIXES.some((prefix) => storedKey.startsWith(prefix))
+        ) {
+          localNamespaceKeys.push(storedKey)
+        }
+      }
+    } catch {
+      // localStorage 不可用时仍继续清理已知 key 和 IndexedDB 命名空间。
+      localDraftsCleared = false
+    }
+    namespaceClearedAt = clearTimestamp
+  }
+  const keysToClear = clearingDefaultDrafts
+    ? [...new Set([
+      ...keys,
+      ...LEGACY_PROJECT_CREATION_DRAFT_KEYS,
+      ...localNamespaceKeys,
+    ])]
     : [...keys]
   keysToClear.forEach((key) => {
     queuedFullDrafts.delete(key)
-    window.localStorage.removeItem(key)
+    keyClearedAt.set(key, clearTimestamp)
+    try {
+      window.localStorage.removeItem(key)
+    } catch {
+      // IndexedDB 清理仍会继续执行。
+      localDraftsCleared = false
+    }
   })
-  void deleteFullDrafts(keysToClear)
+  suspendDraftWrites(keysToClear, clearingDefaultDrafts)
+  const prefixesToClear = clearingDefaultDrafts ? PROJECT_CREATION_DRAFT_PREFIXES : []
+  const activeWritesToWaitFor = [...activeFullDraftWriteWorkers.entries()]
+    .filter(([key]) => keysToClear.includes(key)
+      || prefixesToClear.some((prefix) => key.startsWith(prefix)))
+    .map(([, worker]) => worker)
+  return Promise.all(activeWritesToWaitFor)
+    .then(() => deleteFullDrafts(keysToClear, prefixesToClear))
+    .then((fullDraftsCleared) => localDraftsCleared && fullDraftsCleared)
+    .finally(() => {
+      resumeDraftWrites(keysToClear, clearingDefaultDrafts)
+    })
 }
 
 export const readFullProjectCreationDraft = async <T,>(key: string): Promise<T | undefined> => {
@@ -200,6 +359,7 @@ export const readFullProjectCreationDraft = async <T,>(key: string): Promise<T |
       request.onerror = () => reject(request.error)
     })
     if (draft?.version !== DRAFT_VERSION || draft.data === undefined) return undefined
+    if (draftWasCleared(key, draft.updatedAt)) return undefined
 
     const localDraft = readLocalDraftEnvelope<T>(key)
     if (localDraft && draft.updatedAt < localDraft.updatedAt) return undefined
@@ -214,6 +374,8 @@ export const useProjectCreationDraft = <T,>(
   value: T,
   delay = 350,
   persistOnUnmountRef?: { current: boolean },
+  compactValue?: unknown,
+  onFullDraftWriteSettled?: FullDraftWriteSettled,
 ) => {
   const stableValueRef = useRef(value)
   const previousValue = stableValueRef.current
@@ -237,6 +399,10 @@ export const useProjectCreationDraft = <T,>(
   const stableValue = stableValueRef.current
   const latestValueRef = useRef(stableValue)
   latestValueRef.current = stableValue
+  const latestCompactValueRef = useRef<unknown>(compactValue ?? stableValue)
+  latestCompactValueRef.current = compactValue ?? stableValue
+  const latestWriteSettledRef = useRef(onFullDraftWriteSettled)
+  latestWriteSettledRef.current = onFullDraftWriteSettled
   const lastPersistedRef = useRef<{ key: string; value: T } | undefined>(undefined)
   const flushLatestDraftRef = useRef<() => void>(() => undefined)
   flushLatestDraftRef.current = () => {
@@ -246,8 +412,22 @@ export const useProjectCreationDraft = <T,>(
       lastPersistedRef.current?.key === key
       && Object.is(lastPersistedRef.current.value, latestValue)
     ) return
-    persistDraft<T>(key, latestValue)
-    lastPersistedRef.current = { key, value: latestValue }
+    const queued = persistDraft<T>(
+      key,
+      latestValue,
+      latestCompactValueRef.current,
+      (error) => {
+        if (
+          error
+          && lastPersistedRef.current?.key === key
+          && Object.is(lastPersistedRef.current.value, latestValue)
+        ) {
+          lastPersistedRef.current = undefined
+        }
+        latestWriteSettledRef.current?.(error)
+      },
+    )
+    if (queued) lastPersistedRef.current = { key, value: latestValue }
   }
   const flushLatestDraft = useCallback(() => {
     flushLatestDraftRef.current()

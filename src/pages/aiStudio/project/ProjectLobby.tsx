@@ -130,12 +130,13 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
   const searchInputRef = useRef<InputRef>(null)
   const [page, setPage] = useState(1)
   const [totalProjects, setTotalProjects] = useState(0)
-  const [workflowListRefreshToken] = useState(0)
+  const [workflowListRefreshToken, setWorkflowListRefreshToken] = useState(0)
   const [visibleInfoProjectId, setVisibleInfoProjectId] = useState<string | null>(null)
   const [openProjectMenuId, setOpenProjectMenuId] = useState<string | null>(null)
   const suppressProjectMenuOpenRef = useRef(false)
   const [renameModalOpen, setRenameModalOpen] = useState(false)
   const [renamingProject, setRenamingProject] = useState<ProjectView | null>(null)
+  const [renameSubmitting, setRenameSubmitting] = useState(false)
   const [renameForm] = Form.useForm()
 
   useEffect(() => {
@@ -227,14 +228,21 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
     : totalProjects
   const activePageSize = workspaceView === 'canvas' ? CANVAS_PAGE_SIZE : WORKFLOW_PAGE_SIZE
 
-  const handleOpenCreate = () => {
+  const handleOpenCreate = async () => {
     if (workspaceView === 'canvas') {
       const workspace = createCanvasWorkspace(l('未命名画布', 'Untitled canvas'))
       setCanvasWorkspaces(listCanvasWorkspaces())
       navigate(`/canvas/${workspace.id}`)
       return
     }
-    clearProjectCreationDrafts()
+    const draftsCleared = await clearProjectCreationDrafts()
+    if (!draftsCleared) {
+      message.error(l(
+        '本地创建草稿清理失败，请重试',
+        'Failed to clear the local creation draft. Retry.',
+      ))
+      return
+    }
     navigate('/projects/create')
   }
 
@@ -261,6 +269,7 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
 
   const handleRenameSubmit = async (values: { name: string }) => {
     if (!renamingProject) return
+    setRenameSubmitting(true)
     try {
       if (workspaceView === 'canvas') {
         const updated = renameCanvasWorkspace(renamingProject.id, values.name.trim())
@@ -271,16 +280,26 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
         setRenamingProject(null)
         return
       }
-      message.warning(l('剧本项目重命名接口未接入，暂不能修改名称', 'Script project rename API is not connected yet'))
+
+      await StudioScriptsApi.renameImport({
+        id: renamingProject.scriptImportId ?? renamingProject.id,
+        title: values.name.trim(),
+      })
+      message.success(l('项目已重命名', 'Project renamed'))
+      setRenameModalOpen(false)
+      setRenamingProject(null)
+      setWorkflowListRefreshToken((value) => value + 1)
     } catch {
       message.error(l('重命名失败', 'Failed to rename project'))
+    } finally {
+      setRenameSubmitting(false)
     }
   }
 
-  const handleDelete = async (projectId: string) => {
+  const handleDelete = async (project: ProjectView) => {
     try {
       if (workspaceView === 'canvas') {
-        await deleteCanvasWorkspace(projectId)
+        await deleteCanvasWorkspace(project.id)
         const nextWorkspaces = listCanvasWorkspaces()
         setCanvasWorkspaces(nextWorkspaces)
         message.success(l('画布已删除', 'Canvas deleted'))
@@ -289,10 +308,18 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
         }
         return
       }
-      message.warning(l(
-        '剧本项目删除接口未接入，暂不能删除',
-        'Script project deletion is not connected yet.',
-      ))
+
+      await StudioScriptsApi.deleteImport({
+        id: project.scriptImportId ?? project.id,
+      })
+      message.success(l('项目已删除', 'Project deleted'))
+
+      const remainingTotal = Math.max(0, totalProjects - 1)
+      if (page > 1 && (page - 1) * WORKFLOW_PAGE_SIZE >= remainingTotal) {
+        setPage((currentPage) => currentPage - 1)
+      } else {
+        setWorkflowListRefreshToken((value) => value + 1)
+      }
     } catch {
       message.error(l('删除失败', 'Failed to delete'))
     }
@@ -413,7 +440,7 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
                         className: 'project-lobby-delete-confirm__delete-button',
                       },
                       cancelButtonProps: { className: 'project-lobby-delete-confirm__cancel-button' },
-                      onOk: () => handleDelete(p.id),
+                      onOk: () => handleDelete(p),
                     })
                   }, 0)
                 },
@@ -584,7 +611,7 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
           </Form.Item>
           <div className="project-rename-modal__actions">
             <Button onClick={() => { setRenameModalOpen(false); setRenamingProject(null) }}>{l('取消', 'Cancel')}</Button>
-            <Button type="primary" htmlType="submit">{l('确定', 'Confirm')}</Button>
+            <Button type="primary" htmlType="submit" loading={renameSubmitting}>{l('确定', 'Confirm')}</Button>
           </div>
         </Form>
       </Modal>

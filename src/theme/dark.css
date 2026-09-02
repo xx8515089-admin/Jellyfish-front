@@ -605,6 +605,18 @@ code {
   background: transparent !important;
 }
 
+.project-create-page__basic-restore,
+.project-create-page__restore-state {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-muted) !important;
+  box-shadow: none !important;
+}
+
+.project-create-page__restore-state.is-empty {
+  color: var(--jf-subtle) !important;
+}
+
 .project-create-page__settings,
 .project-create-page__episode-nav {
   background: var(--jf-panel) !important;

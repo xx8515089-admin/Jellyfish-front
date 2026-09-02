@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import RequireAuth from './components/RequireAuth'
 import GlobalAiChat from './components/GlobalAiChat'
 import './App.css'
@@ -51,40 +51,42 @@ const App = () => {
       <Suspense fallback={routeFallback}>
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/projects/create" element={<RequireAuth><ProjectCreatePage /></RequireAuth>} />
-          <Route path="/canvas/:canvasId" element={<RequireAuth><CanvasStudioPage /></RequireAuth>} />
-          <Route path="/director-desk/workspace/:deskId" element={<RequireAuth><DirectorDeskStandalonePage /></RequireAuth>} />
-          <Route path="/projects/:projectId/chapters/:chapterId/director-stage" element={<RequireAuth><DirectorDeskStandalonePage /></RequireAuth>} />
-          <Route path="/efficiency-overview" element={<RequireAuth><EfficiencyOverview /></RequireAuth>} />
-          <Route path="/" element={<RequireAuth><MainLayout /></RequireAuth>}>
-            <Route index element={<Navigate to="/projects" replace />} />
-            <Route path="projects" element={<ProjectLobby />} />
-            <Route path="canvases" element={<CanvasLobby />} />
-            <Route path="director-desk" element={<DirectorDeskStandalonePage embeddedHome />} />
-            <Route path="projects/:projectId" element={<ProjectWorkbench />} />
-            <Route path="projects/:projectId/roles/:characterId/edit" element={<RoleDetailPage />} />
-            <Route path="projects/:projectId/chapters/:chapterId/prep/*" element={<Navigate to="../shots" replace />} />
-            <Route path="projects/:projectId/chapters/:chapterId/studio" element={<ChapterStudio />} />
-            <Route path="projects/:projectId/chapters/:chapterId/shots/:shotId/edit" element={<ChapterShotEditPage />} />
-            <Route path="projects/:projectId/chapters/:chapterId/shots" element={<ChapterShotsPage />} />
-            <Route path="projects/:projectId/chapters/:chapterId/prep-drafts" element={<Navigate to="../shots" replace />} />
-            <Route path="projects/:projectId/editor" element={<VideoEditor />} />
-            <Route path="assets" element={<AssetManager />} />
-            <Route path="assets/actors/:actorImageId/edit" element={<ActorAssetEditPage />} />
-            <Route path="assets/scenes/:sceneId/edit" element={<SceneAssetEditPage />} />
-            <Route path="assets/props/:propId/edit" element={<PropAssetEditPage />} />
-            <Route path="assets/costumes/:costumeId/edit" element={<CostumeAssetEditPage />} />
-            <Route path="prompts" element={<PromptTemplateManager />} />
-            <Route path="files" element={<FileManager />} />
-            <Route path="agents/:id/edit" element={<AgentEdit />} />
-            <Route path="agents" element={<AgentManagement />} />
-            <Route path="models" element={<ModelManagement />} />
-            <Route path="admin/users" element={<AdminUsers />} />
-            <Route path="system/users" element={<AdminUsers />} />
-            <Route path="system/roles" element={<RoleManagement />} />
-            <Route path="system/menus" element={<MenuManagement />} />
-            <Route path="system/voices" element={<VoiceManagement />} />
-            <Route path="*" element={<NotFound />} />
+          <Route element={<RequireAuth><Outlet /></RequireAuth>}>
+            <Route path="/projects/create" element={<ProjectCreatePage />} />
+            <Route path="/canvas/:canvasId" element={<CanvasStudioPage />} />
+            <Route path="/director-desk/workspace/:deskId" element={<DirectorDeskStandalonePage />} />
+            <Route path="/projects/:projectId/chapters/:chapterId/director-stage" element={<DirectorDeskStandalonePage />} />
+            <Route path="/efficiency-overview" element={<EfficiencyOverview />} />
+            <Route path="/" element={<MainLayout />}>
+              <Route index element={<Navigate to="/projects" replace />} />
+              <Route path="projects" element={<ProjectLobby />} />
+              <Route path="canvases" element={<CanvasLobby />} />
+              <Route path="director-desk" element={<DirectorDeskStandalonePage embeddedHome />} />
+              <Route path="projects/:projectId" element={<ProjectWorkbench />} />
+              <Route path="projects/:projectId/roles/:characterId/edit" element={<RoleDetailPage />} />
+              <Route path="projects/:projectId/chapters/:chapterId/prep/*" element={<Navigate to="../shots" replace />} />
+              <Route path="projects/:projectId/chapters/:chapterId/studio" element={<ChapterStudio />} />
+              <Route path="projects/:projectId/chapters/:chapterId/shots/:shotId/edit" element={<ChapterShotEditPage />} />
+              <Route path="projects/:projectId/chapters/:chapterId/shots" element={<ChapterShotsPage />} />
+              <Route path="projects/:projectId/chapters/:chapterId/prep-drafts" element={<Navigate to="../shots" replace />} />
+              <Route path="projects/:projectId/editor" element={<VideoEditor />} />
+              <Route path="assets" element={<AssetManager />} />
+              <Route path="assets/actors/:actorImageId/edit" element={<ActorAssetEditPage />} />
+              <Route path="assets/scenes/:sceneId/edit" element={<SceneAssetEditPage />} />
+              <Route path="assets/props/:propId/edit" element={<PropAssetEditPage />} />
+              <Route path="assets/costumes/:costumeId/edit" element={<CostumeAssetEditPage />} />
+              <Route path="prompts" element={<PromptTemplateManager />} />
+              <Route path="files" element={<FileManager />} />
+              <Route path="agents/:id/edit" element={<AgentEdit />} />
+              <Route path="agents" element={<AgentManagement />} />
+              <Route path="models" element={<ModelManagement />} />
+              <Route path="admin/users" element={<AdminUsers />} />
+              <Route path="system/users" element={<AdminUsers />} />
+              <Route path="system/roles" element={<RoleManagement />} />
+              <Route path="system/menus" element={<MenuManagement />} />
+              <Route path="system/voices" element={<VoiceManagement />} />
+              <Route path="*" element={<NotFound />} />
+            </Route>
           </Route>
         </Routes>
       </Suspense>

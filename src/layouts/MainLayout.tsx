@@ -6,8 +6,6 @@ import { PanelLeftClose, PanelLeftOpen, UserRound } from 'lucide-react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAppStore } from '../store/useAppStore'
 import { useTranslation } from 'react-i18next'
-import { TaskCenter } from '../pages/aiStudio/components/TaskCenter'
-import { TaskRuntimeProvider } from '../pages/aiStudio/components/TaskRuntimeProvider'
 import { clearAuthSession, getFirstMenuPath } from '../auth'
 import type { AuthMenuSnapshot } from '../auth'
 import { MenuIconPreview } from '../components'
@@ -402,25 +400,22 @@ const MainLayout: React.FC = () => {
           </Space>
         </Header>
 
-        <TaskRuntimeProvider>
-          <Content
-            style={{
-              margin: 0,
-              padding: CONTENT_PADDING,
-              background: token.colorBgLayout,
-              flex: 1,
-              minHeight: 0,
-              overflow: 'hidden',
-              display: 'flex',
-              flexDirection: 'column',
-            }}
-          >
-            <div className="w-full h-full min-h-0 overflow-hidden flex flex-col">
-              <Outlet />
-            </div>
-          </Content>
-          <TaskCenter />
-        </TaskRuntimeProvider>
+        <Content
+          style={{
+            margin: 0,
+            padding: CONTENT_PADDING,
+            background: token.colorBgLayout,
+            flex: 1,
+            minHeight: 0,
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          <div className="w-full h-full min-h-0 overflow-hidden flex flex-col">
+            <Outlet />
+          </div>
+        </Content>
       </Layout>
     </Layout>
   )

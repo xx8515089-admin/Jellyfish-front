@@ -22,6 +22,20 @@
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.03);
 }
 
+.project-create-page__draft-warning {
+  flex: 0 0 auto;
+  min-height: 42px;
+  padding: 8px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border-bottom: 1px solid #f2c8c8;
+  background: #fff8f8;
+  color: #b42318;
+  font-size: 12px;
+}
+
 .project-create-page__header-left,
 .project-create-page__header-actions {
   min-width: 0;

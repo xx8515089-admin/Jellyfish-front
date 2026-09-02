@@ -124,6 +124,10 @@ export type StudioScriptImportRenameRequest = {
   title: string
 }
 
+export type StudioScriptImportDeleteRequest = {
+  id: StudioScriptImportId
+}
+
 export type StudioScriptChapterFileParseResult = {
   fileName?: string | null
   fileType?: string | null
@@ -141,16 +145,7 @@ export type StudioScriptAssetExtractEstimateParams = {
 }
 
 export type StudioScriptAssetExtractEstimate = {
-  modelId: StudioScriptImportId
-  modelName: string
-  chapterCount: number
-  creditPerChapter: number
   requiredCredits: number
-  currentBalance: number | null
-  deficitCredits: number
-  sufficient: boolean
-  unlimited: boolean
-  alreadyStarted: boolean
 }
 
 export type StudioScriptAssetExtractRequest = {
@@ -380,6 +375,34 @@ function getScriptImports(
   })
 }
 
+function renameScriptImport(
+  requestBody: StudioScriptImportRenameRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'POST',
+    url: '/api/v1/studio/scripts/imports/rename',
+    body: requestBody,
+    mediaType: 'application/json',
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function deleteScriptImport(
+  requestBody: StudioScriptImportDeleteRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'POST',
+    url: '/api/v1/studio/scripts/imports/delete',
+    body: requestBody,
+    mediaType: 'application/json',
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
 export const StudioScriptsApi = {
   async getImports(params: StudioScriptImportListParams): Promise<StudioScriptImportList> {
     const response = await getScriptImports(params)
@@ -414,8 +437,17 @@ export const StudioScriptsApi = {
   },
 
   async renameImport(requestBody: StudioScriptImportRenameRequest): Promise<void> {
-    void requestBody
-    throw new Error('Script import rename API is not configured')
+    const response = await renameScriptImport(requestBody)
+    if ((response.code ?? 200) >= 400) {
+      throw new Error(response.message || 'Script import renaming failed')
+    }
+  },
+
+  async deleteImport(requestBody: StudioScriptImportDeleteRequest): Promise<void> {
+    const response = await deleteScriptImport(requestBody)
+    if ((response.code ?? 200) >= 400) {
+      throw new Error(response.message || 'Script import deletion failed')
+    }
   },
 
   async parseChapterFile(file: File): Promise<StudioScriptChapterFileParseResult> {
@@ -448,10 +480,17 @@ export const StudioScriptsApi = {
     if (pendingRequest) return pendingRequest
 
     const request = getScriptAssetExtractEstimate(params)
-      .then((response) => unwrapApiData<StudioScriptAssetExtractEstimate>(
-        response,
-        'Asset extraction credit estimate failed',
-      ))
+      .then((response) => {
+        const estimate = unwrapApiData<StudioScriptAssetExtractEstimate>(
+          response,
+          'Asset extraction credit estimate failed',
+        )
+        const requiredCredits = Number(estimate.requiredCredits)
+        if (!Number.isFinite(requiredCredits)) {
+          throw new Error('Asset extraction credit estimate returned an invalid requiredCredits value')
+        }
+        return { requiredCredits }
+      })
       .finally(() => {
         if (assetExtractEstimateRequests.get(cacheKey) === request) {
           assetExtractEstimateRequests.delete(cacheKey)
@@ -459,6 +498,11 @@ export const StudioScriptsApi = {
       })
     assetExtractEstimateRequests.set(cacheKey, request)
     return request
+  },
+
+  /** 分集发生变化时丢弃旧的在途去重入口，确保下一次估算发起新请求。 */
+  invalidateAssetExtractEstimate(scriptImportId: StudioScriptImportId): void {
+    assetExtractEstimateRequests.delete(String(scriptImportId))
   },
 
   async extractAssets(requestBody: StudioScriptAssetExtractRequest): Promise<void> {

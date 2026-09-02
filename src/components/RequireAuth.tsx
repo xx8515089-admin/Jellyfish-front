@@ -85,7 +85,13 @@ const RequireAuth: React.FC<{ children: React.ReactElement }> = ({ children }) =
     return () => { active = false; window.clearInterval(timer) }
   }, [setMenus, setUser])
 
-  if (status === 'checking') return <div className="min-h-screen flex items-center justify-center"><Spin size="large" /></div>
+  if (status === 'checking') {
+    return (
+      <div className="app-auth-loading" role="status" aria-label="正在校验登录状态">
+        <Spin size="large" />
+      </div>
+    )
+  }
   if (status === 'anonymous') return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />
   return children
 }

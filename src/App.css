@@ -57,12 +57,13 @@
   color: #f2f2f2;
 }
 
-.app-route-loading {
+.app-route-loading,
+.app-auth-loading {
   display: grid;
   width: 100vw;
   height: 100vh;
   place-items: center;
-  background: #111111;
+  background: var(--jf-bg, #0c0c0d);
 }
 
 .app-route-loading::before {
