@@ -751,17 +751,19 @@ export default function DirectorDeskApp({ initialInstanceId, initialInstanceName
           <ViewportSensitivitySettings />
           <PerformanceSettings />
         </div>
-        <div className="top-bar-actions">
-          <button
-            className="top-bar-action-button"
-            type="button"
-            aria-label={text("关闭", "Close")}
-            title={text("关闭", "Close")}
-            onClick={handleClose}
-          >
-            <X aria-hidden="true" size={16} strokeWidth={1.8} />
-          </button>
-        </div>
+        {!motionStudioOpen ? (
+          <div className="top-bar-actions">
+            <button
+              className="top-bar-action-button"
+              type="button"
+              aria-label={text("关闭", "Close")}
+              title={text("关闭", "Close")}
+              onClick={handleClose}
+            >
+              <X aria-hidden="true" size={16} strokeWidth={1.8} />
+            </button>
+          </div>
+        ) : null}
       </header>
       <DirectorDeskShell>
         <DirectorCanvas />
