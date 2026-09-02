@@ -309,11 +309,46 @@
   color: color-mix(in srgb, var(--project-create-primary) 72%, #344054);
 }
 
+.project-assets-step__asset-loading {
+  min-height: 72px;
+  margin-bottom: 14px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  border: 0;
+  background: transparent;
+}
+
+.project-assets-step__asset-loading-copy,
+.project-assets-step__asset-loading-copy strong,
+.project-assets-step__asset-loading-copy small {
+  display: block;
+}
+
+.project-assets-step__asset-loading-copy strong {
+  color: #344054;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.project-assets-step__asset-loading-copy small {
+  margin-top: 1px;
+  color: #7a8797;
+  font-size: 11px;
+  line-height: 18px;
+}
+
 .project-assets-step__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(clamp(250px, 11vw, 280px), 1fr));
   align-items: stretch;
   gap: 16px;
+}
+
+.project-assets-step__grid.is-loading {
+  display: none;
 }
 
 .project-assets-step__card,

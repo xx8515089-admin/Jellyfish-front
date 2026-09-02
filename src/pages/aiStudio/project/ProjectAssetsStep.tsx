@@ -30,6 +30,7 @@ import StudioSelect from './StudioSelect'
 import {
   PROJECT_CREATION_DRAFT_KEYS,
   buildEpisodeSourceSignature,
+  getProjectCreationDraftKey,
   readFullProjectCreationDraft,
   readProjectCreationDraft,
   useProjectCreationDraft,
@@ -38,6 +39,7 @@ import './ProjectAssetsStep.css'
 
 export type AssetEpisodeSource = {
   id: string
+  index?: number
   title: string
   rawText: string
 }
@@ -80,7 +82,6 @@ type AssetPollingState = {
 
 type AssetsStepDraft = {
   sourceSignature: string
-  scope: AssetScope
   kind: AssetKind
   assets: AssetDraft[]
   model: string
@@ -127,9 +128,12 @@ const ASSET_KIND_BY_TYPE: Record<StudioScriptAssetType, AssetKind> = {
   2: 'scene',
   3: 'prop',
 }
+const ASSET_TYPE_BY_KIND: Record<AssetKind, StudioScriptAssetType> = {
+  role: 1,
+  scene: 2,
+  prop: 3,
+}
 const ASSET_POLL_INTERVAL_MS = 3000
-const ASSET_POLL_REQUEST_TIMEOUT_MS = 30_000
-const ASSET_POLL_MAX_DURATION_MS = 15 * 60 * 1000
 const ASSET_POLL_MAX_FAILURES = 3
 
 const createAssetPollingState = (
@@ -175,52 +179,69 @@ const getErrorStatus = (error: unknown) => {
   return Number.isFinite(status) ? status : null
 }
 
-const waitForAssetListRequest = (
-  request: StudioScriptAssetListRequest,
-): Promise<StudioScriptAssetListResult> => {
-  let timer: number | null = null
-  const timeout = new Promise<never>((_, reject) => {
-    timer = window.setTimeout(() => {
-      request.cancel()
-      reject(new Error('Asset polling request timed out'))
-    }, ASSET_POLL_REQUEST_TIMEOUT_MS)
-  })
-  return Promise.race([request.promise, timeout]).finally(() => {
-    if (timer !== null) window.clearTimeout(timer)
-  })
-}
-
 const mapRemoteAssets = (
   result: StudioScriptAssetListResult,
   assetType: StudioScriptAssetType,
   scriptImportId: StudioScriptImportId,
   queryEpisodeId: string | undefined,
   episodes: AssetEpisodeSource[],
-): AssetDraft[] => result.list.map((item) => {
-  const relatedEpisodeIds = new Set((item.appearedEpisodes ?? [])
-    .map((episodeIndex) => episodes[episodeIndex - 1]?.id)
-    .filter((episodeId): episodeId is string => Boolean(episodeId)))
-  if (queryEpisodeId) relatedEpisodeIds.add(queryEpisodeId)
-  return {
-    id: `remote:${scriptImportId}:${assetType}:${item.id}`,
-    kind: ASSET_KIND_BY_TYPE[assetType],
-    name: item.name,
-    episodeIds: [...relatedEpisodeIds],
-    imageUrl: item.coverUrl?.trim() || undefined,
-    prompt: item.createPrompt?.trim() || undefined,
-    source: 'remote',
-    assetCode: item.assetCode?.trim() || undefined,
-    aliases: item.aliases ?? undefined,
-    description: item.description?.trim() || undefined,
-    status: item.status ?? undefined,
-    coverFileId: item.coverFileId ?? undefined,
-  }
-})
+): AssetDraft[] => {
+  const episodeIdByIndex = new Map(episodes.map((episode, position) => [
+    episode.index ?? position + 1,
+    episode.id,
+  ]))
+  return result.list.map((item) => {
+    const relatedEpisodeIds = new Set((item.appearedEpisodes ?? [])
+      .map((episodeIndex) => episodeIdByIndex.get(episodeIndex))
+      .filter((episodeId): episodeId is string => Boolean(episodeId)))
+    if (queryEpisodeId) relatedEpisodeIds.add(queryEpisodeId)
+    return {
+      id: `remote:${scriptImportId}:${assetType}:${item.id}`,
+      kind: ASSET_KIND_BY_TYPE[assetType],
+      name: item.name,
+      episodeIds: [...relatedEpisodeIds],
+      imageUrl: item.coverUrl?.trim() || undefined,
+      prompt: item.createPrompt?.trim() || undefined,
+      source: 'remote',
+      assetCode: item.assetCode?.trim() || undefined,
+      aliases: item.aliases ?? undefined,
+      description: item.description?.trim() || undefined,
+      status: item.status ?? undefined,
+      coverFileId: item.coverFileId ?? undefined,
+    }
+  })
+}
 
 const GENERATION_UNIT_COST = 6
 const isAssetKind = (value: unknown): value is AssetKind => (
   value === 'role' || value === 'scene' || value === 'prop'
 )
+
+const sameStringList = (left?: string[] | null, right?: string[] | null) => {
+  const normalizedLeft = left ?? []
+  const normalizedRight = right ?? []
+  return normalizedLeft.length === normalizedRight.length
+    && normalizedLeft.every((value, index) => value === normalizedRight[index])
+}
+
+/** 轮询结果未变化时复用旧引用，避免三条轮询反复重绘完整资产列表。 */
+const sameRemoteAssetList = (left: AssetDraft[] | undefined, right: AssetDraft[]) => {
+  if (!left || left.length !== right.length) return false
+  return left.every((asset, index) => {
+    const nextAsset = right[index]
+    return asset.id === nextAsset.id
+      && asset.kind === nextAsset.kind
+      && asset.name === nextAsset.name
+      && asset.imageUrl === nextAsset.imageUrl
+      && asset.prompt === nextAsset.prompt
+      && asset.assetCode === nextAsset.assetCode
+      && asset.description === nextAsset.description
+      && asset.status === nextAsset.status
+      && asset.coverFileId === nextAsset.coverFileId
+      && sameStringList(asset.aliases, nextAsset.aliases)
+      && sameStringList(asset.episodeIds, nextAsset.episodeIds)
+  })
+}
 
 const ROLE_NAME_PATTERN = /^\s*([\u3400-\u9fffA-Za-z][\u3400-\u9fffA-Za-z0-9·]{0,11})(?:\s*[（(][^）)]*[）)])?\s*[：:]/gm
 const SCENE_LABEL_PATTERN = /(?:场景|地点)\s*[：:]\s*([^\n，。；;]{2,30})/g
@@ -299,13 +320,25 @@ export default function ProjectAssetsStep({
   const l = useBilingualText()
   const imageInputRef = useRef<HTMLInputElement>(null)
   const localAssetInputRef = useRef<HTMLInputElement>(null)
-  const episodeSourceSignature = useMemo(() => buildEpisodeSourceSignature(episodes), [episodes])
+  const episodeSourceSignature = useMemo(
+    () => scriptImportId === null ? buildEpisodeSourceSignature(episodes) : '',
+    [episodes, scriptImportId],
+  )
+  const remoteEpisodeSignature = useMemo(() => episodes
+    .map((episode, position) => `${episode.index ?? position + 1}:${episode.id}`)
+    .join('|'), [episodes])
   const sourceSignature = useMemo(
-    () => `${scriptImportId ?? 'local'}:${episodeSourceSignature}`,
-    [episodeSourceSignature, scriptImportId],
+    () => scriptImportId === null
+      ? `local:${episodeSourceSignature}`
+      : `remote:${scriptImportId}:${remoteEpisodeSignature}`,
+    [episodeSourceSignature, remoteEpisodeSignature, scriptImportId],
+  )
+  const draftKey = useMemo(
+    () => getProjectCreationDraftKey(PROJECT_CREATION_DRAFT_KEYS.assets, scriptImportId),
+    [scriptImportId],
   )
   const [restoredDraft] = useState(() =>
-    readProjectCreationDraft<AssetsStepDraft>(PROJECT_CREATION_DRAFT_KEYS.assets))
+    readProjectCreationDraft<AssetsStepDraft>(draftKey))
   const canRestoreDraft = restoredDraft?.sourceSignature === sourceSignature
   const [scope, setScope] = useState<AssetScope>(episodes[0]?.id ?? 'overview')
   const [kind, setKind] = useState<AssetKind>(
@@ -353,40 +386,90 @@ export default function ProjectAssetsStep({
   ))
   const sourceSignatureRef = useRef(sourceSignature)
   const assetPollingGenerationRef = useRef(0)
-
-  useProjectCreationDraft(PROJECT_CREATION_DRAFT_KEYS.assets, {
+  const draftPersistenceEnabledRef = useRef(false)
+  const completedEpisodeIdList = useMemo(() => [...completedEpisodeIds], [completedEpisodeIds])
+  const hiddenRemoteAssetIdList = useMemo(() => [...hiddenRemoteAssetIds], [hiddenRemoteAssetIds])
+  const assetDraft = useMemo<AssetsStepDraft>(() => ({
     sourceSignature,
-    scope,
     kind,
     assets,
     model,
     resolution,
-    completedEpisodeIds: [...completedEpisodeIds],
-    hiddenRemoteAssetIds: [...hiddenRemoteAssetIds],
-  })
+    completedEpisodeIds: completedEpisodeIdList,
+    hiddenRemoteAssetIds: hiddenRemoteAssetIdList,
+  }), [
+    assets,
+    completedEpisodeIdList,
+    hiddenRemoteAssetIdList,
+    kind,
+    model,
+    resolution,
+    sourceSignature,
+  ])
+  const latestAssetDraftRef = useRef(assetDraft)
+  latestAssetDraftRef.current = assetDraft
+
+  const flushAssetDraft = useProjectCreationDraft(
+    draftKey,
+    assetDraft,
+    350,
+    draftPersistenceEnabledRef,
+  )
 
   useEffect(() => {
     let active = true
-    void readFullProjectCreationDraft<AssetsStepDraft>(PROJECT_CREATION_DRAFT_KEYS.assets)
+    draftPersistenceEnabledRef.current = false
+    const hydrationBaseline = latestAssetDraftRef.current
+    const compactDraft = readProjectCreationDraft<AssetsStepDraft>(draftKey)
+    void readFullProjectCreationDraft<AssetsStepDraft>(draftKey)
       .then((fullDraft) => {
-        if (!active || fullDraft?.sourceSignature !== sourceSignature || !Array.isArray(fullDraft.assets)) {
+        if (!active) return
+        const compactCanRestore = compactDraft?.sourceSignature === sourceSignature
+          && Array.isArray(compactDraft.assets)
+        const fullCanRestore = fullDraft?.sourceSignature === sourceSignature
+          && Array.isArray(fullDraft.assets)
+        if (!compactCanRestore && !fullCanRestore) {
           return
         }
-        const fullAssetsById = new Map(fullDraft.assets.map((asset) => [asset.id, asset]))
-        setAssets((current) => {
-          let changed = false
-          const hydrated = current.map((asset) => {
-            if (asset.imageUrl) return asset
-            const fullAsset = fullAssetsById.get(asset.id)
-            if (!fullAsset?.imageUrl) return asset
-            changed = true
-            return { ...asset, imageUrl: fullAsset.imageUrl }
+
+        if (compactCanRestore && fullCanRestore) {
+          const fullAssetsById = new Map(fullDraft.assets.map((asset) => [asset.id, asset]))
+          setAssets((current) => {
+            let changed = false
+            const hydrated = current.map((asset) => {
+              if (asset.imageUrl) return asset
+              const fullAsset = fullAssetsById.get(asset.id)
+              if (!fullAsset?.imageUrl) return asset
+              changed = true
+              return { ...asset, imageUrl: fullAsset.imageUrl }
+            })
+            return changed ? hydrated : current
           })
-          return changed ? hydrated : current
-        })
+          return
+        }
+        if (compactCanRestore) return
+        if (latestAssetDraftRef.current !== hydrationBaseline) return
+
+        const nextDraft = fullDraft as AssetsStepDraft
+        setAssets(nextDraft.assets)
+        if (isAssetKind(nextDraft.kind)) setKind(nextDraft.kind)
+        if (typeof nextDraft.model === 'string' && nextDraft.model) setModel(nextDraft.model)
+        if (typeof nextDraft.resolution === 'string' && nextDraft.resolution) setResolution(nextDraft.resolution)
+        setCompletedEpisodeIds(new Set(
+          Array.isArray(nextDraft.completedEpisodeIds) ? nextDraft.completedEpisodeIds : [],
+        ))
+        setHiddenRemoteAssetIds(new Set(
+          Array.isArray(nextDraft.hiddenRemoteAssetIds) ? nextDraft.hiddenRemoteAssetIds : [],
+        ))
+      })
+      .finally(() => {
+        if (!active) return
+        const changedWhileHydrating = latestAssetDraftRef.current !== hydrationBaseline
+        draftPersistenceEnabledRef.current = true
+        if (changedWhileHydrating) flushAssetDraft()
       })
     return () => { active = false }
-  }, [sourceSignature])
+  }, [draftKey, flushAssetDraft, sourceSignature])
 
   useEffect(() => {
     if (sourceSignatureRef.current === sourceSignature) return
@@ -434,21 +517,26 @@ export default function ProjectAssetsStep({
 
     let disposed = false
     let startTimer: number | null = null
-    const startedAt = Date.now()
     const timers = new Map<StudioScriptAssetType, number>()
     const requests = new Map<StudioScriptAssetType, StudioScriptAssetListRequest>()
+    const loadedAssetTypes = new Set<StudioScriptAssetType>()
     const isActive = () => !disposed && assetPollingGenerationRef.current === generation
     const patchLane = (assetType: StudioScriptAssetType, patch: Partial<AssetPollingLane>) => {
       if (!isActive()) return
-      setAssetPollingState((current) => current.scopeId === pollingScopeId
-        ? {
+      setAssetPollingState((current) => {
+        if (current.scopeId !== pollingScopeId) return current
+        const currentLane = current.lanes[assetType]
+        if (Object.entries(patch).every(([key, value]) => (
+          currentLane[key as keyof AssetPollingLane] === value
+        ))) return current
+        return {
           scopeId: current.scopeId,
           lanes: {
             ...current.lanes,
-            [assetType]: { ...current.lanes[assetType], ...patch },
+            [assetType]: { ...currentLane, ...patch },
           },
         }
-        : current)
+      })
     }
     const scheduleLane = (
       assetType: StudioScriptAssetType,
@@ -467,16 +555,8 @@ export default function ProjectAssetsStep({
       failureCount = 0,
     ): Promise<void> => {
       if (!isActive()) return
-      if (Date.now() - startedAt >= ASSET_POLL_MAX_DURATION_MS) {
-        patchLane(assetType, {
-          loading: false,
-          polling: false,
-          errorMessage: l('资产生成轮询超时，请手动重试', 'Asset polling timed out. Retry manually.'),
-        })
-        return
-      }
 
-      patchLane(assetType, { loading: true, polling: true })
+      patchLane(assetType, { loading: !loadedAssetTypes.has(assetType), polling: true })
       const request = StudioScriptsApi.requestAssetList({
         scriptImportId,
         chapterId: selectedEpisode?.id,
@@ -485,7 +565,7 @@ export default function ProjectAssetsStep({
       requests.set(assetType, request)
 
       try {
-        const result = await waitForAssetListRequest(request)
+        const result = await request.promise
         if (!isActive() || requests.get(assetType) !== request) return
 
         const assetKind = ASSET_KIND_BY_TYPE[assetType]
@@ -496,12 +576,17 @@ export default function ProjectAssetsStep({
           selectedEpisode?.id,
           episodes,
         )
-        setRemoteAssetsByScope((current) => ({
-          [pollingScopeId]: {
-            ...current[pollingScopeId],
-            [assetKind]: nextAssets,
-          },
-        }))
+        loadedAssetTypes.add(assetType)
+        setRemoteAssetsByScope((current) => {
+          const currentScopeAssets = current[pollingScopeId] ?? {}
+          if (sameRemoteAssetList(currentScopeAssets[assetKind], nextAssets)) return current
+          return {
+            [pollingScopeId]: {
+              ...currentScopeAssets,
+              [assetKind]: nextAssets,
+            },
+          }
+        })
         const resultErrorMessage = result.errorMessage?.trim() || ''
         const terminalStatusError = !result.polling && result.extractionStatus !== 3
           ? resultErrorMessage || l(
@@ -998,6 +1083,14 @@ export default function ProjectAssetsStep({
   const assetPollingStatusNames = [...new Set(
     pollingLanes.map((lane) => lane.statusName).filter(Boolean),
   )].join(' / ')
+  const selectedAssetPollingLane = assetPollingState.scopeId === scope
+    ? assetPollingState.lanes[ASSET_TYPE_BY_KIND[kind]]
+    : null
+  const visibleAssetsLoading = scriptImportId !== null && (
+    assetPollingState.scopeId !== scope
+    || Boolean(selectedAssetPollingLane?.loading || selectedAssetPollingLane?.polling)
+  )
+  const showAssetLoadingPlaceholder = visibleAssetsLoading && visibleAssets.length === 0
   const summaryDescription = assetPollingErrorMessage
     ? l(
       `部分资产查询失败：${assetPollingErrorMessage}${assetPollingActive ? '，其他类型仍在生成' : ''}`,
@@ -1078,7 +1171,7 @@ export default function ProjectAssetsStep({
           </div>
         </header>
 
-        <div className="project-assets-step__content">
+        <div className="project-assets-step__content" aria-busy={visibleAssetsLoading}>
           <nav className="project-assets-step__tabs" aria-label={l('资产类型', 'Asset type')}>
             {(Object.keys(KIND_LABELS) as AssetKind[]).map((item) => (
               <button
@@ -1093,7 +1186,26 @@ export default function ProjectAssetsStep({
             ))}
           </nav>
 
-          <div className="project-assets-step__grid">
+          {visibleAssetsLoading && (
+            <div
+              className="project-assets-step__asset-loading"
+              role="status"
+              aria-live="polite"
+            >
+              <Spin />
+              <span className="project-assets-step__asset-loading-copy">
+                <strong>
+                  {l(
+                    `正在生成${KIND_LABELS[kind].zh}资产`,
+                    `Generating ${KIND_LABELS[kind].en.toLowerCase()}`,
+                  )}
+                </strong>
+                <small>{l('生成结果会自动刷新，请稍候…', 'Results will refresh automatically…')}</small>
+              </span>
+            </div>
+          )}
+
+          <div className={`project-assets-step__grid${showAssetLoadingPlaceholder ? ' is-loading' : ''}`}>
             {visibleAssets.map((asset) => (
               <article
                 key={asset.id}

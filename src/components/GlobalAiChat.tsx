@@ -11,58 +11,58 @@ type ChatMessage = {
   time: string
 }
 
-type Position = {
-  x: number
-  y: number
+type PositionOffset = {
+  right: number
+  bottom: number
 }
 
 type DragState = {
   pointerId: number
   startX: number
   startY: number
-  originX: number
-  originY: number
+  originRight: number
+  originBottom: number
+  width: number
+  height: number
   moved: boolean
+  lastPosition: PositionOffset
 }
 
 const AI_IMAGE_SRC = '/assets/images/ai.png'
-const POSITION_STORAGE_KEY = 'reelmax_global_ai_chat_position'
-const CLOSED_BOUNDS = { width: 112, height: 132 }
-const OPEN_BOUNDS = { width: 640, height: 560 }
-const COMPANION_BOUNDS = { width: 196 }
+const POSITION_STORAGE_KEY = 'reelmax_global_ai_chat_offset_v2'
 const VIEWPORT_PADDING = 12
+const DRAG_THRESHOLD = 3
 const INPUT_MIN_HEIGHT = 42
 const INPUT_MAX_HEIGHT = 88
 
-function getDefaultPosition(): Position {
-  if (typeof window === 'undefined') return { x: 24, y: 120 }
-  return {
-    x: Math.max(VIEWPORT_PADDING, window.innerWidth - CLOSED_BOUNDS.width - 28),
-    y: Math.max(VIEWPORT_PADDING, window.innerHeight - CLOSED_BOUNDS.height - 32),
-  }
+function getDefaultPosition(): PositionOffset {
+  return { right: VIEWPORT_PADDING, bottom: VIEWPORT_PADDING }
 }
 
-function clampPosition(position: Position, isOpen: boolean): Position {
-  if (typeof window === 'undefined') return position
-  const bounds = isOpen ? OPEN_BOUNDS : CLOSED_BOUNDS
-  const maxX = Math.max(VIEWPORT_PADDING, window.innerWidth - bounds.width - VIEWPORT_PADDING)
-  const maxY = Math.max(VIEWPORT_PADDING, window.innerHeight - bounds.height - VIEWPORT_PADDING)
-  return {
-    x: Math.min(Math.max(VIEWPORT_PADDING, position.x), maxX),
-    y: Math.min(Math.max(VIEWPORT_PADDING, position.y), maxY),
-  }
-}
-
-function readStoredPosition(): Position {
+function readStoredPosition(): PositionOffset {
   if (typeof window === 'undefined') return getDefaultPosition()
+
   try {
     const raw = window.localStorage.getItem(POSITION_STORAGE_KEY)
     if (!raw) return getDefaultPosition()
-    const parsed = JSON.parse(raw) as Partial<Position>
-    if (typeof parsed.x !== 'number' || typeof parsed.y !== 'number') return getDefaultPosition()
-    return clampPosition({ x: parsed.x, y: parsed.y }, false)
+    const parsed = JSON.parse(raw) as Partial<PositionOffset>
+    if (!Number.isFinite(parsed.right) || !Number.isFinite(parsed.bottom)) {
+      return getDefaultPosition()
+    }
+    return { right: parsed.right as number, bottom: parsed.bottom as number }
   } catch {
     return getDefaultPosition()
+  }
+}
+
+function clampPosition(position: PositionOffset, width: number, height: number): PositionOffset {
+  if (typeof window === 'undefined') return position
+
+  const maxRight = Math.max(VIEWPORT_PADDING, window.innerWidth - width - VIEWPORT_PADDING)
+  const maxBottom = Math.max(VIEWPORT_PADDING, window.innerHeight - height - VIEWPORT_PADDING)
+  return {
+    right: Math.min(Math.max(VIEWPORT_PADDING, position.right), maxRight),
+    bottom: Math.min(Math.max(VIEWPORT_PADDING, position.bottom), maxBottom),
   }
 }
 
@@ -119,7 +119,7 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
 const GlobalAiChat = () => {
   const location = useLocation()
   const [isOpen, setIsOpen] = useState(false)
-  const [position, setPosition] = useState<Position>(() => readStoredPosition())
+  const [position, setPosition] = useState<PositionOffset>(() => readStoredPosition())
   const [isDragging, setIsDragging] = useState(false)
   const [input, setInput] = useState('')
   const [isThinking, setIsThinking] = useState(false)
@@ -127,68 +127,49 @@ const GlobalAiChat = () => {
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
     createMessage('assistant', '你好，我是 Reelmax AI。可以随时问我创作、提示词、页面和流程问题。'),
   ])
-  const dragStateRef = useRef<DragState | null>(null)
-  const suppressClickRef = useRef(false)
   const replyTimerRef = useRef<number | null>(null)
-  const messageEndRef = useRef<HTMLDivElement | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
-  const companionRef = useRef<HTMLElement | null>(null)
+  const desiredPositionRef = useRef(position)
+  const dragStateRef = useRef<DragState | null>(null)
+  const dragFrameRef = useRef<number | null>(null)
+  const pendingPositionRef = useRef<PositionOffset | null>(null)
+  const suppressClickRef = useRef(false)
+  const messageEndRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const isComposingRef = useRef(false)
   const copyResetTimerRef = useRef<number | null>(null)
 
-  const persistPosition = useCallback((nextPosition: Position) => {
+  const applyPosition = useCallback((nextPosition: PositionOffset) => {
+    setPosition(nextPosition)
+  }, [])
+
+  const persistPosition = useCallback((nextPosition: PositionOffset) => {
     try {
       window.localStorage.setItem(POSITION_STORAGE_KEY, JSON.stringify(nextPosition))
     } catch {
-      // 位置持久化失败不影响使用。
+      // 位置持久化失败不影响拖动和聊天。
     }
   }, [])
 
-  const updatePosition = useCallback((nextPosition: Position, nextOpen = isOpen) => {
-    const clamped = clampPosition(nextPosition, nextOpen)
-    setPosition(clamped)
-    persistPosition(clamped)
-  }, [isOpen, persistPosition])
+  const fitDesiredPositionToViewport = useCallback(() => {
+    const root = rootRef.current
+    if (!root || dragStateRef.current) return
+    const nextPosition = clampPosition(
+      desiredPositionRef.current,
+      root.offsetWidth,
+      root.offsetHeight,
+    )
+    applyPosition(nextPosition)
+  }, [applyPosition])
 
-  const getOpenPositionFromClosed = useCallback((closedPosition: Position): Position => {
-    if (typeof window === 'undefined') return closedPosition
-    const openWidth = Math.min(OPEN_BOUNDS.width, window.innerWidth - VIEWPORT_PADDING * 2)
-    const openHeight = Math.min(OPEN_BOUNDS.height, window.innerHeight - VIEWPORT_PADDING * 2)
-    const closedCenterX = closedPosition.x + CLOSED_BOUNDS.width / 2
-    const closedBottomY = closedPosition.y + CLOSED_BOUNDS.height
-
-    return clampPosition({
-      x: closedCenterX - openWidth + COMPANION_BOUNDS.width / 2,
-      y: closedBottomY - openHeight,
-    }, true)
-  }, [])
-
-  const getClosedPositionFromCompanion = useCallback((): Position => {
-    const companionRect = companionRef.current?.getBoundingClientRect()
-    if (companionRect) {
-      return clampPosition({
-        x: companionRect.left + (companionRect.width - CLOSED_BOUNDS.width) / 2,
-        y: companionRect.bottom - CLOSED_BOUNDS.height,
-      }, false)
-    }
-
-    const rootRect = rootRef.current?.getBoundingClientRect()
-    if (rootRect) {
-      return clampPosition({
-        x: rootRect.right - CLOSED_BOUNDS.width,
-        y: rootRect.bottom - CLOSED_BOUNDS.height,
-      }, false)
-    }
-
-    return clampPosition(position, false)
-  }, [position])
+  useLayoutEffect(() => {
+    fitDesiredPositionToViewport()
+  }, [fitDesiredPositionToViewport, isOpen])
 
   useEffect(() => {
-    const handleResize = () => updatePosition(position, isOpen)
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [isOpen, position, updatePosition])
+    window.addEventListener('resize', fitDesiredPositionToViewport)
+    return () => window.removeEventListener('resize', fitDesiredPositionToViewport)
+  }, [fitDesiredPositionToViewport])
 
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ block: 'end' })
@@ -209,21 +190,44 @@ const GlobalAiChat = () => {
     return () => {
       if (replyTimerRef.current) window.clearTimeout(replyTimerRef.current)
       if (copyResetTimerRef.current) window.clearTimeout(copyResetTimerRef.current)
+      if (dragFrameRef.current) window.cancelAnimationFrame(dragFrameRef.current)
     }
   }, [])
 
+  const queuePositionUpdate = (nextPosition: PositionOffset) => {
+    pendingPositionRef.current = nextPosition
+    if (dragFrameRef.current !== null) return
+
+    dragFrameRef.current = window.requestAnimationFrame(() => {
+      dragFrameRef.current = null
+      const pendingPosition = pendingPositionRef.current
+      pendingPositionRef.current = null
+      if (pendingPosition) applyPosition(pendingPosition)
+    })
+  }
+
   const startDrag = (event: ReactPointerEvent<HTMLElement>) => {
     if (event.button !== 0) return
-    const clamped = clampPosition(position, isOpen)
+    const root = rootRef.current
+    if (!root) return
+
+    const rect = root.getBoundingClientRect()
+    const currentPosition = clampPosition({
+      right: window.innerWidth - rect.right,
+      bottom: window.innerHeight - rect.bottom,
+    }, rect.width, rect.height)
+
     dragStateRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      originX: clamped.x,
-      originY: clamped.y,
+      originRight: currentPosition.right,
+      originBottom: currentPosition.bottom,
+      width: rect.width,
+      height: rect.height,
       moved: false,
+      lastPosition: currentPosition,
     }
-    setPosition(clamped)
     setIsDragging(true)
     event.currentTarget.setPointerCapture(event.pointerId)
   }
@@ -231,39 +235,65 @@ const GlobalAiChat = () => {
   const moveDrag = (event: ReactPointerEvent<HTMLElement>) => {
     const dragState = dragStateRef.current
     if (!dragState || dragState.pointerId !== event.pointerId) return
+
     const deltaX = event.clientX - dragState.startX
     const deltaY = event.clientY - dragState.startY
-    if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+    if (!dragState.moved) {
+      if (Math.abs(deltaX) <= DRAG_THRESHOLD && Math.abs(deltaY) <= DRAG_THRESHOLD) return
       dragState.moved = true
     }
-    updatePosition({ x: dragState.originX + deltaX, y: dragState.originY + deltaY }, isOpen)
+
+    const nextPosition = clampPosition({
+      right: dragState.originRight - deltaX,
+      bottom: dragState.originBottom - deltaY,
+    }, dragState.width, dragState.height)
+    dragState.lastPosition = nextPosition
+    queuePositionUpdate(nextPosition)
   }
 
   const stopDrag = (event: ReactPointerEvent<HTMLElement>) => {
     const dragState = dragStateRef.current
     if (!dragState || dragState.pointerId !== event.pointerId) return
+
+    if (dragFrameRef.current !== null) {
+      window.cancelAnimationFrame(dragFrameRef.current)
+      dragFrameRef.current = null
+    }
+    pendingPositionRef.current = null
+    dragStateRef.current = null
+
     if (dragState.moved) {
+      const root = rootRef.current
+      const finalPosition = clampPosition(
+        dragState.lastPosition,
+        root?.offsetWidth ?? dragState.width,
+        root?.offsetHeight ?? dragState.height,
+      )
+      applyPosition(finalPosition)
+      desiredPositionRef.current = finalPosition
+      persistPosition(finalPosition)
+
       suppressClickRef.current = true
       window.setTimeout(() => {
         suppressClickRef.current = false
       }, 0)
+    } else {
+      fitDesiredPositionToViewport()
     }
-    dragStateRef.current = null
+
     setIsDragging(false)
-    event.currentTarget.releasePointerCapture(event.pointerId)
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
   }
 
   const openPanel = () => {
     if (suppressClickRef.current) return
-    const nextPosition = getOpenPositionFromClosed(position)
     setIsOpen(true)
-    updatePosition(nextPosition, true)
   }
 
   const minimizePanel = () => {
-    const nextPosition = getClosedPositionFromCompanion()
     setIsOpen(false)
-    updatePosition(nextPosition, false)
   }
 
   const sendMessage = useCallback((draft?: string) => {
@@ -306,7 +336,7 @@ const GlobalAiChat = () => {
     <div
       ref={rootRef}
       className={`global-ai-chat ${isOpen ? 'is-open' : 'is-closed'} ${isDragging ? 'is-dragging' : ''}`}
-      style={{ left: position.x, top: position.y }}
+      style={{ right: position.right, bottom: position.bottom }}
     >
       {!isOpen ? (
         <button
@@ -316,6 +346,7 @@ const GlobalAiChat = () => {
           onPointerMove={moveDrag}
           onPointerUp={stopDrag}
           onPointerCancel={stopDrag}
+          onLostPointerCapture={stopDrag}
           onClick={openPanel}
           aria-label="打开 Reelmax AI 聊天"
         >
@@ -335,6 +366,7 @@ const GlobalAiChat = () => {
               onPointerMove={moveDrag}
               onPointerUp={stopDrag}
               onPointerCancel={stopDrag}
+              onLostPointerCapture={stopDrag}
             >
               <div className="global-ai-chat-title">
                 <strong>Reelmax AI</strong>
@@ -423,13 +455,8 @@ const GlobalAiChat = () => {
           </div>
 
           <aside
-            ref={companionRef}
             className="global-ai-chat-companion"
             aria-hidden="true"
-            onPointerDown={startDrag}
-            onPointerMove={moveDrag}
-            onPointerUp={stopDrag}
-            onPointerCancel={stopDrag}
           >
             <span />
             <img src={AI_IMAGE_SRC} alt="" draggable={false} />

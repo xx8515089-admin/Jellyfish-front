@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 
-const DRAFT_VERSION = 1
+const DRAFT_VERSION = 2
 const LARGE_DATA_URL_LENGTH = 350_000
 const DRAFT_DATABASE_NAME = 'jellyfish-project-creation'
 const DRAFT_DATABASE_VERSION = 1
@@ -12,18 +12,29 @@ type DraftEnvelope<T> = {
   data: T
 }
 
-type SerializedDraft = {
-  compact: string
-  full: string
-}
-
 let draftDatabasePromise: Promise<IDBDatabase> | undefined
+const queuedFullDrafts = new Map<string, DraftEnvelope<unknown>>()
+const activeFullDraftWrites = new Set<string>()
 
 export const PROJECT_CREATION_DRAFT_KEYS = {
-  project: 'jellyfish:project-creation:v1:project',
-  assets: 'jellyfish:project-creation:v1:assets',
-  clips: 'jellyfish:project-creation:v1:clips',
+  project: 'jellyfish:project-creation:v2:project',
+  assets: 'jellyfish:project-creation:v2:assets',
+  clips: 'jellyfish:project-creation:v2:clips',
 } as const
+const DEFAULT_PROJECT_CREATION_DRAFT_KEYS = Object.values(PROJECT_CREATION_DRAFT_KEYS)
+
+const LEGACY_PROJECT_CREATION_DRAFT_KEYS = [
+  'jellyfish:project-creation:v1:project',
+  'jellyfish:project-creation:v1:assets',
+  'jellyfish:project-creation:v1:clips',
+] as const
+
+export const getProjectCreationDraftKey = (
+  baseKey: string,
+  scriptImportId?: string | number | null,
+) => scriptImportId === null || scriptImportId === undefined
+  ? baseKey
+  : `${baseKey}:import:${encodeURIComponent(String(scriptImportId))}`
 
 const readLocalDraftEnvelope = <T,>(key: string): DraftEnvelope<T> | undefined => {
   if (typeof window === 'undefined') return undefined
@@ -89,6 +100,25 @@ const writeFullDraft = async <T,>(key: string, draft: DraftEnvelope<T>) => {
   }
 }
 
+/** 同一草稿有在途写入时只保留最新快照，避免高频修改堆积 IndexedDB 事务。 */
+const queueFullDraftWrite = <T,>(key: string, draft: DraftEnvelope<T>) => {
+  queuedFullDrafts.set(key, draft as DraftEnvelope<unknown>)
+  if (activeFullDraftWrites.has(key)) return
+
+  activeFullDraftWrites.add(key)
+  void (async () => {
+    try {
+      while (queuedFullDrafts.has(key)) {
+        const latestDraft = queuedFullDrafts.get(key)
+        queuedFullDrafts.delete(key)
+        if (latestDraft) await writeFullDraft(key, latestDraft)
+      }
+    } finally {
+      activeFullDraftWrites.delete(key)
+    }
+  })()
+}
+
 const deleteFullDrafts = async (keys: readonly string[]) => {
   try {
     const database = await getDraftDatabase()
@@ -105,28 +135,37 @@ const deleteFullDrafts = async (keys: readonly string[]) => {
   }
 }
 
-const persistDraft = <T,>(key: string, serializedDraft: SerializedDraft) => {
-  if (!serializedDraft.compact || !serializedDraft.full || typeof window === 'undefined') return
+const persistDraft = <T,>(key: string, value: T) => {
+  if (typeof window === 'undefined') return
 
   try {
     const updatedAt = Date.now()
     const compactDraft: DraftEnvelope<T> = {
       version: DRAFT_VERSION,
       updatedAt,
-      data: JSON.parse(serializedDraft.compact) as T,
+      data: value,
     }
     const fullDraft: DraftEnvelope<T> = {
       version: DRAFT_VERSION,
       updatedAt,
-      data: JSON.parse(serializedDraft.full) as T,
+      data: value,
     }
 
     try {
-      window.localStorage.setItem(key, JSON.stringify(compactDraft))
+      window.localStorage.setItem(key, JSON.stringify(compactDraft, (_property, childValue) => {
+        if (
+          typeof childValue === 'string'
+          && childValue.startsWith('data:')
+          && childValue.length > LARGE_DATA_URL_LENGTH
+        ) {
+          return undefined
+        }
+        return childValue
+      }))
     } catch {
       // localStorage 已满时，IndexedDB 仍可保留完整草稿。
     }
-    void writeFullDraft(key, fullDraft)
+    queueFullDraftWrite(key, fullDraft)
   } catch {
     // 草稿持久化绝不能阻塞编辑操作。
   }
@@ -137,12 +176,18 @@ export const readProjectCreationDraft = <T,>(key: string): T | undefined => {
 }
 
 export const clearProjectCreationDrafts = (
-  keys: readonly string[] = Object.values(PROJECT_CREATION_DRAFT_KEYS),
+  keys: readonly string[] = DEFAULT_PROJECT_CREATION_DRAFT_KEYS,
 ) => {
   if (typeof window === 'undefined') return
 
-  keys.forEach((key) => window.localStorage.removeItem(key))
-  void deleteFullDrafts(keys)
+  const keysToClear = keys === DEFAULT_PROJECT_CREATION_DRAFT_KEYS
+    ? [...keys, ...LEGACY_PROJECT_CREATION_DRAFT_KEYS]
+    : [...keys]
+  keysToClear.forEach((key) => {
+    queuedFullDrafts.delete(key)
+    window.localStorage.removeItem(key)
+  })
+  void deleteFullDrafts(keysToClear)
 }
 
 export const readFullProjectCreationDraft = async <T,>(key: string): Promise<T | undefined> => {
@@ -170,47 +215,59 @@ export const useProjectCreationDraft = <T,>(
   delay = 350,
   persistOnUnmountRef?: { current: boolean },
 ) => {
-  const serializedData = useMemo(() => {
-    try {
-      return {
-        compact: JSON.stringify(value, (_property, childValue) => {
-          if (
-            typeof childValue === 'string'
-            && childValue.startsWith('data:')
-            && childValue.length > LARGE_DATA_URL_LENGTH
-          ) {
-            return undefined
-          }
-          return childValue
-        }),
-        full: JSON.stringify(value),
-      }
-    } catch {
-      return { compact: '', full: '' }
-    }
-  }, [value])
-  const latestSerializedData = useRef(serializedData)
-  latestSerializedData.current = serializedData
+  const stableValueRef = useRef(value)
+  const previousValue = stableValueRef.current
+  const valuesAreShallowEqual = Object.is(previousValue, value) || (
+    previousValue !== null
+    && value !== null
+    && typeof previousValue === 'object'
+    && typeof value === 'object'
+    && !Array.isArray(previousValue)
+    && !Array.isArray(value)
+    && (() => {
+      const previousRecord = previousValue as Record<string, unknown>
+      const nextRecord = value as Record<string, unknown>
+      const previousKeys = Object.keys(previousRecord)
+      const nextKeys = Object.keys(nextRecord)
+      return previousKeys.length === nextKeys.length
+        && previousKeys.every((property) => Object.is(previousRecord[property], nextRecord[property]))
+    })()
+  )
+  if (!valuesAreShallowEqual) stableValueRef.current = value
+  const stableValue = stableValueRef.current
+  const latestValueRef = useRef(stableValue)
+  latestValueRef.current = stableValue
+  const lastPersistedRef = useRef<{ key: string; value: T } | undefined>(undefined)
+  const flushLatestDraftRef = useRef<() => void>(() => undefined)
+  flushLatestDraftRef.current = () => {
+    if (persistOnUnmountRef?.current === false) return
+    const latestValue = latestValueRef.current
+    if (
+      lastPersistedRef.current?.key === key
+      && Object.is(lastPersistedRef.current.value, latestValue)
+    ) return
+    persistDraft<T>(key, latestValue)
+    lastPersistedRef.current = { key, value: latestValue }
+  }
+  const flushLatestDraft = useCallback(() => {
+    flushLatestDraftRef.current()
+  }, [])
 
   useEffect(() => {
-    if (!serializedData.compact || !serializedData.full || typeof window === 'undefined') {
-      return undefined
-    }
+    if (typeof window === 'undefined') return undefined
 
     const timer = window.setTimeout(() => {
-      if (persistOnUnmountRef?.current === false) return
-      persistDraft<T>(key, serializedData)
+      flushLatestDraftRef.current()
     }, delay)
 
     return () => window.clearTimeout(timer)
-  }, [delay, key, persistOnUnmountRef, serializedData])
+  }, [delay, key, persistOnUnmountRef, stableValue])
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
 
     const flushLatestDraft = () => {
-      if (persistOnUnmountRef?.current === false) return
-      persistDraft<T>(key, latestSerializedData.current)
+      flushLatestDraftRef.current()
     }
     window.addEventListener('pagehide', flushLatestDraft)
 
@@ -218,8 +275,22 @@ export const useProjectCreationDraft = <T,>(
       window.removeEventListener('pagehide', flushLatestDraft)
       flushLatestDraft()
     }
-  }, [key, persistOnUnmountRef])
+  }, [persistOnUnmountRef])
+
+  return flushLatestDraft
 }
 
-export const buildEpisodeSourceSignature = (episodes: Array<{ id: string; rawText: string }>) =>
-  episodes.map(({ id, rawText }) => `${id}:${rawText}`).join('\u241e')
+/** 使用短摘要标识剧本内容，避免把整剧原文复制进每个步骤草稿。 */
+export const buildEpisodeSourceSignature = (episodes: Array<{ id: string; rawText: string }>) => {
+  let hash = 2166136261
+  let characterCount = 0
+  episodes.forEach(({ id, rawText }) => {
+    const source = `${id}\u0000${rawText}\u241e`
+    characterCount += source.length
+    for (let index = 0; index < source.length; index += 1) {
+      hash ^= source.charCodeAt(index)
+      hash = Math.imul(hash, 16777619)
+    }
+  })
+  return `${episodes.length}:${characterCount}:${(hash >>> 0).toString(36)}`
+}

@@ -203,8 +203,12 @@ export type StudioScriptAssetListRequest = {
   cancel: () => void
 }
 
+export type StudioScriptAssetEpisodeListRequest = {
+  promise: Promise<StudioScriptAssetEpisode[]>
+  cancel: () => void
+}
+
 const assetExtractEstimateRequests = new Map<string, Promise<StudioScriptAssetExtractEstimate>>()
-const assetEpisodeListRequests = new Map<string, Promise<StudioScriptAssetEpisode[]>>()
 
 function parseScriptFile(file: File): CancelablePromise<ApiEnvelope<StudioScriptParseResult>> {
   return __request(OpenAPI, {
@@ -438,9 +442,8 @@ export const StudioScriptsApi = {
 
   getAssetExtractEstimate(
     params: StudioScriptAssetExtractEstimateParams,
-    requestKey = '',
   ): Promise<StudioScriptAssetExtractEstimate> {
-    const cacheKey = `${params.scriptImportId}:${requestKey}`
+    const cacheKey = String(params.scriptImportId)
     const pendingRequest = assetExtractEstimateRequests.get(cacheKey)
     if (pendingRequest) return pendingRequest
 
@@ -465,29 +468,20 @@ export const StudioScriptsApi = {
     }
   },
 
-  getAssetEpisodes(
+  requestAssetEpisodes(
     scriptImportId: StudioScriptImportId,
-    requestKey = '',
-  ): Promise<StudioScriptAssetEpisode[]> {
-    const cacheKey = `${scriptImportId}:${requestKey}`
-    const pendingRequest = assetEpisodeListRequests.get(cacheKey)
-    if (pendingRequest) return pendingRequest
-
+  ): StudioScriptAssetEpisodeListRequest {
     const request = getScriptAssetEpisodes(scriptImportId)
-      .then((response) => {
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
         const episodes = unwrapApiData<StudioScriptAssetEpisode[]>(
           response,
           'Script asset episodes loading failed',
         )
         return [...episodes].sort((left, right) => left.index - right.index)
-      })
-      .finally(() => {
-        if (assetEpisodeListRequests.get(cacheKey) === request) {
-          assetEpisodeListRequests.delete(cacheKey)
-        }
-      })
-    assetEpisodeListRequests.set(cacheKey, request)
-    return request
+      }),
+    }
   },
 
   requestAssetList(params: StudioScriptAssetListParams): StudioScriptAssetListRequest {

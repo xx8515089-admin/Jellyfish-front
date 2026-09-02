@@ -24,17 +24,10 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { StudioProjectsService } from '../../../services/generated'
 import { StudioScriptsApi } from '../../../services/studioScripts'
 import type { StudioScriptImportId, StudioScriptImportListItem } from '../../../services/studioScripts'
 import { useBilingualText } from '../../../i18n/useBilingualText'
 import { clearProjectCreationDrafts } from './projectCreationDraft'
-import {
-  loadScriptImportChapters,
-  loadScriptImportDetail,
-  readCachedScriptImportChapters,
-  readCachedScriptImportDetail,
-} from './scriptImportResumeCache'
 import {
   createCanvasWorkspace,
   deleteCanvasWorkspace,
@@ -245,15 +238,6 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
     navigate('/projects/create')
   }
 
-  const prefetchProjectResumeData = (project: ProjectView) => {
-    const scriptImport = project.scriptImport
-    if (!scriptImport) return
-    void loadScriptImportDetail(scriptImport.id).catch(() => undefined)
-    if ((scriptImport.currentStep ?? 1) >= 2) {
-      void loadScriptImportChapters(scriptImport.id).catch(() => undefined)
-    }
-  }
-
   const handleOpenWorkspace = (project: ProjectView) => {
     if (workspaceView === 'canvas') {
       navigate(`/canvas/${project.id}`)
@@ -262,13 +246,9 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
 
     const scriptImport = project.scriptImport
     if (!scriptImport) return
-    prefetchProjectResumeData(project)
-    clearProjectCreationDrafts()
     navigate(`/projects/create?scriptImportId=${encodeURIComponent(String(scriptImport.id))}`, {
       state: {
         scriptImport,
-        scriptImportDetail: readCachedScriptImportDetail(scriptImport.id),
-        chapters: readCachedScriptImportChapters(scriptImport.id),
       },
     })
   }
@@ -309,11 +289,10 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
         }
         return
       }
-      await StudioProjectsService.deleteProjectApiV1StudioProjectsProjectIdDelete({ projectId })
-      message.success(l('已删除', 'Deleted'))
-      setProjects((prev) => (Array.isArray(prev) ? prev.filter((p) => p.id !== projectId) : []))
-      setTotalProjects((total) => Math.max(0, total - 1))
-      if (projects.length === 1 && page > 1) setPage((currentPage) => currentPage - 1)
+      message.warning(l(
+        '剧本项目删除接口未接入，暂不能删除',
+        'Script project deletion is not connected yet.',
+      ))
     } catch {
       message.error(l('删除失败', 'Failed to delete'))
     }
@@ -333,8 +312,6 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
         className={`project-lobby-card${isCanvasView ? ' project-lobby-card--canvas' : ''}${visibleInfoProjectId === p.id ? ' is-info-visible' : ''}`}
         role="button"
         tabIndex={0}
-        onPointerEnter={() => prefetchProjectResumeData(p)}
-        onFocus={() => prefetchProjectResumeData(p)}
         onClick={() => handleOpenWorkspace(p)}
         onKeyDown={(event) => {
           if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return

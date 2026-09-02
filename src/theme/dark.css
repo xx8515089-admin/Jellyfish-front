@@ -1265,6 +1265,24 @@ code {
   background: var(--jf-panel-3) !important;
 }
 
+.project-assets-step .project-assets-step__asset-loading {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.project-assets-step .project-assets-step__asset-loading .ant-spin-dot-item {
+  background-color: var(--jf-accent-strong) !important;
+}
+
+.project-assets-step .project-assets-step__asset-loading-copy strong {
+  color: var(--jf-text-soft) !important;
+}
+
+.project-assets-step .project-assets-step__asset-loading-copy small {
+  color: var(--jf-muted) !important;
+}
+
 .project-assets-step .project-assets-step__tabs {
   background: var(--jf-panel) !important;
   border-color: var(--jf-border) !important;
