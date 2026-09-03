@@ -667,9 +667,12 @@ code {
   color: var(--jf-muted) !important;
 }
 
-.project-create-page__balance-value strong,
-.project-create-page__balance-value .anticon {
+.project-create-page__balance-value strong {
   color: var(--jf-text-soft) !important;
+}
+
+.project-create-page__balance-value .anticon {
+  color: #c8b58a !important;
 }
 
 .project-create-page__steps li {
@@ -893,6 +896,7 @@ code {
 .custom-style-modal .ant-input,
 .custom-style-modal .ant-input-affix-wrapper:not(.ant-input-textarea-affix-wrapper),
 .custom-style-modal__uploader.ant-upload-wrapper .ant-upload-drag,
+.voice-library-modal .voice-library-modal__name-search,
 .voice-library-modal__filters .ant-select-selector,
 .studio-select.studio-select.ant-select-single .ant-select-selector,
 .studio-select__popup.ant-select-dropdown {
@@ -905,6 +909,7 @@ code {
 .custom-style-modal .ant-input:hover,
 .custom-style-modal .ant-input-affix-wrapper:hover,
 .custom-style-modal__uploader.ant-upload-wrapper .ant-upload-drag:hover,
+.voice-library-modal .voice-library-modal__name-search:hover,
 .studio-select.studio-select.ant-select-single:not(.ant-select-disabled):hover .ant-select-selector,
 .studio-select.studio-select.ant-select-single.ant-select-focused .ant-select-selector,
 .studio-select.studio-select.ant-select-single.ant-select-open .ant-select-selector {
@@ -914,13 +919,15 @@ code {
 
 .custom-style-modal .ant-input:focus,
 .custom-style-modal .ant-input-focused,
-.custom-style-modal .ant-input-affix-wrapper-focused {
+.custom-style-modal .ant-input-affix-wrapper-focused,
+.voice-library-modal .voice-library-modal__name-search.ant-input-affix-wrapper-focused {
   border-color: var(--jf-accent-border) !important;
   box-shadow: 0 0 0 2px var(--jf-accent-soft) !important;
 }
 
 .custom-style-modal .ant-input::placeholder,
-.custom-style-modal textarea.ant-input::placeholder {
+.custom-style-modal textarea.ant-input::placeholder,
+.voice-library-modal .voice-library-modal__name-search .ant-input::placeholder {
   color: var(--jf-subtle) !important;
 }
 
@@ -1073,6 +1080,15 @@ code {
   background: var(--jf-accent-soft) !important;
   border-color: var(--jf-border-soft) !important;
   color: var(--jf-muted) !important;
+}
+
+.voice-library-modal .voice-library-modal__voice-meta,
+.voice-library-modal .voice-library-modal__state {
+  color: var(--jf-muted) !important;
+}
+
+.voice-library-modal .voice-library-modal__state.is-error {
+  color: #e39a72 !important;
 }
 
 .voice-library-modal .voice-library-modal__selected-mark {
@@ -1407,7 +1423,7 @@ code {
 
 .project-assets-step .project-assets-step__card footer .project-assets-step__voice-button {
   background: var(--jf-panel-2) !important;
-  border: 1px solid var(--jf-border) !important;
+  border-color: var(--jf-border) !important;
   color: var(--jf-text-soft) !important;
 }
 
@@ -1415,6 +1431,24 @@ code {
   background: var(--jf-panel-3) !important;
   border-color: var(--jf-accent-border) !important;
   color: var(--jf-text) !important;
+}
+
+.project-assets-step .project-assets-step__card footer .project-assets-step__voice-button.is-configured {
+  background: rgba(73, 184, 174, 0.12) !important;
+  border-color: rgba(104, 211, 201, 0.24) !important;
+  color: #83ddd4 !important;
+  box-shadow: none !important;
+  font-weight: 600;
+}
+
+.project-assets-step .project-assets-step__card footer .project-assets-step__voice-button.is-configured .anticon {
+  color: #70d2c9 !important;
+}
+
+.project-assets-step .project-assets-step__card footer .project-assets-step__voice-button.is-configured:hover {
+  background: rgba(73, 184, 174, 0.18) !important;
+  border-color: rgba(104, 211, 201, 0.38) !important;
+  color: #a0ebe4 !important;
 }
 
 .project-assets-step .project-assets-step__card footer .project-assets-step__more-button {
@@ -1480,9 +1514,31 @@ code {
   background-image: radial-gradient(circle at 50% 45%, var(--jf-panel-2), var(--jf-panel) 62%) !important;
 }
 
+.asset-generation-workspace .asset-generation-workspace__generation-state,
+.project-assets-step .project-assets-step__card-generation {
+  background: color-mix(in srgb, var(--jf-panel) 88%, transparent) !important;
+  color: var(--jf-muted) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__generation-state strong,
+.project-assets-step .project-assets-step__card-generation strong {
+  color: var(--jf-text-soft) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__generation-state small,
+.project-assets-step .project-assets-step__card-generation small {
+  color: var(--jf-muted) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__generation-state .ant-spin-dot-item,
+.project-assets-step .project-assets-step__card-generation .ant-spin-dot-item {
+  background-color: var(--jf-accent-strong) !important;
+}
+
 .asset-generation-workspace .asset-generation-workspace__main-badge {
-  background: var(--jf-accent) !important;
-  color: #111111 !important;
+  background: rgba(16, 19, 27, 0.72) !important;
+  border-color: rgba(104, 211, 201, 0.34) !important;
+  color: #83ddd4 !important;
 }
 
 .asset-generation-workspace .asset-generation-workspace__history {
@@ -1504,11 +1560,41 @@ code {
   color: var(--jf-text-soft) !important;
 }
 
+.asset-generation-workspace .asset-generation-workspace__history-item.is-selected > button.has-image {
+  border-color: var(--jf-accent-border) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--jf-accent) 24%, transparent) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__history-loading {
+  background: var(--jf-panel-2) !important;
+  border-color: var(--jf-border-soft) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__history-loading .ant-spin-dot-item {
+  background-color: var(--jf-accent-strong) !important;
+}
+
 .asset-generation-workspace .asset-generation-workspace__history button:disabled {
   background: var(--jf-panel-2) !important;
   border-color: var(--jf-border-soft) !important;
   color: var(--jf-subtle) !important;
   opacity: 1;
+}
+
+.asset-generation-workspace .asset-generation-workspace__history button.asset-generation-workspace__history-primary {
+  background: rgba(16, 19, 27, 0.76) !important;
+  border-color: var(--jf-border-soft) !important;
+  color: var(--jf-text) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__history button.asset-generation-workspace__history-primary:not(:disabled):hover {
+  background: var(--jf-accent-soft) !important;
+  border-color: var(--jf-accent-border) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__history button.asset-generation-workspace__history-primary:disabled {
+  background: rgba(16, 19, 27, 0.76) !important;
+  color: var(--jf-muted) !important;
 }
 
 .asset-generation-workspace .asset-generation-workspace__panel,
@@ -1553,10 +1639,23 @@ code {
   color: var(--jf-muted) !important;
 }
 
-.asset-generation-workspace .asset-generation-workspace__reference-add:hover {
+.asset-generation-workspace .asset-generation-workspace__reference-add:not(:disabled):hover {
   background: var(--jf-panel-3) !important;
   border-color: var(--jf-accent-border) !important;
   color: var(--jf-text-soft) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__reference-dropzone {
+  background: color-mix(in srgb, var(--jf-panel-3) 68%, var(--jf-panel-2)) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__references.is-drag-over .asset-generation-workspace__reference-add {
+  background: var(--jf-accent-soft) !important;
+  border-color: var(--jf-accent-border) !important;
+  color: var(--jf-text) !important;
+  box-shadow: inset 0 0 0 1px var(--jf-border-soft) !important;
 }
 
 .asset-generation-workspace .asset-generation-workspace__prompt-heading-actions > button {
@@ -1642,6 +1741,15 @@ code {
   color: var(--jf-text) !important;
 }
 
+.asset-generation-workspace .asset-generation-workspace__look-loading {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-border) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__look-loading .ant-spin-dot-item {
+  background-color: var(--jf-accent-strong) !important;
+}
+
 .asset-generation-workspace .asset-generation-workspace__look-add:disabled,
 .asset-generation-workspace .asset-generation-workspace__look-add:disabled:hover {
   background: var(--jf-bg-soft) !important;
@@ -1650,9 +1758,30 @@ code {
   opacity: 1;
 }
 
+.asset-generation-workspace .asset-generation-workspace__look-rail button.asset-generation-workspace__look-episode-action {
+  background: linear-gradient(135deg, #31f4dc, #74ff91) !important;
+  border-color: transparent !important;
+  color: #071311 !important;
+  opacity: 1;
+}
+
+.asset-generation-workspace .asset-generation-workspace__look-rail button.asset-generation-workspace__look-episode-action:hover {
+  background: linear-gradient(135deg, #27e4cd, #64ef85) !important;
+  color: #06110f !important;
+  box-shadow: 0 8px 18px rgba(49, 244, 220, 0.24) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__look-rail button.asset-generation-workspace__look-episode-action:disabled,
+.asset-generation-workspace .asset-generation-workspace__look-rail button.asset-generation-workspace__look-episode-action:disabled:hover {
+  background: linear-gradient(135deg, #31f4dc, #74ff91) !important;
+  border-color: transparent !important;
+  color: #071311 !important;
+  opacity: 0.48;
+}
+
 .asset-generation-workspace .asset-generation-workspace__look-menu {
   background: var(--jf-panel-2) !important;
-  border-color: var(--jf-border) !important;
+  border: 1px solid var(--jf-border) !important;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
 }
 
@@ -1662,10 +1791,12 @@ code {
   color: var(--jf-text-soft) !important;
 }
 
-.asset-generation-workspace .asset-generation-workspace__look-menu button:hover,
-.asset-generation-workspace .asset-generation-workspace__look-menu button:focus-visible {
-  background: var(--jf-panel-3) !important;
+.asset-generation-workspace .asset-generation-workspace__look-rail .asset-generation-workspace__look-menu button:hover,
+.asset-generation-workspace .asset-generation-workspace__look-rail .asset-generation-workspace__look-menu button:focus-visible {
+  background: var(--jf-selected-hover) !important;
+  border: 0 !important;
   color: var(--jf-text) !important;
+  box-shadow: none !important;
 }
 
 .asset-generation-workspace .asset-generation-workspace__look-main {
@@ -1679,26 +1810,55 @@ code {
   color: var(--jf-muted) !important;
 }
 
-.asset-generation-workspace .asset-generation-workspace__look-name {
-  background: color-mix(in srgb, var(--jf-panel) 92%, transparent) !important;
+.asset-generation-workspace .asset-generation-workspace__look-meta {
+  background: rgba(31, 41, 55, 0.76) !important;
   border-color: var(--jf-border-soft) !important;
+  color: #fff !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__look-name {
   color: var(--jf-text-soft) !important;
 }
 
+.asset-generation-workspace .asset-generation-workspace__look-status {
+  background: rgba(31, 41, 55, 0.72) !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  color: #fff !important;
+}
+
 .asset-generation-workspace .asset-generation-workspace__look-main.is-selected {
-  background: var(--jf-selected) !important;
-  border-color: var(--jf-accent-border) !important;
+  background: var(--jf-panel-2) !important;
+  border-color: rgba(255, 255, 255, 0.72) !important;
   color: var(--jf-text) !important;
-  box-shadow: inset 0 0 0 1px var(--jf-border-soft) !important;
+  box-shadow:
+    0 0 0 2px rgba(13, 14, 18, 0.96),
+    0 0 0 3px rgba(255, 255, 255, 0.56),
+    0 10px 22px rgba(0, 0, 0, 0.32) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__look-main.is-selected:hover {
+  background: var(--jf-panel-2) !important;
+  border-color: rgba(255, 255, 255, 0.82) !important;
+  color: var(--jf-text) !important;
 }
 
 .asset-generation-workspace .asset-generation-workspace__look-main.is-selected .asset-generation-workspace__look-name {
-  color: var(--jf-text) !important;
+  color: #fff !important;
 }
 
 .asset-generation-workspace .asset-generation-workspace__footer {
   background: var(--jf-panel) !important;
   border-color: var(--jf-border-soft) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__generation-message {
+  background: var(--jf-panel-2) !important;
+  color: var(--jf-muted) !important;
+}
+
+.asset-generation-workspace .asset-generation-workspace__generation-message.is-error {
+  background: color-mix(in srgb, #7f1d1d 28%, var(--jf-panel)) !important;
+  color: #fca5a5 !important;
 }
 
 .asset-generation-workspace .asset-generation-workspace__footer .ant-btn-primary {
@@ -1762,8 +1922,8 @@ code {
   color: var(--jf-muted) !important;
 }
 
-.asset-generation-workspace .asset-generation-workspace__description-references > button:hover,
-.asset-generation-workspace .asset-generation-workspace__description-references .asset-generation-workspace__description-reference-add:hover {
+.asset-generation-workspace .asset-generation-workspace__description-references > button:not(:disabled):hover,
+.asset-generation-workspace .asset-generation-workspace__description-references .asset-generation-workspace__description-reference-add:not(:disabled):hover {
   background: var(--jf-panel-3) !important;
   border-color: var(--jf-accent-border) !important;
   color: var(--jf-text-soft) !important;

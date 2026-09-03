@@ -5,11 +5,12 @@ import {
   ArrowRightOutlined,
   CloseOutlined,
   FileAddOutlined,
+  StarFilled,
   PlusOutlined,
   StopOutlined,
-  ThunderboltFilled,
 } from '@ant-design/icons'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { getStoredAuthUser } from '../../../auth'
 import { getApiErrorMessage } from '../../../services/apiErrors'
 import { StudioScriptsApi } from '../../../services/studioScripts'
 import type {
@@ -55,6 +56,7 @@ const MAX_EPISODE_LENGTH = 50_000
 const RECOMMENDED_SCRIPT_LENGTH = 50
 const FALLBACK_RATIOS = ['9:16', '4:3', '16:9', '3:4', '1:1', '21:9']
 const SCRIPT_IMPORT_ACCEPT = '.txt,.md,.doc,.docx'
+const VISUAL_STYLE_NAMES_SESSION_KEY_PREFIX = 'jellyfish:studio:visual-style-names'
 type StyleCategoryKey = 'visual' | 'tone'
 type StylePreview = 'empty' | 'online'
 type EpisodeDraft = {
@@ -77,6 +79,7 @@ type ProjectCreateDraft = {
   aiModelId?: StudioScriptImportId | null
   scriptImportId: StudioScriptImportId | null
   selectedStyleKeys: Partial<Record<StyleCategoryKey, string>>
+  selectedStyleNames?: Partial<Record<StyleCategoryKey, string>>
   targetMarket: string
 }
 type ProjectCreateRouteState = {
@@ -99,6 +102,39 @@ type DisplayedStyle = {
   description?: string
   id?: StudioScriptImportId
   defaultOption?: boolean
+}
+
+const normalizeStyleNameList = (source: unknown): string[] => {
+  if (!Array.isArray(source)) return []
+  return [...new Set(source
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean))]
+}
+
+const getVisualStyleNamesSessionKey = () => {
+  const user = getStoredAuthUser()
+  const userScope = user?.id ?? user?.username ?? 'anonymous'
+  return `${VISUAL_STYLE_NAMES_SESSION_KEY_PREFIX}:${encodeURIComponent(String(userScope))}`
+}
+
+const readVisualStyleNamesSnapshot = () => {
+  if (typeof window === 'undefined') return []
+  try {
+    const serialized = window.sessionStorage.getItem(getVisualStyleNamesSessionKey())
+    return serialized ? normalizeStyleNameList(JSON.parse(serialized)) : []
+  } catch {
+    return []
+  }
+}
+
+const writeVisualStyleNamesSnapshot = (styleNames: string[]) => {
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.setItem(getVisualStyleNamesSessionKey(), JSON.stringify(styleNames))
+  } catch {
+    // 会话缓存不可用时仍保留当前内存选项，不影响用户本次选择。
+  }
 }
 
 /** 将一条后端风格记录及其在线封面映射为项目磁贴模型。 */
@@ -224,6 +260,40 @@ const toCreationStepIndex = (currentStep?: number | null) => {
 const hasOwnNullableField = (source: object | null | undefined, field: PropertyKey) => (
   Boolean(source && Object.prototype.hasOwnProperty.call(source, field))
 )
+
+type ScriptStyleSnapshot = {
+  visualStyleId?: StudioScriptImportId | null
+  toneStyleId?: StudioScriptImportId | null
+  visualStyleName?: string | null
+  toneStyleName?: string | null
+  visualStyleCode?: string | null
+  toneStyleCode?: string | null
+}
+
+/** 保存风格的展示名称；详情暂未返回名称时以 code 兜底，避免第三步重新查询风格列表。 */
+const getScriptStyleNameSnapshot = (
+  source?: ScriptStyleSnapshot | null,
+): Partial<Record<StyleCategoryKey, string>> => {
+  if (!source) return {}
+
+  const visualName = source.visualStyleName?.trim() || source.visualStyleCode?.trim()
+  const toneName = source.toneStyleName?.trim() || source.toneStyleCode?.trim()
+  return {
+    ...(hasOwnNullableField(source, 'visualStyleId') && source.visualStyleId === null
+      ? { visual: '' }
+      : visualName ? { visual: visualName } : {}),
+    ...(hasOwnNullableField(source, 'toneStyleId') && source.toneStyleId === null
+      ? { tone: '' }
+      : toneName ? { tone: toneName } : {}),
+  }
+}
+
+const normalizeDraftStyleNames = (
+  source?: Partial<Record<StyleCategoryKey, string>> | null,
+): Partial<Record<StyleCategoryKey, string>> => ({
+  ...(typeof source?.visual === 'string' ? { visual: source.visual } : {}),
+  ...(typeof source?.tone === 'string' ? { tone: source.tone } : {}),
+})
 
 /** 风格选项尚未加载完成时，从选中键中恢复后端风格 ID。 */
 const getStyleIdFromSelectionKey = (key?: string): StudioScriptImportId | null => {
@@ -356,6 +426,7 @@ const ProjectCreatePage: React.FC = () => {
       toCreationStepIndex(resumeImport?.currentStep),
     )
     : shouldRestoreProjectDraft && restoredEpisodes.length ? restoredStep : 0)
+  const [assetImageSubmissionPending, setAssetImageSubmissionPending] = useState(false)
   const navigateToWorkflowStep = useCallback((step: number) => {
     workflowNavigationRevisionRef.current += 1
     setCurrentStep(step)
@@ -403,6 +474,16 @@ const ProjectCreatePage: React.FC = () => {
   )
   const selectedStyleKeysRef = useRef(selectedStyleKeys)
   selectedStyleKeysRef.current = selectedStyleKeys
+  const [selectedStyleNames, setSelectedStyleNames] = useState<Partial<Record<StyleCategoryKey, string>>>(
+    () => resumeSnapshot
+      ? {
+        ...getScriptStyleNameSnapshot(resumeImport),
+        ...getScriptStyleNameSnapshot(resumeDetail),
+      }
+      : shouldRestoreProjectDraft
+        ? normalizeDraftStyleNames(restoredDraft?.selectedStyleNames)
+        : {},
+  )
   const initialImportedFileName = resumeSnapshot
     ? resumeDetail?.fileName?.trim() || resumeImport?.sourceFileName?.trim() || ''
     : shouldRestoreProjectDraft ? restoredDraft?.importedFileName?.trim() || '' : ''
@@ -490,6 +571,7 @@ const ProjectCreatePage: React.FC = () => {
     error: studioStyleOptionsError,
     refresh: refreshStudioStyleOptions,
   } = useStudioStyleOptions(styleOptionsEnabled)
+  const [cachedVisualStyleNames, setCachedVisualStyleNames] = useState(readVisualStyleNamesSnapshot)
 
   const projectDraft = useMemo<ProjectCreateDraft>(() => ({
     currentStep,
@@ -504,6 +586,7 @@ const ProjectCreatePage: React.FC = () => {
     aiModelId,
     scriptImportId,
     selectedStyleKeys,
+    selectedStyleNames,
     targetMarket,
   }), [
     activeEpisodeIndex,
@@ -517,6 +600,7 @@ const ProjectCreatePage: React.FC = () => {
     script,
     scriptImportId,
     selectedStyleKeys,
+    selectedStyleNames,
     styleCategory,
     targetMarket,
   ])
@@ -536,6 +620,7 @@ const ProjectCreatePage: React.FC = () => {
     aiModelId: projectDraft.aiModelId,
     scriptImportId: projectDraft.scriptImportId,
     selectedStyleKeys: projectDraft.selectedStyleKeys,
+    selectedStyleNames: projectDraft.selectedStyleNames,
     targetMarket: projectDraft.targetMarket,
   }), [projectDraft])
   const latestProjectDraftRef = useRef(projectDraft)
@@ -645,6 +730,7 @@ const ProjectCreatePage: React.FC = () => {
               : {}),
           }
           : {}
+        const nextSelectedStyleNames = normalizeDraftStyleNames(fullDraft.selectedStyleNames)
         const hasBasicInfo = Boolean(
           nextName.trim()
           || nextScript.trim()
@@ -669,6 +755,7 @@ const ProjectCreatePage: React.FC = () => {
         setImportedFileName(nextImportedFileName)
         setImportedFileType(nextImportedFileType)
         setSelectedStyleKeys(nextSelectedStyleKeys)
+        setSelectedStyleNames(nextSelectedStyleNames)
         basicInfoEditRevisionRef.current = hasBasicInfo ? 1 : 0
         confirmedBasicInfoRef.current = null
         basicInfoTouchedRef.current = hasBasicInfo
@@ -728,8 +815,53 @@ const ProjectCreatePage: React.FC = () => {
   )
   const selectedVisualStyleId = getSelectedStyleId(selectedVisualStyle, selectedStyleKeys.visual)
   const selectedToneStyleId = getSelectedStyleId(selectedToneStyle, selectedStyleKeys.tone)
-  const visualStyleName = selectedVisualStyle?.value ?? ''
-  const toneStyleName = selectedToneStyle?.value ?? ''
+  const visualStyleName = selectedVisualStyle !== undefined
+    ? selectedVisualStyle.value
+    : selectedStyleNames.visual ?? ''
+  const toneStyleName = selectedToneStyle !== undefined
+    ? selectedToneStyle.value
+    : selectedStyleNames.tone ?? ''
+  const loadedVisualStyleNames = useMemo(() => [
+    ...new Set(displayedStylesByCategory.visual
+      .map((item) => item.value.trim())
+      .filter(Boolean)),
+  ], [displayedStylesByCategory.visual])
+  const assetVisualStyleOptions = useMemo(() => displayedStylesByCategory.visual
+    .filter((item) => Boolean(item.value.trim()))
+    .map((item) => ({
+      id: item.id,
+      name: item.value.trim(),
+      coverUrl: item.coverUrl,
+    })), [displayedStylesByCategory.visual])
+  const visualStyleNames = loadedVisualStyleNames.length
+    ? loadedVisualStyleNames
+    : cachedVisualStyleNames
+
+  useEffect(() => {
+    if (!loadedVisualStyleNames.length) return
+    setCachedVisualStyleNames((current) => {
+      if (
+        current.length === loadedVisualStyleNames.length
+        && current.every((value, index) => value === loadedVisualStyleNames[index])
+      ) return current
+      return loadedVisualStyleNames
+    })
+    writeVisualStyleNamesSnapshot(loadedVisualStyleNames)
+  }, [loadedVisualStyleNames])
+
+  useEffect(() => {
+    if (!selectedVisualStyle && !selectedToneStyle) return
+    setSelectedStyleNames((current) => {
+      const next = {
+        ...current,
+        ...(selectedVisualStyle ? { visual: selectedVisualStyle.value } : {}),
+        ...(selectedToneStyle ? { tone: selectedToneStyle.value } : {}),
+      }
+      if (next.visual === current.visual && next.tone === current.tone) return current
+      return next
+    })
+  }, [selectedToneStyle, selectedVisualStyle])
+
   useEffect(() => {
     if (restoringLocalDraft) return
     if (!ratioOptions.includes(ratio)) {
@@ -803,6 +935,10 @@ const ProjectCreatePage: React.FC = () => {
         setTargetMarket(detail.targetMarket ?? 'overseas')
         setImportedFileName(restoredFileName)
         setImportedFileType(restoredFileType)
+        setSelectedStyleNames((current) => ({
+          ...current,
+          ...getScriptStyleNameSnapshot(detail),
+        }))
         setSelectedStyleKeys((current) => ({
           ...current,
           ...(hasOwnNullableField(detail, 'visualStyleId')
@@ -1050,6 +1186,10 @@ const ProjectCreatePage: React.FC = () => {
       setScript(parsedText.slice(0, MAX_SCRIPT_LENGTH))
       setScriptImportId(parsed.id ?? null)
       setAiModelId(getScriptAiModelId(parsed))
+      setSelectedStyleNames((current) => ({
+        ...current,
+        ...getScriptStyleNameSnapshot(parsed),
+      }))
       if (parsed.id !== null && parsed.id !== undefined) {
         primeScriptImportDetail(parsed.id, {
           ...parsed,
@@ -1225,6 +1365,12 @@ const ProjectCreatePage: React.FC = () => {
           toneStyleId: hasOwnNullableField(confirmed, 'toneStyleId')
             ? confirmed.toneStyleId
             : requestBody.toneStyleId,
+          visualStyleName: confirmed.visualStyleName?.trim()
+            || confirmed.visualStyleCode?.trim()
+            || visualStyleName,
+          toneStyleName: confirmed.toneStyleName?.trim()
+            || confirmed.toneStyleCode?.trim()
+            || toneStyleName,
         }
 
         setScriptImportId(confirmedImportId)
@@ -1382,6 +1528,12 @@ const ProjectCreatePage: React.FC = () => {
         toneStyleId: hasOwnNullableField(saved, 'toneStyleId')
           ? saved?.toneStyleId
           : requestBody.toneStyleId,
+        visualStyleName: saved?.visualStyleName?.trim()
+          || saved?.visualStyleCode?.trim()
+          || visualStyleName,
+        toneStyleName: saved?.toneStyleName?.trim()
+          || saved?.toneStyleCode?.trim()
+          || toneStyleName,
       })
       invalidateScriptImportChapters(persistedId)
       resetBasicInfoTouched()
@@ -1647,6 +1799,8 @@ const ProjectCreatePage: React.FC = () => {
         targetMarket,
         visualStyleId: selectedVisualStyleId,
         toneStyleId: selectedToneStyleId,
+        visualStyleName,
+        toneStyleName,
         chapters: cachedImportDetail?.chapters
           ?? readCachedScriptImportChapters(extractScriptImportId),
       })
@@ -1707,6 +1861,10 @@ const ProjectCreatePage: React.FC = () => {
           ...current,
           [customStyleCategory]: createdStyleKey,
         }))
+        setSelectedStyleNames((current) => ({
+          ...current,
+          [customStyleCategory]: value,
+        }))
       }
       setCustomStyleModalOpen(false)
       message.success(l('\u81ea\u5b9a\u4e49\u98ce\u683c\u5df2\u521b\u5efa\u5e76\u5e94\u7528', 'Custom style created and applied'))
@@ -1725,6 +1883,10 @@ const ProjectCreatePage: React.FC = () => {
         setSelectedStyleKeys((current) => ({
           ...current,
           [customStyleCategory]: createdStyleKey,
+        }))
+        setSelectedStyleNames((current) => ({
+          ...current,
+          [customStyleCategory]: createdOption.name.trim(),
         }))
       }).catch(() => undefined)
     } catch (error) {
@@ -1758,7 +1920,10 @@ const ProjectCreatePage: React.FC = () => {
     && !assetEpisodesError
     && assetStepEpisodes.length > 0
   const canProceed = currentStep === 2
-    ? !restoringLocalDraft && !localDraftRestoreFailed && assetStepReady
+    ? !restoringLocalDraft
+      && !localDraftRestoreFailed
+      && assetStepReady
+      && !assetImageSubmissionPending
     : !restoringLocalDraft
       && !localDraftRestoreFailed
       && !restoringBasicInfo
@@ -1958,7 +2123,12 @@ const ProjectCreatePage: React.FC = () => {
             className="project-create-page__close"
             icon={<CloseOutlined />}
             aria-label={l('返回项目列表', 'Back to projects')}
-            disabled={restoringLocalDraft || parsingScript || submitting || creatingEpisode || parsingEpisodeFile}
+            disabled={restoringLocalDraft
+              || parsingScript
+              || submitting
+              || creatingEpisode
+              || parsingEpisodeFile
+              || assetImageSubmissionPending}
             onClick={() => {
               if (localDraftRestoreFailed) {
                 confirmDiscardFailedLocalDraft()
@@ -1981,6 +2151,7 @@ const ProjectCreatePage: React.FC = () => {
                   type="button"
                   className="project-create-page__step-button"
                   disabled={restoringLocalDraft
+                    || assetImageSubmissionPending
                     || !((currentStep === 2 && index === 1) || (currentStep === 3 && index === 2))}
                   title={currentStep === 2 && index === 1
                     ? l('返回剧本分集', 'Back to episodes')
@@ -2011,7 +2182,7 @@ const ProjectCreatePage: React.FC = () => {
           >
             <span className="project-create-page__balance-label">{l('余额', 'Balance')}</span>
             <span className="project-create-page__balance-value">
-              <ThunderboltFilled />
+              <StarFilled />
               <strong>{apiQuotaText}</strong>
             </span>
           </div>
@@ -2044,7 +2215,7 @@ const ProjectCreatePage: React.FC = () => {
                     <span className="project-create-page__next-with-cost">
                       <span>{l('下一步', 'Next')}</span>
                       <span className="project-create-page__next-cost">
-                        {l('预计', 'Est.')} <ThunderboltFilled /> {requiredCreditsText}
+                        {l('预计', 'Est.')} <StarFilled /> {requiredCreditsText}
                       </span>
                     </span>
                   )
@@ -2233,6 +2404,7 @@ const ProjectCreatePage: React.FC = () => {
                   onClick={() => {
                     if (selectedStyleKeys[styleCategory] !== item.key) markBasicInfoTouched()
                     setSelectedStyleKeys((current) => ({ ...current, [styleCategory]: item.key }))
+                    setSelectedStyleNames((current) => ({ ...current, [styleCategory]: item.value }))
                   }}
                 >
                   <span
@@ -2340,6 +2512,9 @@ const ProjectCreatePage: React.FC = () => {
           episodes={assetStepEpisodes}
           ratio={ratio}
           styleName={visualStyleName}
+          visualStyleNames={visualStyleNames}
+          visualStyleOptions={assetVisualStyleOptions}
+          onImageSubmissionStateChange={setAssetImageSubmissionPending}
         />
       ) : (
         <ProjectClipEditingStep

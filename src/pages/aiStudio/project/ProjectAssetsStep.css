@@ -218,10 +218,10 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: inherit;
+  color: #d8c7a3;
   font-size: 11px;
   line-height: 1;
-  opacity: 0.82;
+  opacity: 0.94;
 }
 
 .project-assets-step__content {
@@ -394,6 +394,36 @@
   color: #98a2b3;
 }
 
+.project-assets-step__card-generation {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #667085;
+  backdrop-filter: blur(3px);
+}
+
+.project-assets-step__card-generation .ant-spin-dot-item {
+  background: var(--project-create-primary);
+}
+
+.project-assets-step__card-generation strong {
+  color: #344054;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.project-assets-step__card-generation small {
+  color: #98a2b3;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
 .project-assets-step__empty-mark {
   display: inline-flex;
   color: #98a2b3;
@@ -478,13 +508,43 @@
 }
 
 .project-assets-step__card footer .project-assets-step__voice-button {
+  min-width: 0;
+  max-width: 104px;
+  padding-inline: 6px;
   flex: 0 0 auto;
   gap: 3px;
-  background: color-mix(in srgb, var(--project-create-primary) 5%, #f5f7fa);
+  border: 1px solid #dde3ea;
+  background: #f5f7fa;
+}
+
+.project-assets-step__card footer .project-assets-step__voice-button > span:not(.anticon) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .project-assets-step__card footer .project-assets-step__voice-button:hover {
-  background: color-mix(in srgb, var(--project-create-primary) 11%, #f5f7fa);
+  border-color: #cfd7e2;
+  background: #eef2f6;
+}
+
+.project-assets-step__card footer .project-assets-step__voice-button.is-configured {
+  border-color: rgba(42, 148, 139, 0.28);
+  background: rgba(42, 148, 139, 0.09);
+  color: #167d75;
+  box-shadow: none;
+  font-weight: 600;
+}
+
+.project-assets-step__card footer .project-assets-step__voice-button.is-configured .anticon {
+  color: #168b82;
+}
+
+.project-assets-step__card footer .project-assets-step__voice-button.is-configured:hover {
+  border-color: rgba(42, 148, 139, 0.42);
+  background: rgba(42, 148, 139, 0.14);
+  color: #126b65;
 }
 
 .project-assets-step__card footer .project-assets-step__more-button {

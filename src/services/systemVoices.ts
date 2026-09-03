@@ -58,6 +58,23 @@ export type SystemVoicesPage = {
   total: number
 }
 
+export type StudioAvailableVoicesQuery = {
+  sourceType?: SystemVoiceSourceType
+  gender?: SystemVoiceGender
+  ageGroup?: SystemVoiceAgeGroup
+  languageCode?: string
+}
+
+export type StudioAssetVoiceUpdatePayload = {
+  assetId: number
+  voiceId: number
+}
+
+export type StudioAvailableVoicesRequest = {
+  promise: Promise<SystemVoiceRead[]>
+  cancel: () => void
+}
+
 export type SystemVoicePayload = {
   name: string
   providerCode: string
@@ -178,6 +195,33 @@ function getAvailableVoices(
   })
 }
 
+function getAvailableVoiceList(
+  query: StudioAvailableVoicesQuery,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'GET',
+    url: '/api/v1/studio/voices/available',
+    query,
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function updateStudioAssetVoice(
+  requestBody: StudioAssetVoiceUpdatePayload,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'POST',
+    url: '/api/v1/studio/assets/voice/update',
+    body: requestBody,
+    mediaType: 'application/json',
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
 function createSystemVoice(
   requestBody: SystemVoicePayload,
 ): CancelablePromise<ApiEnvelope<unknown>> {
@@ -252,5 +296,29 @@ export const SystemVoicesApi = {
   async delete(requestBody: SystemVoiceDeletePayload): Promise<void> {
     const response = await deleteSystemVoice(requestBody)
     assertSystemSuccess(response, 'Voice deletion failed')
+  },
+}
+
+/** 项目资产步骤使用的音色查询与角色音色配置接口。 */
+export const StudioVoicesApi = {
+  requestAvailable(query: StudioAvailableVoicesQuery = {}): StudioAvailableVoicesRequest {
+    const request = getAvailableVoiceList(query)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        assertSystemSuccess(response, 'Available voices loading failed')
+        if (!Array.isArray(response.data)) {
+          throw new Error('Available voices returned an invalid data payload')
+        }
+        return response.data
+          .map(normalizeVoice)
+          .filter((item): item is SystemVoiceRead => item !== null)
+      }),
+    }
+  },
+
+  async updateAssetVoice(requestBody: StudioAssetVoiceUpdatePayload): Promise<void> {
+    const response = await updateStudioAssetVoice(requestBody)
+    assertSystemSuccess(response, 'Asset voice update failed')
   },
 }

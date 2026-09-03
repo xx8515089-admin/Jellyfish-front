@@ -29,7 +29,7 @@ import {
   PlusCircleOutlined,
   QuestionCircleFilled,
   SettingOutlined,
-  ThunderboltFilled,
+  StarFilled,
   VideoCameraOutlined,
 } from '@ant-design/icons'
 import { useBilingualText } from '../../../i18n/useBilingualText'
@@ -1363,7 +1363,7 @@ export default function ProjectClipEditingStep({
             <strong>{episodes[0]?.title || l('第1集', 'Episode 1')}</strong>
             <span>{l('本集已消耗', 'Episode cost')}</span>
             <QuestionCircleFilled className="project-clip-editor__help-icon" />
-            <span className="project-clip-editor__episode-cost"><ThunderboltFilled />{clips.length * 6}</span>
+            <span className="project-clip-editor__episode-cost"><StarFilled />{clips.length * 6}</span>
           </div>
         </header>
         <div className="project-clip-editor__clip-list">
@@ -1444,7 +1444,7 @@ export default function ProjectClipEditingStep({
         </div>
         <footer className="project-clip-editor__batch-footer">
           <button type="button" onClick={() => message.info(l('批量生成功能待接入', 'Batch generation is not connected yet'))}>
-            <ThunderboltFilled />
+            <StarFilled />
             <span>{l('批量生成', 'Batch generate')}</span>
           </button>
         </footer>
@@ -2125,7 +2125,7 @@ export default function ProjectClipEditingStep({
           <Button
             type="primary"
             size="large"
-            icon={<ThunderboltFilled />}
+            icon={<StarFilled />}
             disabled={!prompt.trim()}
             onClick={() => message.info(l('生成接口待接入', 'Generation API is not connected yet'))}
           >

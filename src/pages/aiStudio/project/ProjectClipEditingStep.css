@@ -73,7 +73,7 @@
 }
 
 .project-clip-editor__rail > header .project-clip-editor__episode-cost .anticon {
-  color: #98a2b3;
+  color: #c8b58a;
   font-size: 10px;
 }
 
@@ -344,7 +344,11 @@
 }
 
 .project-clip-editor__batch-footer > button .anticon {
-  color: #fff;
+  color: #d8c7a3;
+}
+
+.project-clip-editor__generation-footer > .ant-btn .anticon {
+  color: #d8c7a3;
 }
 
 .project-clip-editor__batch-footer > button span {

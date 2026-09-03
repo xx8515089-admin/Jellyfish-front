@@ -20,6 +20,10 @@ export type StudioScriptImportListItem = {
   targetMarket?: string | null
   visualStyleId?: StudioScriptImportId | null
   toneStyleId?: StudioScriptImportId | null
+  visualStyleName?: string | null
+  toneStyleName?: string | null
+  visualStyleCode?: string | null
+  toneStyleCode?: string | null
   characterCount?: number | null
   chapterCount?: number | null
   parseStatus?: number | null
@@ -84,6 +88,8 @@ export type StudioScriptParseResult = {
   targetMarket?: string | null
   visualStyleId?: StudioScriptImportId | null
   toneStyleId?: StudioScriptImportId | null
+  visualStyleName?: string | null
+  toneStyleName?: string | null
   visualStyleCode?: string | null
   customStylePrompt?: string | null
   toneStyleCode?: string | null
@@ -166,6 +172,20 @@ export type StudioScriptAssetListParams = {
   assetType: StudioScriptAssetType
 }
 
+export type StudioScriptAssetVoiceLanguage = {
+  code: string
+  name: string
+  primaryLanguage: boolean
+}
+
+export type StudioScriptAssetVoice = {
+  id: number
+  name: string
+  languages: StudioScriptAssetVoiceLanguage[]
+  previewUrl: string
+  emotionAdjustable: boolean
+}
+
 export type StudioScriptAssetListItem = {
   id: StudioScriptImportId
   assetCode?: string | null
@@ -176,9 +196,14 @@ export type StudioScriptAssetListItem = {
   appearedEpisodes?: number[] | null
   description?: string | null
   createPrompt?: string | null
+  aspectRatio?: string | null
+  visualStyleId?: StudioScriptImportId | null
+  visualStyleName?: string | null
   status?: number | null
   coverFileId?: StudioScriptImportId | null
   coverUrl?: string | null
+  lookCount?: number | null
+  voice?: StudioScriptAssetVoice | null
   createdAt?: string | null
   updatedAt?: string | null
 }

@@ -201,7 +201,7 @@
 }
 
 .project-create-page__balance-value .anticon {
-  color: var(--project-create-primary);
+  color: #c8b58a;
   font-size: 11px;
 }
 
@@ -230,8 +230,9 @@
   gap: 3px;
   padding-left: 8px;
   border-left: 1px solid currentColor;
+  color: #d8c7a3;
   font-size: 11px;
-  opacity: 0.82;
+  opacity: 0.92;
 }
 
 .project-create-page__next-cost .anticon {
@@ -816,8 +817,13 @@
   overflow: hidden;
 }
 
+.project-create-page__episodes > .project-create-page__episode-workspace:only-child {
+  grid-column: 1 / -1;
+}
+
 .project-create-page__restore-state {
   min-height: 220px;
+  min-width: 0;
   width: min(1080px, 100%);
   display: flex;
   align-items: center;
@@ -828,6 +834,14 @@
   background: #fff;
   color: #7f8b9b;
   font-size: 13px;
+}
+
+.project-create-page__restore-state > span {
+  max-width: calc(100% - 42px);
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .project-create-page__restore-state.is-empty {

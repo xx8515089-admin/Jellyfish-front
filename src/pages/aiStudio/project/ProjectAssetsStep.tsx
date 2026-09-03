@@ -11,19 +11,41 @@ import {
   PictureOutlined,
   PlusOutlined,
   SwapOutlined,
-  ThunderboltFilled,
+  StarFilled,
   UploadOutlined,
 } from '@ant-design/icons'
 import { useBilingualText } from '../../../i18n/useBilingualText'
+import { getApiErrorMessage } from '../../../services/apiErrors'
+import {
+  StudioAssetGenerationApi,
+  parseStudioAssetImageTaskResult,
+} from '../../../services/studioAssetGeneration'
+import type {
+  StudioAssetImageHistoryItem,
+  StudioAssetImageTaskDetail,
+  StudioAssetImageTaskRequest,
+  StudioAssetReferenceItem,
+} from '../../../services/studioAssetGeneration'
 import { StudioEntitiesApi } from '../../../services/studioEntities'
+import { StudioModelsApi } from '../../../services/studioModels'
+import type { StudioGenerationModel } from '../../../services/studioModels'
 import { StudioScriptsApi } from '../../../services/studioScripts'
+import { StudioVoicesApi } from '../../../services/systemVoices'
 import type {
   StudioScriptAssetListRequest,
   StudioScriptAssetListResult,
   StudioScriptAssetType,
+  StudioScriptAssetVoice,
   StudioScriptImportId,
 } from '../../../services/studioScripts'
+import type { SystemVoiceRead } from '../../../services/systemVoices'
 import AssetGenerationWorkspace from './AssetGenerationWorkspace'
+import type {
+  AssetImageGenerationInput,
+  AssetImageGenerationViewState,
+  AssetImageOptionsInput,
+  AssetVisualStyleOption,
+} from './AssetGenerationWorkspace'
 import ImageViewer from './ImageViewer'
 import VoiceLibraryModal from './VoiceLibraryModal'
 import StudioSelect from './StudioSelect'
@@ -46,21 +68,29 @@ export type AssetEpisodeSource = {
 
 type AssetKind = 'role' | 'scene' | 'prop'
 type AssetScope = 'overview' | string
-type AssetOverrideField = 'name' | 'prompt' | 'imageUrl'
+type AssetOverrideField = 'name' | 'prompt' | 'imageUrl' | 'styleName' | 'visualStyleId' | 'aspectRatio'
 
 type AssetDraft = {
   id: string
+  /** assets/list 返回的真实资产 ID，用于需要落库的资产操作。 */
+  backendAssetId?: StudioScriptImportId
   kind: AssetKind
   name: string
   episodeIds: string[]
   imageUrl?: string
   prompt?: string
+  styleName?: string
+  visualStyleId?: number | null
+  aspectRatio?: string
   source?: 'fallback' | 'manual' | 'remote'
   assetCode?: string
   aliases?: string[]
   description?: string
   status?: number
   coverFileId?: StudioScriptImportId
+  lookCount?: number
+  updatedAt?: string
+  voice?: StudioScriptAssetVoice
   overrideFields?: AssetOverrideField[]
 }
 
@@ -80,6 +110,84 @@ type AssetPollingState = {
   lanes: Record<StudioScriptAssetType, AssetPollingLane>
 }
 
+type ActiveAssetImageRun = {
+  token: number
+  assetKey: string
+  backendAssetId: number
+  assetName: string
+  scriptImportId: StudioScriptImportId
+  scopeId: AssetScope
+  chapterId?: StudioScriptImportId
+  assetType: StudioScriptAssetType
+  sourceSignature: string
+  episodes: AssetEpisodeSource[]
+  taskId?: string
+  taskSucceeded?: boolean
+  expectedFileId?: StudioScriptImportId
+  previousCoverFileId?: StudioScriptImportId
+  previousImageUrl?: string
+  previousUpdatedAt?: string
+  resultMissCount: number
+  timer: number | null
+  request?: StudioAssetImageTaskRequest<unknown>
+}
+
+type PersistedAssetImageTask = {
+  assetKey: string
+  backendAssetId: number
+  assetName: string
+  scriptImportId: StudioScriptImportId
+  scopeId: AssetScope
+  chapterId?: StudioScriptImportId
+  assetType: StudioScriptAssetType
+  sourceSignature: string
+  taskId: string
+  taskSucceeded?: boolean
+  expectedFileId?: StudioScriptImportId
+  previousCoverFileId?: StudioScriptImportId
+  previousImageUrl?: string
+  previousUpdatedAt?: string
+}
+
+type ConfirmedAssetImage = {
+  coverFileId?: StudioScriptImportId
+  imageUrl?: string
+  updatedAt?: string
+  laneRevision: number
+}
+
+type AssetImageOptionsUpdateWaiter = {
+  revision: number
+  resolve: () => void
+  reject: (error: unknown) => void
+}
+
+type AssetImageOptionsUpdateQueue = {
+  queueKey: string
+  scriptImportId: StudioScriptImportId
+  latestRevision: number
+  appliedRevision: number
+  latestSignature: string
+  latestAsset: AssetDraft
+  latestInput: AssetImageOptionsInput
+  processing: boolean
+  waiters: AssetImageOptionsUpdateWaiter[]
+}
+
+type AssetImageHistoryBucket = {
+  items: StudioAssetImageHistoryItem[]
+  loading: boolean
+  error?: unknown
+}
+
+type AssetReferenceBucket = {
+  items: StudioAssetReferenceItem[]
+  total: number
+  maxCount: number
+  loading: boolean
+  error?: unknown
+}
+
 type AssetsStepDraft = {
   sourceSignature: string
   kind: AssetKind
@@ -88,6 +196,8 @@ type AssetsStepDraft = {
   resolution: string
   completedEpisodeIds: string[]
   hiddenRemoteAssetIds?: string[]
+  unsavedImageOptionKeys?: string[]
+  pendingImageTasks?: PersistedAssetImageTask[]
 }
 
 type ProjectAssetsStepProps = {
@@ -95,6 +205,9 @@ type ProjectAssetsStepProps = {
   episodes: AssetEpisodeSource[]
   ratio?: string
   styleName?: string
+  visualStyleNames?: string[]
+  visualStyleOptions?: AssetVisualStyleOption[]
+  onImageSubmissionStateChange?: (submitting: boolean) => void
 }
 
 type PersonalAsset = {
@@ -122,6 +235,12 @@ const KIND_LABELS: Record<AssetKind, { zh: string; en: string }> = {
   prop: { zh: '道具', en: 'Props' },
 }
 
+const LOOK_COUNT_LABELS: Record<AssetKind, { zh: string; en: string }> = {
+  role: { zh: '造型', en: 'looks' },
+  scene: { zh: '场景', en: 'scenes' },
+  prop: { zh: '道具', en: 'props' },
+}
+
 const ASSET_TYPES = [1, 2, 3] as const satisfies readonly StudioScriptAssetType[]
 const ASSET_KIND_BY_TYPE: Record<StudioScriptAssetType, AssetKind> = {
   1: 'role',
@@ -135,6 +254,28 @@ const ASSET_TYPE_BY_KIND: Record<AssetKind, StudioScriptAssetType> = {
 }
 const ASSET_POLL_INTERVAL_MS = 3000
 const ASSET_POLL_MAX_FAILURES = 3
+const ASSET_IMAGE_TASK_POLL_INTERVAL_MS = 3000
+const ASSET_IMAGE_TASK_MAX_REQUEST_FAILURES = 3
+const ASSET_IMAGE_RESULT_MAX_MISSES = 20
+const ASSET_IMAGE_OPTIONS_SAVE_TIMEOUT_MS = 15_000
+
+const getAssetImageOptionsQueueKey = (
+  scriptImportId: StudioScriptImportId,
+  assetKey: string,
+) => `${String(scriptImportId)}:${assetKey}`
+
+const getAssetImageHistoryKey = (
+  scriptImportId: StudioScriptImportId,
+  assetId: number,
+) => `${String(scriptImportId)}:${assetId}`
+
+const getAssetReferenceKey = (assetId: number) => String(assetId)
+
+const getAssetImageOptionsRequestSignature = (input: AssetImageOptionsInput) => JSON.stringify([
+  input.prompt,
+  input.aspectRatio,
+  input.visualStyleId,
+])
 
 const createAssetPollingState = (
   scopeId: AssetScope | null = null,
@@ -179,6 +320,124 @@ const getErrorStatus = (error: unknown) => {
   return Number.isFinite(status) ? status : null
 }
 
+const getBackendAssetId = (value: StudioScriptImportId | undefined): number | null => {
+  const assetId = Number(value)
+  return Number.isInteger(assetId) && assetId > 0 ? assetId : null
+}
+
+const isCancelledRequestError = (error: unknown) => Boolean(
+  error && typeof error === 'object' && (
+    ('isCancelled' in error && (error as { isCancelled?: unknown }).isCancelled === true)
+    || ('name' in error && (error as { name?: unknown }).name === 'CancelError')
+  ),
+)
+
+const clampTaskProgress = (value: unknown) => {
+  const progress = Number(value)
+  return Number.isFinite(progress) ? Math.max(0, Math.min(100, Math.round(progress))) : 0
+}
+
+const isAssetImageTaskSucceeded = (detail: StudioAssetImageTaskDetail) => (
+  Number(detail.status) === 3 || detail.statusName?.trim() === '执行成功'
+)
+
+const isAssetImageTaskFailed = (detail: StudioAssetImageTaskDetail) => (
+  (
+    Number(detail.status) > 3
+    || /失败|取消|failed|cancel/i.test(detail.statusName?.trim() || '')
+    || Boolean(detail.cancelledAt || detail.finishedAt || detail.error?.trim())
+  )
+  && !isAssetImageTaskSucceeded(detail)
+)
+
+const isAssetImageTaskActive = (state?: AssetImageGenerationViewState) => (
+  state?.phase === 'submitting'
+  || state?.phase === 'running'
+  || state?.phase === 'refreshing'
+)
+
+const isAssetImageTaskLocked = (state?: AssetImageGenerationViewState) => (
+  isAssetImageTaskActive(state)
+  || state?.phase === 'poll-failed'
+  || state?.phase === 'refresh-failed'
+)
+
+const normalizePersistedAssetImageTasks = (value: unknown): PersistedAssetImageTask[] => {
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is PersistedAssetImageTask => {
+    if (!item || typeof item !== 'object') return false
+    const task = item as Partial<PersistedAssetImageTask>
+    return typeof task.assetKey === 'string'
+      && task.assetKey.length > 0
+      && Number.isInteger(Number(task.backendAssetId))
+      && Number(task.backendAssetId) > 0
+      && typeof task.assetName === 'string'
+      && (typeof task.scriptImportId === 'string' || typeof task.scriptImportId === 'number')
+      && typeof task.scopeId === 'string'
+      && (task.assetType === 1 || task.assetType === 2 || task.assetType === 3)
+      && typeof task.sourceSignature === 'string'
+      && typeof task.taskId === 'string'
+      && task.taskId.trim().length > 0
+  })
+}
+
+const getPendingAssetImageTaskSidecarKey = (draftKey: string) => `${draftKey}:pending-image-tasks`
+
+const readPendingAssetImageTaskSidecar = (draftKey: string) => {
+  if (typeof window === 'undefined') return undefined
+  try {
+    const raw = window.sessionStorage.getItem(getPendingAssetImageTaskSidecarKey(draftKey))
+    return raw === null ? undefined : normalizePersistedAssetImageTasks(JSON.parse(raw))
+  } catch {
+    return undefined
+  }
+}
+
+const writePendingAssetImageTaskSidecar = (
+  draftKey: string,
+  tasks: PersistedAssetImageTask[],
+) => {
+  if (typeof window === 'undefined') return
+  try {
+    const key = getPendingAssetImageTaskSidecarKey(draftKey)
+    // 空数组也是权威快照，防止主草稿尚未完成异步写入时把已结束任务重新恢复出来。
+    window.sessionStorage.setItem(key, JSON.stringify(tasks))
+  } catch {
+    // 主草稿仍会写入 localStorage/IndexedDB；sidecar 只负责缩短异步持久化窗口。
+  }
+}
+
+const mergePendingAssetImageTasks = (
+  ...taskGroups: PersistedAssetImageTask[][]
+) => {
+  const merged = new Map<string, PersistedAssetImageTask>()
+  taskGroups.forEach((tasks) => tasks.forEach((task) => merged.set(task.assetKey, task)))
+  return [...merged.values()]
+}
+
+const confirmedAssetImageMatches = (
+  asset: AssetDraft,
+  confirmed: ConfirmedAssetImage,
+) => {
+  let hasIdentity = false
+  if (confirmed.coverFileId !== undefined) {
+    hasIdentity = true
+    if (
+      asset.coverFileId === undefined
+      || String(asset.coverFileId) !== String(confirmed.coverFileId)
+    ) return false
+  }
+  if (confirmed.updatedAt) {
+    hasIdentity = true
+    if (asset.updatedAt !== confirmed.updatedAt) return false
+  }
+  if (confirmed.imageUrl) {
+    hasIdentity = true
+    if (asset.imageUrl !== confirmed.imageUrl) return false
+  }
+  return hasIdentity
+}
+
 const mapRemoteAssets = (
   result: StudioScriptAssetListResult,
   assetType: StudioScriptAssetType,
@@ -191,23 +450,35 @@ const mapRemoteAssets = (
     episode.id,
   ]))
   return result.list.map((item) => {
+    const lookCount = Number(item.lookCount)
     const relatedEpisodeIds = new Set((item.appearedEpisodes ?? [])
       .map((episodeIndex) => episodeIdByIndex.get(episodeIndex))
       .filter((episodeId): episodeId is string => Boolean(episodeId)))
     if (queryEpisodeId) relatedEpisodeIds.add(queryEpisodeId)
     return {
       id: `remote:${scriptImportId}:${assetType}:${item.id}`,
+      backendAssetId: item.id,
       kind: ASSET_KIND_BY_TYPE[assetType],
       name: item.name,
       episodeIds: [...relatedEpisodeIds],
       imageUrl: item.coverUrl?.trim() || undefined,
       prompt: item.createPrompt?.trim() || undefined,
+      aspectRatio: item.aspectRatio?.trim() || undefined,
+      visualStyleId: item.visualStyleId === undefined
+        ? undefined
+        : item.visualStyleId === null
+          ? null
+          : getBackendAssetId(item.visualStyleId) ?? undefined,
+      styleName: item.visualStyleName?.trim() || undefined,
       source: 'remote',
       assetCode: item.assetCode?.trim() || undefined,
       aliases: item.aliases ?? undefined,
       description: item.description?.trim() || undefined,
       status: item.status ?? undefined,
       coverFileId: item.coverFileId ?? undefined,
+      lookCount: Number.isFinite(lookCount) ? Math.max(0, Math.floor(lookCount)) : undefined,
+      updatedAt: item.updatedAt?.trim() || undefined,
+      voice: item.voice ?? undefined,
     }
   })
 }
@@ -224,20 +495,47 @@ const sameStringList = (left?: string[] | null, right?: string[] | null) => {
     && normalizedLeft.every((value, index) => value === normalizedRight[index])
 }
 
+const sameAssetVoice = (
+  left?: StudioScriptAssetVoice | null,
+  right?: StudioScriptAssetVoice | null,
+) => {
+  if (!left || !right) return left === right || (!left && !right)
+  if (
+    left.id !== right.id
+    || left.name !== right.name
+    || left.previewUrl !== right.previewUrl
+    || left.emotionAdjustable !== right.emotionAdjustable
+    || left.languages.length !== right.languages.length
+  ) return false
+  return left.languages.every((language, index) => {
+    const nextLanguage = right.languages[index]
+    return language.code === nextLanguage.code
+      && language.name === nextLanguage.name
+      && language.primaryLanguage === nextLanguage.primaryLanguage
+  })
+}
+
 /** 轮询结果未变化时复用旧引用，避免三条轮询反复重绘完整资产列表。 */
 const sameRemoteAssetList = (left: AssetDraft[] | undefined, right: AssetDraft[]) => {
   if (!left || left.length !== right.length) return false
   return left.every((asset, index) => {
     const nextAsset = right[index]
     return asset.id === nextAsset.id
+      && asset.backendAssetId === nextAsset.backendAssetId
       && asset.kind === nextAsset.kind
       && asset.name === nextAsset.name
       && asset.imageUrl === nextAsset.imageUrl
       && asset.prompt === nextAsset.prompt
+      && asset.aspectRatio === nextAsset.aspectRatio
+      && asset.visualStyleId === nextAsset.visualStyleId
+      && asset.styleName === nextAsset.styleName
       && asset.assetCode === nextAsset.assetCode
       && asset.description === nextAsset.description
       && asset.status === nextAsset.status
       && asset.coverFileId === nextAsset.coverFileId
+      && asset.lookCount === nextAsset.lookCount
+      && asset.updatedAt === nextAsset.updatedAt
+      && sameAssetVoice(asset.voice, nextAsset.voice)
       && sameStringList(asset.aliases, nextAsset.aliases)
       && sameStringList(asset.episodeIds, nextAsset.episodeIds)
   })
@@ -316,6 +614,9 @@ export default function ProjectAssetsStep({
   episodes,
   ratio = '9:16',
   styleName = '',
+  visualStyleNames = [],
+  visualStyleOptions = [],
+  onImageSubmissionStateChange,
 }: ProjectAssetsStepProps) {
   const l = useBilingualText()
   const imageInputRef = useRef<HTMLInputElement>(null)
@@ -369,6 +670,61 @@ export default function ProjectAssetsStep({
   const [generationWorkspaceOpen, setGenerationWorkspaceOpen] = useState(false)
   const [generationAssetId, setGenerationAssetId] = useState<string>()
   const [generationAssetSnapshot, setGenerationAssetSnapshot] = useState<AssetDraft>()
+  const [assetImageTasks, setAssetImageTasks] = useState<Record<string, AssetImageGenerationViewState>>({})
+  const [imageGenerationPreparationPending, setImageGenerationPreparationPending] = useState(false)
+  const [unsavedAssetImageOptionKeys, setUnsavedAssetImageOptionKeys] = useState<Set<string>>(
+    () => new Set(
+      canRestoreDraft && Array.isArray(restoredDraft.unsavedImageOptionKeys)
+        ? restoredDraft.unsavedImageOptionKeys
+        : [],
+    ),
+  )
+  const [assetImageHistoryByAssetId, setAssetImageHistoryByAssetId] = useState<
+    Record<string, AssetImageHistoryBucket>
+  >({})
+  const [assetImageHistoryRefreshTokens, setAssetImageHistoryRefreshTokens] = useState<
+    Record<string, number>
+  >({})
+  const [assetReferencesByAssetId, setAssetReferencesByAssetId] = useState<
+    Record<string, AssetReferenceBucket>
+  >({})
+  const [assetReferenceRefreshTokens, setAssetReferenceRefreshTokens] = useState<
+    Record<string, number>
+  >({})
+  const activeAssetImageRunsRef = useRef(new Map<string, ActiveAssetImageRun>())
+  const confirmedAssetImagesRef = useRef(new Map<string, ConfirmedAssetImage>())
+  const assetImageOptionsQueuesRef = useRef(new Map<string, AssetImageOptionsUpdateQueue>())
+  const assetImageHistoryRequestRevisionRef = useRef(0)
+  const activeAssetImageHistoryKeyRef = useRef<string | null>(null)
+  const assetReferenceRequestRevisionRef = useRef(0)
+  const assetReferenceUploadRevisionRef = useRef(0)
+  const activeAssetReferenceKeyRef = useRef<string | null>(null)
+  const activeAssetReferenceUploadRequestRef = useRef<StudioAssetImageTaskRequest<void> | null>(null)
+  const assetReferenceUploadInProgressRef = useRef(false)
+  const assetListRequestRevisionRef = useRef(0)
+  const assetImageRunTokenRef = useRef(0)
+  const resolvedAssetImageTaskIdsRef = useRef(new Set<string>())
+  const [pendingAssetImageTasks, setPendingAssetImageTasks] = useState<PersistedAssetImageTask[]>(() => (
+    (
+      readPendingAssetImageTaskSidecar(draftKey)
+      ?? normalizePersistedAssetImageTasks(restoredDraft?.pendingImageTasks)
+    ).filter((task) => (
+      scriptImportId !== null && String(task.scriptImportId) === String(scriptImportId)
+    ))
+  ))
+  const [pendingTasksHydratedDraftKey, setPendingTasksHydratedDraftKey] = useState<string>()
+  const pendingTasksHydrated = pendingTasksHydratedDraftKey === draftKey
+  const pendingAssetImageTaskKeys = useMemo(
+    () => new Set(pendingAssetImageTasks.map((task) => task.assetKey)),
+    [pendingAssetImageTasks],
+  )
+  const assetImageOperationLocked = (assetKey: string) => (
+    !pendingTasksHydrated
+    || pendingAssetImageTaskKeys.has(assetKey)
+    || isAssetImageTaskLocked(assetImageTasks[assetKey])
+  )
+  const imageSubmissionPending = imageGenerationPreparationPending
+    || Object.values(assetImageTasks).some((task) => task.phase === 'submitting')
   const [personalImportOpen, setPersonalImportOpen] = useState(false)
   const [personalImportTargetId, setPersonalImportTargetId] = useState<string>()
   const [personalImportTargetSnapshot, setPersonalImportTargetSnapshot] = useState<AssetDraft>()
@@ -377,18 +733,62 @@ export default function ProjectAssetsStep({
   const [personalAssetsLoading, setPersonalAssetsLoading] = useState(false)
   const [personalAssetFilters, setPersonalAssetFilters] = useState(EMPTY_PERSONAL_FILTERS)
   const [voiceLibraryOpen, setVoiceLibraryOpen] = useState(false)
-  const [model, setModel] = useState(canRestoreDraft ? restoredDraft.model : 'gpt-image-2')
-  const [resolution, setResolution] = useState(canRestoreDraft ? restoredDraft.resolution : '4k')
+  const [voiceTargetAsset, setVoiceTargetAsset] = useState<AssetDraft>()
+  const [model, setModel] = useState(canRestoreDraft ? restoredDraft.model : '')
+  const [resolution, setResolution] = useState(canRestoreDraft ? restoredDraft.resolution : '')
+  const [imageModels, setImageModels] = useState<StudioGenerationModel[]>([])
+  const [imageModelsLoading, setImageModelsLoading] = useState(true)
+  const [imageModelsError, setImageModelsError] = useState<unknown>()
+  const [imageModelsRetryToken, setImageModelsRetryToken] = useState(0)
+  const imageModelOptions = useMemo(() => imageModels.map((item) => ({
+    value: String(item.id),
+    label: item.name,
+  })), [imageModels])
+  const selectedImageModelById = useMemo(() => imageModels.find(
+    (item) => String(item.id) === model,
+  ), [imageModels, model])
+  const selectedImageModel = selectedImageModelById ?? imageModels.find(
+    (item) => item.modelCode === model,
+  )
+  const imageResolutionValues = useMemo(() => [...new Set(
+    (selectedImageModel?.imageCapabilities?.resolutions ?? [])
+      .map(Number)
+      .filter((value) => Number.isFinite(value) && value > 0),
+  )], [selectedImageModel])
+  const imageResolutionOptions = useMemo(() => imageResolutionValues.map((value) => ({
+    value: String(value),
+    label: `${value}K`,
+  })), [imageResolutionValues])
+  const imageAspectRatioOptions = useMemo(() => [...new Set(
+    (selectedImageModel?.imageCapabilities?.aspectRatios ?? [])
+      .map((value) => value.trim())
+      .filter(Boolean),
+  )], [selectedImageModel])
+  const selectedImageModelReferenceLimit = useMemo(() => {
+    const limit = Number(selectedImageModel?.imageCapabilities?.maxReferenceImages)
+    return Number.isFinite(limit) && limit >= 0
+      ? Math.floor(limit)
+      : undefined
+  }, [selectedImageModel])
   const [completedEpisodeIds, setCompletedEpisodeIds] = useState<Set<string>>(() => new Set(
     canRestoreDraft && Array.isArray(restoredDraft.completedEpisodeIds)
       ? restoredDraft.completedEpisodeIds
       : [],
   ))
   const sourceSignatureRef = useRef(sourceSignature)
+  const scriptImportIdRef = useRef(scriptImportId)
+  const latestSourceSignatureRef = useRef(sourceSignature)
+  const latestScriptImportIdRef = useRef(scriptImportId)
+  latestSourceSignatureRef.current = sourceSignature
+  latestScriptImportIdRef.current = scriptImportId
   const assetPollingGenerationRef = useRef(0)
   const draftPersistenceEnabledRef = useRef(false)
   const completedEpisodeIdList = useMemo(() => [...completedEpisodeIds], [completedEpisodeIds])
   const hiddenRemoteAssetIdList = useMemo(() => [...hiddenRemoteAssetIds], [hiddenRemoteAssetIds])
+  const unsavedAssetImageOptionKeyList = useMemo(
+    () => [...unsavedAssetImageOptionKeys],
+    [unsavedAssetImageOptionKeys],
+  )
   const assetDraft = useMemo<AssetsStepDraft>(() => ({
     sourceSignature,
     kind,
@@ -397,17 +797,59 @@ export default function ProjectAssetsStep({
     resolution,
     completedEpisodeIds: completedEpisodeIdList,
     hiddenRemoteAssetIds: hiddenRemoteAssetIdList,
+    unsavedImageOptionKeys: unsavedAssetImageOptionKeyList,
+    pendingImageTasks: pendingAssetImageTasks,
   }), [
     assets,
     completedEpisodeIdList,
     hiddenRemoteAssetIdList,
     kind,
     model,
+    pendingAssetImageTasks,
     resolution,
     sourceSignature,
+    unsavedAssetImageOptionKeyList,
   ])
   const latestAssetDraftRef = useRef(assetDraft)
   latestAssetDraftRef.current = assetDraft
+  const componentMountedRef = useRef(true)
+
+  useEffect(() => {
+    componentMountedRef.current = true
+    return () => {
+      componentMountedRef.current = false
+      activeAssetImageRunsRef.current.forEach((run, assetKey) => {
+        // 创建请求尚未返回任务 ID 时不能主动取消；让它完成后立即保存任务 ID，
+        // 否则后端已经接单而前端丢失 ID 时，用户重试会重复创建并再次扣费。
+        if (!run.taskId) return
+        if (run.timer !== null) window.clearTimeout(run.timer)
+        run.request?.cancel()
+        activeAssetImageRunsRef.current.delete(assetKey)
+      })
+      assetReferenceUploadRevisionRef.current += 1
+      assetReferenceUploadInProgressRef.current = false
+      activeAssetReferenceUploadRequestRef.current?.cancel()
+      activeAssetReferenceUploadRequestRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    onImageSubmissionStateChange?.(imageSubmissionPending)
+  }, [imageSubmissionPending, onImageSubmissionStateChange])
+
+  useEffect(() => () => {
+    onImageSubmissionStateChange?.(false)
+  }, [onImageSubmissionStateChange])
+
+  useEffect(() => {
+    if (!imageSubmissionPending) return undefined
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warnBeforeUnload)
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload)
+  }, [imageSubmissionPending])
 
   const flushAssetDraft = useProjectCreationDraft(
     draftKey,
@@ -418,12 +860,85 @@ export default function ProjectAssetsStep({
 
   useEffect(() => {
     let active = true
+    setImageModelsLoading(true)
+    setImageModelsError(undefined)
+    void StudioModelsApi.getImageModels()
+      .then((models) => {
+        if (!active) return
+        if (!models.length) {
+          throw new Error(l('暂无可用的图片生成模型', 'No image generation models are available'))
+        }
+        setImageModels(models)
+      })
+      .catch((error) => {
+        if (!active) return
+        setImageModelsError(error)
+        message.error(getApiErrorMessage(
+          error,
+          l('图片生成模型加载失败', 'Failed to load image generation models'),
+        ))
+      })
+      .finally(() => {
+        if (active) setImageModelsLoading(false)
+      })
+    return () => { active = false }
+  }, [imageModelsRetryToken, l])
+
+  useEffect(() => {
+    if (imageModelsLoading || imageModelsError || !imageModels.length || selectedImageModelById) return
+    if (selectedImageModel) {
+      setModel(String(selectedImageModel.id))
+      return
+    }
+    const defaultModel = imageModels.find((item) => item.defaultModel) ?? imageModels[0]
+    setModel(String(defaultModel.id))
+  }, [
+    imageModels,
+    imageModelsError,
+    imageModelsLoading,
+    selectedImageModel,
+    selectedImageModelById,
+  ])
+
+  useEffect(() => {
+    if (!selectedImageModel) return
+    const normalizedResolution = Number(resolution.replace(/k$/i, ''))
+    if (imageResolutionValues.includes(normalizedResolution)) {
+      const normalizedValue = String(normalizedResolution)
+      if (resolution !== normalizedValue) setResolution(normalizedValue)
+      return
+    }
+    const preferredResolution = imageResolutionValues[imageResolutionValues.length - 1]
+    setResolution(preferredResolution === undefined ? '' : String(preferredResolution))
+  }, [imageResolutionValues, resolution, selectedImageModel])
+
+  useEffect(() => {
+    let active = true
     draftPersistenceEnabledRef.current = false
     const hydrationBaseline = latestAssetDraftRef.current
     const compactDraft = readProjectCreationDraft<AssetsStepDraft>(draftKey)
     void readFullProjectCreationDraft<AssetsStepDraft>(draftKey)
       .then((fullDraft) => {
         if (!active) return
+        const restoredPendingTasks = (
+          readPendingAssetImageTaskSidecar(draftKey)
+          ?? normalizePersistedAssetImageTasks(
+            fullDraft === undefined ? compactDraft?.pendingImageTasks : fullDraft.pendingImageTasks,
+          )
+        ).filter((task) => (
+          scriptImportId !== null
+          && String(task.scriptImportId) === String(scriptImportId)
+          && !resolvedAssetImageTaskIdsRef.current.has(task.taskId)
+        ))
+        writePendingAssetImageTaskSidecar(draftKey, restoredPendingTasks)
+        setPendingAssetImageTasks((current) => {
+          const restored = new Map(restoredPendingTasks.map((task) => [task.assetKey, task]))
+          current.forEach((task) => {
+            const activeRun = activeAssetImageRunsRef.current.get(task.assetKey)
+            if (activeRun?.taskId === task.taskId) restored.set(task.assetKey, task)
+          })
+          return [...restored.values()]
+        })
         const compactCanRestore = compactDraft?.sourceSignature === sourceSignature
           && Array.isArray(compactDraft.assets)
         const fullCanRestore = fullDraft?.sourceSignature === sourceSignature
@@ -461,11 +976,15 @@ export default function ProjectAssetsStep({
         setHiddenRemoteAssetIds(new Set(
           Array.isArray(nextDraft.hiddenRemoteAssetIds) ? nextDraft.hiddenRemoteAssetIds : [],
         ))
+        setUnsavedAssetImageOptionKeys(new Set(
+          Array.isArray(nextDraft.unsavedImageOptionKeys) ? nextDraft.unsavedImageOptionKeys : [],
+        ))
       })
       .finally(() => {
         if (!active) return
         const changedWhileHydrating = latestAssetDraftRef.current !== hydrationBaseline
         draftPersistenceEnabledRef.current = true
+        setPendingTasksHydratedDraftKey(draftKey)
         if (changedWhileHydrating) flushAssetDraft()
       })
     return () => { active = false }
@@ -473,7 +992,43 @@ export default function ProjectAssetsStep({
 
   useEffect(() => {
     if (sourceSignatureRef.current === sourceSignature) return
+    const previousScriptImportId = scriptImportIdRef.current
     sourceSignatureRef.current = sourceSignature
+    scriptImportIdRef.current = scriptImportId
+    const sameRemoteScript = previousScriptImportId !== null
+      && scriptImportId !== null
+      && String(previousScriptImportId) === String(scriptImportId)
+    if (sameRemoteScript) {
+      activeAssetImageRunsRef.current.forEach((run) => {
+        run.sourceSignature = sourceSignature
+        run.episodes = episodes
+      })
+      setPendingAssetImageTasks((current) => current.map((task) => (
+        String(task.scriptImportId) === String(scriptImportId)
+          ? { ...task, sourceSignature }
+          : task
+      )))
+    } else {
+      activeAssetImageRunsRef.current.forEach((run, assetKey) => {
+        // 尚在创建任务的请求继续完成并写回原剧本的 sidecar，避免切换数据源时丢失任务 ID。
+        if (!run.taskId) return
+        if (run.timer !== null) window.clearTimeout(run.timer)
+        run.request?.cancel()
+        activeAssetImageRunsRef.current.delete(assetKey)
+      })
+      assetImageOptionsQueuesRef.current.forEach((queue, queueKey) => {
+        if (!queue.processing) assetImageOptionsQueuesRef.current.delete(queueKey)
+      })
+      confirmedAssetImagesRef.current.clear()
+      resolvedAssetImageTaskIdsRef.current.clear()
+      setAssetImageTasks({})
+      setAssetImageHistoryByAssetId({})
+      setAssetImageHistoryRefreshTokens({})
+      setAssetReferencesByAssetId({})
+      setAssetReferenceRefreshTokens({})
+      setPendingAssetImageTasks([])
+      setUnsavedAssetImageOptionKeys(new Set())
+    }
     setScope(episodes[0]?.id ?? 'overview')
     setKind('role')
     setAssets(scriptImportId === null ? extractAssets(episodes) : [])
@@ -495,6 +1050,7 @@ export default function ProjectAssetsStep({
     setLocalImportFileName('')
     setLocalImportDragging(false)
     setVoiceLibraryOpen(false)
+    setVoiceTargetAsset(undefined)
   }, [episodes, scriptImportId, sourceSignature])
 
   useEffect(() => {
@@ -557,6 +1113,7 @@ export default function ProjectAssetsStep({
       if (!isActive()) return
 
       patchLane(assetType, { loading: !loadedAssetTypes.has(assetType), polling: true })
+      const requestRevision = ++assetListRequestRevisionRef.current
       const request = StudioScriptsApi.requestAssetList({
         scriptImportId,
         chapterId: selectedEpisode?.id,
@@ -579,11 +1136,34 @@ export default function ProjectAssetsStep({
         loadedAssetTypes.add(assetType)
         setRemoteAssetsByScope((current) => {
           const currentScopeAssets = current[pollingScopeId] ?? {}
-          if (sameRemoteAssetList(currentScopeAssets[assetKind], nextAssets)) return current
+          const currentAssetsById = new Map(
+            (currentScopeAssets[assetKind] ?? []).map((asset) => [asset.id, asset]),
+          )
+          const guardedNextAssets = nextAssets.map((asset) => {
+            const confirmed = confirmedAssetImagesRef.current.get(asset.id)
+            const cached = currentAssetsById.get(asset.id)
+            if (confirmed && requestRevision > confirmed.laneRevision) {
+              confirmedAssetImagesRef.current.delete(asset.id)
+              return asset
+            }
+            if (
+              !confirmed
+              || !cached
+              || !confirmedAssetImageMatches(cached, confirmed)
+              || confirmedAssetImageMatches(asset, confirmed)
+            ) return asset
+            return {
+              ...asset,
+              imageUrl: cached.imageUrl,
+              coverFileId: cached.coverFileId,
+              updatedAt: cached.updatedAt,
+            }
+          })
+          if (sameRemoteAssetList(currentScopeAssets[assetKind], guardedNextAssets)) return current
           return {
             [pollingScopeId]: {
               ...currentScopeAssets,
-              [assetKind]: nextAssets,
+              [assetKind]: guardedNextAssets,
             },
           }
         })
@@ -734,6 +1314,9 @@ export default function ProjectAssetsStep({
         if (overrideFields.has('name')) mergedAsset.name = asset.name
         if (overrideFields.has('prompt')) mergedAsset.prompt = asset.prompt
         if (overrideFields.has('imageUrl')) mergedAsset.imageUrl = asset.imageUrl
+        if (overrideFields.has('styleName')) mergedAsset.styleName = asset.styleName
+        if (overrideFields.has('visualStyleId')) mergedAsset.visualStyleId = asset.visualStyleId
+        if (overrideFields.has('aspectRatio')) mergedAsset.aspectRatio = asset.aspectRatio
         merged.set(asset.id, mergedAsset)
       })
     return [...merged.values()].filter((asset) => !hiddenRemoteAssetIds.has(asset.id))
@@ -757,6 +1340,339 @@ export default function ProjectAssetsStep({
   const currentEpisode = episodes.find((episode) => episode.id === scope)
   const generationAsset = scopedAssets.find((asset) => asset.id === generationAssetId)
     ?? (generationAssetSnapshot?.id === generationAssetId ? generationAssetSnapshot : undefined)
+  const generationImageOptionsQueueKey = generationAsset && scriptImportId !== null
+    ? getAssetImageOptionsQueueKey(scriptImportId, generationAsset.id)
+    : undefined
+  const generationImageOptionsQueue = generationImageOptionsQueueKey
+    ? assetImageOptionsQueuesRef.current.get(generationImageOptionsQueueKey)
+    : undefined
+  const generationLatestImageOptions = generationImageOptionsQueue?.latestInput
+  const generationBackendAssetId = getBackendAssetId(generationAsset?.backendAssetId)
+  const generationAssetImageHistoryKey = generationBackendAssetId === null || scriptImportId === null
+    ? undefined
+    : getAssetImageHistoryKey(scriptImportId, generationBackendAssetId)
+  const generationAssetImageHistory = generationAssetImageHistoryKey
+    ? assetImageHistoryByAssetId[generationAssetImageHistoryKey]
+    : undefined
+  const generationAssetImageHistoryRefreshToken = generationAssetImageHistoryKey
+    ? assetImageHistoryRefreshTokens[generationAssetImageHistoryKey] ?? 0
+    : 0
+  const generationAssetReferenceKey = generationBackendAssetId === null
+    ? undefined
+    : getAssetReferenceKey(generationBackendAssetId)
+  const generationAssetReferences = generationAssetReferenceKey
+    ? assetReferencesByAssetId[generationAssetReferenceKey]
+    : undefined
+  const generationAssetReferenceRefreshToken = generationAssetReferenceKey
+    ? assetReferenceRefreshTokens[generationAssetReferenceKey] ?? 0
+    : 0
+  activeAssetImageHistoryKeyRef.current = generationWorkspaceOpen
+    ? generationAssetImageHistoryKey ?? null
+    : null
+  activeAssetReferenceKeyRef.current = generationWorkspaceOpen
+    ? generationAssetReferenceKey ?? null
+    : null
+
+  useEffect(() => {
+    if (
+      !generationWorkspaceOpen
+      || generationBackendAssetId === null
+      || !generationAssetImageHistoryKey
+    ) return undefined
+
+    const assetId = generationBackendAssetId
+    const assetKey = generationAssetImageHistoryKey
+    const requestSourceSignature = sourceSignature
+    const requestRevision = ++assetImageHistoryRequestRevisionRef.current
+    let active = true
+    setAssetImageHistoryByAssetId((current) => ({
+      ...current,
+      [assetKey]: {
+        items: current[assetKey]?.items ?? [],
+        loading: true,
+      },
+    }))
+    const request = StudioAssetGenerationApi.requestImageHistory(assetId)
+    void request.promise.then(
+      (items) => {
+        if (
+          !active
+          || assetImageHistoryRequestRevisionRef.current !== requestRevision
+          || activeAssetImageHistoryKeyRef.current !== assetKey
+          || latestSourceSignatureRef.current !== requestSourceSignature
+        ) return
+        setAssetImageHistoryByAssetId((current) => ({
+          ...current,
+          [assetKey]: { items, loading: false },
+        }))
+      },
+      (error) => {
+        if (
+          !active
+          || isCancelledRequestError(error)
+          || assetImageHistoryRequestRevisionRef.current !== requestRevision
+          || activeAssetImageHistoryKeyRef.current !== assetKey
+          || latestSourceSignatureRef.current !== requestSourceSignature
+        ) return
+        setAssetImageHistoryByAssetId((current) => ({
+          ...current,
+          [assetKey]: {
+            items: current[assetKey]?.items ?? [],
+            loading: false,
+            error,
+          },
+        }))
+      },
+    )
+
+    return () => {
+      active = false
+      request.cancel()
+    }
+  }, [
+    generationAssetImageHistoryRefreshToken,
+    generationAssetImageHistoryKey,
+    generationBackendAssetId,
+    generationWorkspaceOpen,
+    sourceSignature,
+  ])
+
+  useEffect(() => {
+    if (
+      !generationWorkspaceOpen
+      || generationBackendAssetId === null
+      || !generationAssetReferenceKey
+    ) return undefined
+
+    const assetId = generationBackendAssetId
+    const assetKey = generationAssetReferenceKey
+    const requestSourceSignature = sourceSignature
+    const requestRevision = ++assetReferenceRequestRevisionRef.current
+    let active = true
+    setAssetReferencesByAssetId((current) => ({
+      ...current,
+      [assetKey]: {
+        items: current[assetKey]?.items ?? [],
+        total: current[assetKey]?.total ?? current[assetKey]?.items.length ?? 0,
+        maxCount: current[assetKey]?.maxCount ?? 14,
+        loading: true,
+      },
+    }))
+    const request = StudioAssetGenerationApi.requestReferenceList(assetId)
+    void request.promise.then(
+      (result) => {
+        if (
+          !active
+          || assetReferenceRequestRevisionRef.current !== requestRevision
+          || activeAssetReferenceKeyRef.current !== assetKey
+          || latestSourceSignatureRef.current !== requestSourceSignature
+        ) return
+        setAssetReferencesByAssetId((current) => ({
+          ...current,
+          [assetKey]: {
+            items: result.list,
+            total: result.total,
+            maxCount: result.maxCount,
+            loading: false,
+          },
+        }))
+      },
+      (error) => {
+        if (
+          !active
+          || isCancelledRequestError(error)
+          || assetReferenceRequestRevisionRef.current !== requestRevision
+          || activeAssetReferenceKeyRef.current !== assetKey
+          || latestSourceSignatureRef.current !== requestSourceSignature
+        ) return
+        setAssetReferencesByAssetId((current) => ({
+          ...current,
+          [assetKey]: {
+            items: current[assetKey]?.items ?? [],
+            total: current[assetKey]?.total ?? current[assetKey]?.items.length ?? 0,
+            maxCount: current[assetKey]?.maxCount ?? 14,
+            loading: false,
+            error,
+          },
+        }))
+      },
+    )
+
+    return () => {
+      active = false
+      request.cancel()
+    }
+  }, [
+    generationAssetReferenceKey,
+    generationAssetReferenceRefreshToken,
+    generationBackendAssetId,
+    generationWorkspaceOpen,
+    sourceSignature,
+  ])
+
+  useEffect(() => {
+    if (!generationWorkspaceOpen || !generationAssetReferenceKey) return undefined
+    return () => {
+      assetReferenceUploadRevisionRef.current += 1
+      assetReferenceUploadInProgressRef.current = false
+      activeAssetReferenceUploadRequestRef.current?.cancel()
+      activeAssetReferenceUploadRequestRef.current = null
+    }
+  }, [generationAssetReferenceKey, generationWorkspaceOpen, sourceSignature])
+
+  const uploadGenerationAssetReferences = async (files: File[]) => {
+    if (!files.length) return
+    if (generationBackendAssetId === null || !generationAssetReferenceKey) {
+      throw new Error(l(
+        '缺少可上传参考图的角色资产 ID',
+        'Missing character asset ID for reference image upload',
+      ))
+    }
+    if (assetReferenceUploadInProgressRef.current) {
+      throw new Error(l('参考图正在上传，请稍候', 'Reference images are already uploading'))
+    }
+
+    const assetId = generationBackendAssetId
+    const assetKey = generationAssetReferenceKey
+    const requestSourceSignature = sourceSignature
+    const requestRevision = ++assetReferenceUploadRevisionRef.current
+    let firstError: unknown
+    let uploadedCount = 0
+    assetReferenceUploadInProgressRef.current = true
+
+    try {
+      for (const file of files) {
+        if (
+          assetReferenceUploadRevisionRef.current !== requestRevision
+          || activeAssetReferenceKeyRef.current !== assetKey
+          || latestSourceSignatureRef.current !== requestSourceSignature
+        ) return
+        const request = StudioAssetGenerationApi.requestReferenceUpload(assetId, file)
+        activeAssetReferenceUploadRequestRef.current = request
+        try {
+          await request.promise
+          uploadedCount += 1
+        } catch (error) {
+          if (isCancelledRequestError(error)) return
+          firstError ??= error
+        } finally {
+          if (activeAssetReferenceUploadRequestRef.current === request) {
+            activeAssetReferenceUploadRequestRef.current = null
+          }
+        }
+      }
+    } finally {
+      if (assetReferenceUploadRevisionRef.current === requestRevision) {
+        assetReferenceUploadInProgressRef.current = false
+      }
+    }
+
+    if (
+      activeAssetReferenceKeyRef.current === assetKey
+      && latestSourceSignatureRef.current === requestSourceSignature
+      && uploadedCount > 0
+    ) {
+      setAssetReferenceRefreshTokens((current) => ({
+        ...current,
+        [assetKey]: (current[assetKey] ?? 0) + 1,
+      }))
+    }
+    if (firstError) throw firstError
+    if (uploadedCount === 0) {
+      throw new Error(l('参考图未上传成功', 'Reference image was not uploaded'))
+    }
+  }
+
+  const setGenerationAssetPrimaryImage = async (
+    asset: AssetDraft,
+    item: StudioAssetImageHistoryItem,
+  ) => {
+    const assetId = getBackendAssetId(asset.backendAssetId)
+    const versionId = Number(item.versionId)
+    if (assetId === null || !Number.isInteger(versionId) || versionId <= 0) {
+      throw new Error(l('缺少可设置主图的资产或版本 ID', 'Missing asset or version ID for primary image'))
+    }
+
+    const request = StudioAssetGenerationApi.requestSetPrimaryImage({ assetId, versionId })
+    await request.promise
+
+    const assetKind = asset.kind
+    const nextCoverFileId = item.fileId ?? asset.coverFileId
+    const nextImageUrl = item.imageUrl ?? item.thumbnailUrl ?? asset.imageUrl
+    const nextUpdatedAt = new Date().toISOString()
+
+    setRemoteAssetsByScope((current) => {
+      let changed = false
+      const next: RemoteAssetsByScope = { ...current }
+      Object.entries(current).forEach(([scopeId, scopeAssets]) => {
+        const cachedAssets = scopeAssets[assetKind]
+        if (!cachedAssets) return
+        let scopeChanged = false
+        const updatedAssets = cachedAssets.map((cachedAsset) => {
+          if (getBackendAssetId(cachedAsset.backendAssetId) !== assetId) return cachedAsset
+          scopeChanged = true
+          return {
+            ...cachedAsset,
+            coverFileId: nextCoverFileId,
+            imageUrl: nextImageUrl,
+            updatedAt: nextUpdatedAt,
+          }
+        })
+        if (!scopeChanged) return
+        changed = true
+        next[scopeId] = {
+          ...scopeAssets,
+          [assetKind]: updatedAssets,
+        }
+      })
+      return changed ? next : current
+    })
+
+    setGenerationAssetSnapshot((current) => {
+      if (!current || getBackendAssetId(current.backendAssetId) !== assetId) return current
+      return {
+        ...current,
+        coverFileId: nextCoverFileId,
+        imageUrl: nextImageUrl,
+        updatedAt: nextUpdatedAt,
+      }
+    })
+
+    if (generationAssetId) {
+      confirmedAssetImagesRef.current.set(generationAssetId, {
+        coverFileId: nextCoverFileId,
+        imageUrl: nextImageUrl,
+        updatedAt: nextUpdatedAt,
+        laneRevision: assetListRequestRevisionRef.current,
+      })
+    }
+
+    if (generationAssetImageHistoryKey) {
+      const assetKey = generationAssetImageHistoryKey
+      setAssetImageHistoryByAssetId((current) => {
+        const bucket = current[assetKey]
+        if (!bucket) return current
+        const updatedItems = bucket.items.map((historyItem) => ({
+          ...historyItem,
+          isCurrent: historyItem.versionId !== undefined
+            && String(historyItem.versionId) === String(item.versionId),
+        }))
+        return {
+          ...current,
+          [assetKey]: {
+            ...bucket,
+            items: updatedItems,
+            error: undefined,
+          },
+        }
+      })
+      setAssetImageHistoryRefreshTokens((current) => ({
+        ...current,
+        [assetKey]: (current[assetKey] ?? 0) + 1,
+      }))
+    }
+  }
+
   const totalAssets = scopedAssets.length
   const generationCost = scopedAssets.length * GENERATION_UNIT_COST
   const saveAssetOverride = (asset: AssetDraft, changedFields: AssetOverrideField[]) => {
@@ -774,6 +1690,7 @@ export default function ProjectAssetsStep({
       ])]
       const nextOverride: AssetDraft = {
         id: asset.id,
+        backendAssetId: asset.backendAssetId,
         kind: asset.kind,
         name: existing?.name ?? asset.name,
         episodeIds: [...new Set([...(existing?.episodeIds ?? []), ...asset.episodeIds])],
@@ -789,9 +1706,219 @@ export default function ProjectAssetsStep({
       if (overrideFields.includes('imageUrl')) {
         nextOverride.imageUrl = changedFields.includes('imageUrl') ? asset.imageUrl : existing?.imageUrl
       }
+      if (overrideFields.includes('styleName')) {
+        nextOverride.styleName = changedFields.includes('styleName') ? asset.styleName : existing?.styleName
+      }
+      if (overrideFields.includes('visualStyleId')) {
+        nextOverride.visualStyleId = changedFields.includes('visualStyleId')
+          ? asset.visualStyleId
+          : existing?.visualStyleId
+      }
+      if (overrideFields.includes('aspectRatio')) {
+        nextOverride.aspectRatio = changedFields.includes('aspectRatio')
+          ? asset.aspectRatio
+          : existing?.aspectRatio
+      }
       if (existingIndex < 0) return [...current, nextOverride]
       return current.map((item, index) => index === existingIndex ? nextOverride : item)
     })
+  }
+
+  const drainAssetImageOptionsQueue = async (
+    queue: AssetImageOptionsUpdateQueue,
+  ): Promise<void> => {
+    if (queue.processing) return
+    queue.processing = true
+    try {
+      while (queue.appliedRevision < queue.latestRevision) {
+        const revision = queue.latestRevision
+        const asset = queue.latestAsset
+        const input = queue.latestInput
+        const backendAssetId = getBackendAssetId(asset.backendAssetId)
+        if (backendAssetId === null) {
+          const error = new Error(l(
+            '当前资产还没有后端资产 ID，无法保存图片设置',
+            'This asset does not have a backend asset ID, so its image settings cannot be saved',
+          ))
+          const failedWaiters = queue.waiters.filter((waiter) => waiter.revision <= revision)
+          queue.waiters = queue.waiters.filter((waiter) => waiter.revision > revision)
+          failedWaiters.forEach((waiter) => waiter.reject(error))
+          break
+        }
+
+        try {
+          const updateRequest = StudioAssetGenerationApi.requestUpdateImageOptions({
+            id: backendAssetId,
+            prompt: input.prompt,
+            lookId: input.lookId,
+            aspectRatio: input.aspectRatio,
+            visualStyleId: input.visualStyleId,
+          })
+          await new Promise<void>((resolve, reject) => {
+            let settled = false
+            const timeout = window.setTimeout(() => {
+              if (settled) return
+              settled = true
+              updateRequest.cancel()
+              reject(new Error(l(
+                '图片设置保存超时，请重试',
+                'Saving image settings timed out; try again',
+              )))
+            }, ASSET_IMAGE_OPTIONS_SAVE_TIMEOUT_MS)
+            updateRequest.promise.then(
+              () => {
+                if (settled) return
+                settled = true
+                window.clearTimeout(timeout)
+                resolve()
+              },
+              (error) => {
+                if (settled) return
+                settled = true
+                window.clearTimeout(timeout)
+                reject(error)
+              },
+            )
+          })
+          queue.appliedRevision = Math.max(queue.appliedRevision, revision)
+          if (queue.latestRevision === revision && componentMountedRef.current) {
+            setUnsavedAssetImageOptionKeys((current) => {
+              if (!current.has(queue.queueKey)) return current
+              const next = new Set(current)
+              next.delete(queue.queueKey)
+              return next
+            })
+          }
+          const savedWaiters = queue.waiters.filter((waiter) => waiter.revision <= revision)
+          queue.waiters = queue.waiters.filter((waiter) => waiter.revision > revision)
+          savedWaiters.forEach((waiter) => waiter.resolve())
+        } catch (error) {
+          const failedWaiters = queue.waiters.filter((waiter) => waiter.revision <= revision)
+          queue.waiters = queue.waiters.filter((waiter) => waiter.revision > revision)
+          failedWaiters.forEach((waiter) => waiter.reject(error))
+          if (queue.latestRevision <= revision) break
+        }
+      }
+    } finally {
+      queue.processing = false
+      if (queue.appliedRevision < queue.latestRevision && queue.waiters.length > 0) {
+        void drainAssetImageOptionsQueue(queue)
+      } else if (
+        queue.waiters.length === 0
+        && (
+          latestScriptImportIdRef.current === null
+          || String(latestScriptImportIdRef.current) !== String(queue.scriptImportId)
+        )
+        && assetImageOptionsQueuesRef.current.get(queue.queueKey) === queue
+      ) {
+        assetImageOptionsQueuesRef.current.delete(queue.queueKey)
+      }
+    }
+  }
+
+  const queueAssetImageOptionsUpdate = (
+    asset: AssetDraft,
+    input: AssetImageOptionsInput,
+    clientRevision: number,
+  ): Promise<void> => {
+    if (scriptImportId === null) {
+      return Promise.reject(new Error(l(
+        '当前资产尚未保存，无法更新图片设置',
+        'This asset has not been saved, so its image settings cannot be updated',
+      )))
+    }
+    const backendAssetId = getBackendAssetId(asset.backendAssetId)
+    if (backendAssetId === null) {
+      return Promise.reject(new Error(l(
+        '当前资产还没有后端资产 ID，无法保存图片设置',
+        'This asset does not have a backend asset ID, so its image settings cannot be saved',
+      )))
+    }
+    const queueKey = getAssetImageOptionsQueueKey(scriptImportId, asset.id)
+    const requestSignature = getAssetImageOptionsRequestSignature(input)
+    const belongsToCurrentScript = latestScriptImportIdRef.current !== null
+      && String(latestScriptImportIdRef.current) === String(scriptImportId)
+    const existing = assetImageOptionsQueuesRef.current.get(queueKey)
+    if (existing && clientRevision <= existing.appliedRevision) return Promise.resolve()
+    if (existing && clientRevision < existing.latestRevision) return Promise.resolve()
+
+    if (belongsToCurrentScript) {
+      saveAssetOverride({
+        ...asset,
+        prompt: input.prompt,
+        styleName: input.styleName,
+        visualStyleId: input.visualStyleId,
+        aspectRatio: input.aspectRatio,
+      }, ['prompt', 'styleName', 'visualStyleId', 'aspectRatio'])
+    }
+
+    if (existing && existing.latestSignature === requestSignature) {
+      existing.latestAsset = asset
+      existing.latestInput = input
+      if (existing.processing) {
+        if (belongsToCurrentScript) {
+          setUnsavedAssetImageOptionKeys((current) => {
+            if (current.has(queueKey)) return current
+            const next = new Set(current)
+            next.add(queueKey)
+            return next
+          })
+        }
+        return new Promise<void>((resolve, reject) => {
+          existing.waiters.push({
+            revision: existing.latestRevision,
+            resolve,
+            reject,
+          })
+        })
+      }
+      if (existing.appliedRevision >= existing.latestRevision) {
+        if (belongsToCurrentScript) {
+          setUnsavedAssetImageOptionKeys((current) => {
+            if (!current.has(queueKey)) return current
+            const next = new Set(current)
+            next.delete(queueKey)
+            return next
+          })
+        }
+        return Promise.resolve()
+      }
+      // 相同快照的上一轮请求失败或超时；复用新 revision 发起一次显式重试。
+    }
+
+    const queue = existing ?? {
+      queueKey,
+      scriptImportId,
+      latestRevision: clientRevision,
+      // 防御极早期 flush 传入 revision=0；新队列必须至少执行一次请求。
+      appliedRevision: clientRevision > 0 ? 0 : clientRevision - 1,
+      latestSignature: requestSignature,
+      latestAsset: asset,
+      latestInput: input,
+      processing: false,
+      waiters: [],
+    }
+    queue.latestRevision = clientRevision
+    queue.scriptImportId = scriptImportId
+    queue.latestSignature = requestSignature
+    queue.latestAsset = asset
+    queue.latestInput = input
+    assetImageOptionsQueuesRef.current.set(queueKey, queue)
+
+    if (belongsToCurrentScript) {
+      setUnsavedAssetImageOptionKeys((current) => {
+        if (current.has(queueKey)) return current
+        const next = new Set(current)
+        next.add(queueKey)
+        return next
+      })
+    }
+
+    const completion = new Promise<void>((resolve, reject) => {
+      queue.waiters.push({ revision: clientRevision, resolve, reject })
+    })
+    void drainAssetImageOptionsQueue(queue)
+    return completion
   }
 
   const handleImageImport = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -816,12 +1943,16 @@ export default function ProjectAssetsStep({
   }
 
   const openImageImport = (assetId: string) => {
+    if (assetImageOperationLocked(assetId)) {
+      message.warning(l('图片任务尚未结束，暂时不能替换图片', 'Wait for the image task before replacing the image'))
+      return
+    }
     setImageTargetSnapshot(scopedAssets.find((asset) => asset.id === assetId))
     setImageTargetId(assetId)
     imageInputRef.current?.click()
   }
 
-  const appendAsset = (asset: Pick<AssetDraft, 'name' | 'imageUrl' | 'prompt'>) => {
+  const appendAsset = (asset: Pick<AssetDraft, 'name' | 'imageUrl' | 'prompt' | 'styleName' | 'visualStyleId'>) => {
     const localAssetId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -834,10 +1965,610 @@ export default function ProjectAssetsStep({
         episodeIds: scope === 'overview' ? [] : [scope],
         imageUrl: asset.imageUrl,
         prompt: asset.prompt,
+        styleName: asset.styleName,
+        visualStyleId: asset.visualStyleId,
         source: 'manual',
       },
     ])
   }
+
+  const patchAssetImageTask = (
+    assetKey: string,
+    patch: Partial<AssetImageGenerationViewState>,
+  ) => {
+    setAssetImageTasks((current) => {
+      const existing = current[assetKey]
+      if (!existing) return current
+      return {
+        ...current,
+        [assetKey]: { ...existing, ...patch },
+      }
+    })
+  }
+
+  const isCurrentAssetImageRun = (run: ActiveAssetImageRun) => (
+    activeAssetImageRunsRef.current.get(run.assetKey) === run
+    && latestScriptImportIdRef.current !== null
+    && String(latestScriptImportIdRef.current) === String(run.scriptImportId)
+  )
+
+  const toPersistedAssetImageTask = (run: ActiveAssetImageRun): PersistedAssetImageTask | null => (
+    run.taskId
+      ? {
+          assetKey: run.assetKey,
+          backendAssetId: run.backendAssetId,
+          assetName: run.assetName,
+          scriptImportId: run.scriptImportId,
+          scopeId: run.scopeId,
+          chapterId: run.chapterId,
+          assetType: run.assetType,
+          sourceSignature: run.sourceSignature,
+          taskId: run.taskId,
+          taskSucceeded: run.taskSucceeded,
+          expectedFileId: run.expectedFileId,
+          previousCoverFileId: run.previousCoverFileId,
+          previousImageUrl: run.previousImageUrl,
+          previousUpdatedAt: run.previousUpdatedAt,
+        }
+      : null
+  )
+
+  const persistAssetImageRun = (run: ActiveAssetImageRun) => {
+    const task = toPersistedAssetImageTask(run)
+    if (!task) return
+    writePendingAssetImageTaskSidecar(
+      draftKey,
+      mergePendingAssetImageTasks(readPendingAssetImageTaskSidecar(draftKey) ?? [], [task]),
+    )
+    if (
+      !componentMountedRef.current
+      || latestScriptImportIdRef.current === null
+      || String(latestScriptImportIdRef.current) !== String(run.scriptImportId)
+    ) return
+    setPendingAssetImageTasks((current) => {
+      const existingIndex = current.findIndex((item) => item.assetKey === run.assetKey)
+      if (existingIndex < 0) return [...current, task]
+      return current.map((item, index) => index === existingIndex ? task : item)
+    })
+  }
+
+  const removePersistedAssetImageRun = (run: ActiveAssetImageRun) => {
+    if (run.taskId) resolvedAssetImageTaskIdsRef.current.add(run.taskId)
+    writePendingAssetImageTaskSidecar(
+      draftKey,
+      (readPendingAssetImageTaskSidecar(draftKey) ?? []).filter((item) => (
+        item.assetKey !== run.assetKey || item.taskId !== run.taskId
+      )),
+    )
+    if (!componentMountedRef.current) return
+    setPendingAssetImageTasks((current) => current.filter((item) => (
+      item.assetKey !== run.assetKey || item.taskId !== run.taskId
+    )))
+  }
+
+  const clearAssetImageRun = (run: ActiveAssetImageRun) => {
+    if (activeAssetImageRunsRef.current.get(run.assetKey) !== run) return
+    if (run.timer !== null) window.clearTimeout(run.timer)
+    run.timer = null
+    run.request = undefined
+    activeAssetImageRunsRef.current.delete(run.assetKey)
+  }
+
+  const removeAssetImageTaskState = (assetKey: string) => {
+    setAssetImageTasks((current) => {
+      if (!current[assetKey]) return current
+      const next = { ...current }
+      delete next[assetKey]
+      return next
+    })
+  }
+
+  const clearGeneratedAssetImageOverride = (assetKey: string) => {
+    setAssets((current) => current.map((asset) => {
+      if (asset.id !== assetKey || !asset.overrideFields?.includes('imageUrl')) return asset
+      const nextAsset = { ...asset }
+      delete nextAsset.imageUrl
+      nextAsset.overrideFields = asset.overrideFields.filter((field) => field !== 'imageUrl')
+      return nextAsset
+    }))
+  }
+
+  const failAssetImageRun = (run: ActiveAssetImageRun, errorMessage: string) => {
+    if (!isCurrentAssetImageRun(run)) return
+    removePersistedAssetImageRun(run)
+    clearAssetImageRun(run)
+    patchAssetImageTask(run.assetKey, {
+      phase: 'failed',
+      errorMessage,
+    })
+    message.error(errorMessage)
+  }
+
+  const scheduleAssetImageTaskPoll = (
+    run: ActiveAssetImageRun,
+    delayMs: number,
+    failureCount = 0,
+  ) => {
+    if (!isCurrentAssetImageRun(run) || !run.taskId) return
+    if (run.timer !== null) window.clearTimeout(run.timer)
+    run.timer = window.setTimeout(() => {
+      run.timer = null
+      void pollAssetImageTask(run, failureCount)
+    }, delayMs)
+  }
+
+  const generatedAssetResultIsVisible = (
+    run: ActiveAssetImageRun,
+    asset: AssetDraft | undefined,
+  ) => {
+    if (!asset) return false
+    const currentCoverFileId = asset.coverFileId
+    const currentImageUrl = asset.imageUrl?.trim()
+    if (!currentImageUrl) return false
+
+    if (run.expectedFileId !== undefined) {
+      if (
+        currentCoverFileId === undefined
+        || String(currentCoverFileId) !== String(run.expectedFileId)
+      ) return false
+      if (
+        run.previousCoverFileId !== undefined
+        && String(run.previousCoverFileId) === String(run.expectedFileId)
+      ) {
+        return asset.updatedAt !== run.previousUpdatedAt
+          || currentImageUrl !== run.previousImageUrl
+      }
+      return true
+    }
+
+    if (run.previousCoverFileId !== undefined) {
+      if (
+        currentCoverFileId !== undefined
+        && String(currentCoverFileId) !== String(run.previousCoverFileId)
+      ) return true
+      return Boolean(currentImageUrl) && currentImageUrl !== run.previousImageUrl
+    }
+    if (run.previousImageUrl) return Boolean(currentImageUrl) && currentImageUrl !== run.previousImageUrl
+    return currentCoverFileId !== undefined || Boolean(currentImageUrl)
+  }
+
+  const mergeGeneratedAssetIntoCachedScopes = (
+    run: ActiveAssetImageRun,
+    assetKind: AssetKind,
+    nextAssets: AssetDraft[],
+    refreshedTarget: AssetDraft | undefined,
+  ) => {
+    setRemoteAssetsByScope((current) => {
+      let changed = false
+      const next: RemoteAssetsByScope = { ...current }
+
+      Object.entries(current).forEach(([scopeId, scopeAssets]) => {
+        if (scopeId === run.scopeId) return
+        const cachedAssets = scopeAssets[assetKind]
+        if (!cachedAssets || !refreshedTarget) return
+        let scopeChanged = false
+        const updatedAssets = cachedAssets.map((asset) => {
+          if (getBackendAssetId(asset.backendAssetId) !== run.backendAssetId) return asset
+          scopeChanged = true
+          return {
+            ...refreshedTarget,
+            episodeIds: asset.episodeIds,
+          }
+        })
+        if (!scopeChanged) return
+        changed = true
+        next[scopeId] = {
+          ...scopeAssets,
+          [assetKind]: updatedAssets,
+        }
+      })
+
+      const currentScopeAssets = current[run.scopeId] ?? {}
+      if (!sameRemoteAssetList(currentScopeAssets[assetKind], nextAssets)) {
+        changed = true
+        next[run.scopeId] = {
+          ...currentScopeAssets,
+          [assetKind]: nextAssets,
+        }
+      }
+      return changed ? next : current
+    })
+  }
+
+  const refreshGeneratedAsset = async (
+    run: ActiveAssetImageRun,
+    failureCount = 0,
+  ): Promise<void> => {
+    if (!isCurrentAssetImageRun(run)) return
+    patchAssetImageTask(run.assetKey, {
+      phase: 'refreshing',
+      progress: 100,
+      errorMessage: undefined,
+    })
+    const request = StudioScriptsApi.requestAssetList({
+      scriptImportId: run.scriptImportId,
+      chapterId: run.chapterId,
+      assetType: run.assetType,
+    })
+    run.request = request
+
+    try {
+      const result = await request.promise
+      if (!isCurrentAssetImageRun(run) || run.request !== request) return
+      const assetKind = ASSET_KIND_BY_TYPE[run.assetType]
+      const queryEpisodeId = run.chapterId === undefined ? undefined : String(run.chapterId)
+      const nextAssets = mapRemoteAssets(
+        result,
+        run.assetType,
+        run.scriptImportId,
+        queryEpisodeId,
+        run.episodes,
+      )
+      const refreshedTarget = nextAssets.find((asset) => (
+        getBackendAssetId(asset.backendAssetId) === run.backendAssetId
+      ))
+      if (!generatedAssetResultIsVisible(run, refreshedTarget)) {
+        run.resultMissCount += 1
+        if (run.resultMissCount >= ASSET_IMAGE_RESULT_MAX_MISSES) {
+          const errorMessage = l(
+            '图片任务已完成，但资产列表暂未回显新文件，可稍后继续加载结果',
+            'The image task finished, but the new file is not visible yet; reload the result later',
+          )
+          patchAssetImageTask(run.assetKey, {
+            phase: 'refresh-failed',
+            progress: 100,
+            errorMessage,
+          })
+          message.warning(errorMessage)
+          return
+        }
+        const retryDelay = Math.min(
+          ASSET_IMAGE_TASK_POLL_INTERVAL_MS * 2 ** Math.min(run.resultMissCount - 1, 2),
+          12_000,
+        )
+        run.timer = window.setTimeout(() => {
+          run.timer = null
+          void refreshGeneratedAsset(run)
+        }, retryDelay)
+        return
+      }
+      mergeGeneratedAssetIntoCachedScopes(run, assetKind, nextAssets, refreshedTarget)
+      confirmedAssetImagesRef.current.set(run.assetKey, {
+        coverFileId: refreshedTarget?.coverFileId,
+        imageUrl: refreshedTarget?.imageUrl,
+        updatedAt: refreshedTarget?.updatedAt,
+        laneRevision: assetListRequestRevisionRef.current,
+      })
+      clearGeneratedAssetImageOverride(run.assetKey)
+      setAssetImageHistoryRefreshTokens((current) => {
+        const assetKey = getAssetImageHistoryKey(run.scriptImportId, run.backendAssetId)
+        return {
+          ...current,
+          [assetKey]: (current[assetKey] ?? 0) + 1,
+        }
+      })
+      removePersistedAssetImageRun(run)
+      clearAssetImageRun(run)
+      removeAssetImageTaskState(run.assetKey)
+      message.success(l(`“${run.assetName}”图片生成完成`, `Image generated for “${run.assetName}”`))
+    } catch (error) {
+      if (!isCurrentAssetImageRun(run) || isCancelledRequestError(error)) return
+      const nextFailureCount = failureCount + 1
+      const status = getErrorStatus(error)
+      if (status !== 401 && status !== 403 && nextFailureCount < ASSET_IMAGE_TASK_MAX_REQUEST_FAILURES) {
+        const retryDelay = Math.min(
+          ASSET_IMAGE_TASK_POLL_INTERVAL_MS * 2 ** (nextFailureCount - 1),
+          12_000,
+        )
+        run.timer = window.setTimeout(() => {
+          run.timer = null
+          void refreshGeneratedAsset(run, nextFailureCount)
+        }, retryDelay)
+        return
+      }
+      const errorMessage = getApiErrorMessage(
+        error,
+        l('图片已生成，但结果加载失败', 'The image was generated, but the result could not be loaded'),
+      )
+      patchAssetImageTask(run.assetKey, {
+        phase: 'refresh-failed',
+        progress: 100,
+        errorMessage,
+      })
+      message.warning(errorMessage)
+    } finally {
+      if (run.request === request) run.request = undefined
+    }
+  }
+
+  async function pollAssetImageTask(
+    run: ActiveAssetImageRun,
+    failureCount = 0,
+  ): Promise<void> {
+    if (!isCurrentAssetImageRun(run) || !run.taskId) return
+    const request = StudioAssetGenerationApi.requestTaskDetail(run.taskId)
+    run.request = request
+
+    try {
+      const detail = await request.promise
+      if (!isCurrentAssetImageRun(run) || run.request !== request) return
+      const progress = clampTaskProgress(detail.progress)
+      if (isAssetImageTaskSucceeded(detail)) {
+        const parsedResult = parseStudioAssetImageTaskResult(detail.result)
+        const expectedFileId = parsedResult?.fileId
+        if (typeof expectedFileId === 'string' || typeof expectedFileId === 'number') {
+          run.expectedFileId = expectedFileId
+        }
+        run.taskSucceeded = true
+        persistAssetImageRun(run)
+        run.request = undefined
+        await refreshGeneratedAsset(run)
+        return
+      }
+      if (isAssetImageTaskFailed(detail)) {
+        failAssetImageRun(
+          run,
+          detail.error?.trim()
+            || detail.cancelReason?.trim()
+            || detail.statusName?.trim()
+            || l('图片生成任务执行失败', 'Asset image generation failed'),
+        )
+        return
+      }
+      patchAssetImageTask(run.assetKey, {
+        phase: 'running',
+        progress,
+        errorMessage: undefined,
+      })
+      scheduleAssetImageTaskPoll(run, ASSET_IMAGE_TASK_POLL_INTERVAL_MS)
+    } catch (error) {
+      if (!isCurrentAssetImageRun(run) || isCancelledRequestError(error)) return
+      const nextFailureCount = failureCount + 1
+      const status = getErrorStatus(error)
+      if (status === 401 || status === 403 || nextFailureCount >= ASSET_IMAGE_TASK_MAX_REQUEST_FAILURES) {
+        const errorMessage = getApiErrorMessage(
+          error,
+          l('图片生成任务暂时无法查询，请稍后继续查询', 'The image task is temporarily unavailable; resume the query later'),
+        )
+        patchAssetImageTask(run.assetKey, {
+          phase: 'poll-failed',
+          errorMessage,
+        })
+        message.warning(errorMessage)
+        return
+      }
+      scheduleAssetImageTaskPoll(
+        run,
+        Math.min(ASSET_IMAGE_TASK_POLL_INTERVAL_MS * 2 ** (nextFailureCount - 1), 12_000),
+        nextFailureCount,
+      )
+    } finally {
+      if (run.request === request) run.request = undefined
+    }
+  }
+
+  const startAssetImageGeneration = async (
+    asset: AssetDraft,
+    input: AssetImageGenerationInput,
+  ): Promise<void> => {
+    if (!pendingTasksHydrated) {
+      const errorMessage = l(
+        '正在恢复未完成的图片任务，请稍候',
+        'Restoring unfinished image tasks; please wait',
+      )
+      message.info(errorMessage)
+      throw new Error(errorMessage)
+    }
+    const backendAssetId = getBackendAssetId(asset.backendAssetId)
+    const modelId = Number(model)
+    const resolutionValue = Number(resolution)
+    if (scriptImportId === null || backendAssetId === null) {
+      const errorMessage = l(
+        '当前资产还没有后端资产 ID，暂时无法生成图片',
+        'This asset does not have a backend asset ID yet',
+      )
+      message.warning(errorMessage)
+      throw new Error(errorMessage)
+    }
+    if (
+      !selectedImageModelById
+      || !Number.isInteger(modelId)
+      || modelId <= 0
+      || !Number.isInteger(resolutionValue)
+      || resolutionValue <= 0
+      || !imageResolutionValues.includes(resolutionValue)
+      || (imageAspectRatioOptions.length > 0 && !imageAspectRatioOptions.includes(input.aspectRatio))
+    ) {
+      const errorMessage = l(
+        '请选择当前模型支持的图片比例和分辨率',
+        'Select an aspect ratio and resolution supported by the current model',
+      )
+      message.warning(errorMessage)
+      throw new Error(errorMessage)
+    }
+    if (activeAssetImageRunsRef.current.has(asset.id)) return
+    if (pendingAssetImageTaskKeys.has(asset.id)) {
+      const errorMessage = l(
+        '该资产存在未完成的图片任务，正在恢复任务状态',
+        'This asset has an unfinished image task that is being restored',
+      )
+      message.info(errorMessage)
+      throw new Error(errorMessage)
+    }
+    confirmedAssetImagesRef.current.delete(asset.id)
+
+    saveAssetOverride({
+      ...asset,
+      name: input.name,
+      prompt: input.prompt,
+      styleName: input.styleName,
+      visualStyleId: input.visualStyleId,
+      aspectRatio: input.aspectRatio,
+    }, ['name', 'prompt', 'styleName', 'visualStyleId', 'aspectRatio'])
+
+    const run: ActiveAssetImageRun = {
+      token: ++assetImageRunTokenRef.current,
+      assetKey: asset.id,
+      backendAssetId,
+      assetName: input.name,
+      scriptImportId,
+      scopeId: scope,
+      chapterId: scope === 'overview' ? undefined : currentEpisode?.id,
+      assetType: ASSET_TYPE_BY_KIND[asset.kind],
+      sourceSignature,
+      episodes,
+      previousCoverFileId: asset.coverFileId,
+      previousImageUrl: asset.imageUrl,
+      previousUpdatedAt: asset.updatedAt,
+      resultMissCount: 0,
+      timer: null,
+    }
+    activeAssetImageRunsRef.current.set(asset.id, run)
+    setAssetImageTasks((current) => ({
+      ...current,
+      [asset.id]: {
+        phase: 'submitting',
+        progress: 0,
+      },
+    }))
+    onImageSubmissionStateChange?.(true)
+
+    const request = StudioAssetGenerationApi.requestGenerate({
+      id: backendAssetId,
+      lookId: input.lookId,
+      prompt: input.prompt,
+      aspectRatio: input.aspectRatio,
+      visualStyleId: input.visualStyleId,
+      quality: null,
+      resolution: resolutionValue,
+      modelId,
+    })
+    run.request = request
+
+    try {
+      const taskId = await request.promise
+      if (run.request !== request) return
+      run.request = undefined
+      run.taskId = taskId
+      resolvedAssetImageTaskIdsRef.current.delete(taskId)
+      persistAssetImageRun(run)
+      if (!componentMountedRef.current || !isCurrentAssetImageRun(run)) {
+        if (activeAssetImageRunsRef.current.get(run.assetKey) === run) {
+          activeAssetImageRunsRef.current.delete(run.assetKey)
+        }
+        return
+      }
+      patchAssetImageTask(asset.id, {
+        phase: 'running',
+        progress: 0,
+        errorMessage: undefined,
+      })
+      message.success(l('图片生成任务已提交', 'Image generation task submitted'))
+      scheduleAssetImageTaskPoll(run, 800)
+    } catch (error) {
+      if (isCancelledRequestError(error)) return
+      if (!componentMountedRef.current || !isCurrentAssetImageRun(run)) {
+        if (activeAssetImageRunsRef.current.get(run.assetKey) === run) {
+          activeAssetImageRunsRef.current.delete(run.assetKey)
+        }
+        return
+      }
+      const errorMessage = getApiErrorMessage(
+        error,
+        l('图片生成任务提交失败', 'Failed to submit the image generation task'),
+      )
+      failAssetImageRun(run, errorMessage)
+      throw error
+    } finally {
+      if (run.request === request) run.request = undefined
+    }
+  }
+
+  const retryAssetImageTask = (assetKey: string) => {
+    const run = activeAssetImageRunsRef.current.get(assetKey)
+    if (!run || !isCurrentAssetImageRun(run) || run.request || run.timer !== null) return
+    const phase = assetImageTasks[assetKey]?.phase
+    run.resultMissCount = 0
+    patchAssetImageTask(assetKey, {
+      phase: phase === 'refresh-failed' || run.taskSucceeded ? 'refreshing' : 'running',
+      errorMessage: undefined,
+    })
+    if (phase === 'refresh-failed' || run.taskSucceeded) {
+      void refreshGeneratedAsset(run)
+      return
+    }
+    scheduleAssetImageTaskPoll(run, 0)
+  }
+
+  const discardAssetImageTaskTracking = (assetKey: string) => {
+    const run = activeAssetImageRunsRef.current.get(assetKey)
+    if (!run || !isCurrentAssetImageRun(run)) return
+    Modal.confirm({
+      centered: true,
+      title: l('放弃跟踪图片任务？', 'Stop tracking this image task?'),
+      content: l(
+        '这里只会清除本地任务记录，不会取消后端任务。之后重新生成可能产生重复任务和积分消耗。',
+        'This only removes the local task record; it does not cancel the backend task. Generating again may create a duplicate task and charge credits again.',
+      ),
+      okText: l('确认放弃', 'Stop tracking'),
+      cancelText: l('继续保留', 'Keep tracking'),
+      okButtonProps: { danger: true },
+      onOk: () => {
+        if (!isCurrentAssetImageRun(run)) return
+        if (run.timer !== null) window.clearTimeout(run.timer)
+        run.request?.cancel()
+        removePersistedAssetImageRun(run)
+        clearAssetImageRun(run)
+        removeAssetImageTaskState(assetKey)
+        message.info(l(
+          '已停止本地跟踪，后端任务不会被取消',
+          'Local tracking stopped; the backend task was not cancelled',
+        ))
+      },
+    })
+  }
+
+  useEffect(() => {
+    if (scriptImportId === null || !pendingTasksHydrated) return
+    pendingAssetImageTasks.forEach((task) => {
+      if (
+        String(task.scriptImportId) !== String(scriptImportId)
+        || resolvedAssetImageTaskIdsRef.current.has(task.taskId)
+        || activeAssetImageRunsRef.current.has(task.assetKey)
+      ) return
+
+      const run: ActiveAssetImageRun = {
+        token: ++assetImageRunTokenRef.current,
+        assetKey: task.assetKey,
+        backendAssetId: task.backendAssetId,
+        assetName: task.assetName,
+        scriptImportId: task.scriptImportId,
+        scopeId: task.scopeId,
+        chapterId: task.chapterId,
+        assetType: task.assetType,
+        sourceSignature,
+        episodes,
+        taskId: task.taskId,
+        taskSucceeded: task.taskSucceeded,
+        expectedFileId: task.expectedFileId,
+        previousCoverFileId: task.previousCoverFileId,
+        previousImageUrl: task.previousImageUrl,
+        previousUpdatedAt: task.previousUpdatedAt,
+        resultMissCount: 0,
+        timer: null,
+      }
+      activeAssetImageRunsRef.current.set(task.assetKey, run)
+      setAssetImageTasks((current) => ({
+        ...current,
+        [task.assetKey]: {
+          phase: task.taskSucceeded ? 'refreshing' : 'running',
+          progress: task.taskSucceeded ? 100 : 0,
+        },
+      }))
+      if (task.taskSucceeded) void refreshGeneratedAsset(run)
+      else scheduleAssetImageTaskPoll(run, 0)
+    })
+  }, [episodes, pendingAssetImageTasks, pendingTasksHydrated, scriptImportId, sourceSignature])
 
   const prepareLocalAssetImport = (file?: File) => {
     if (!file) return
@@ -898,6 +2629,10 @@ export default function ProjectAssetsStep({
   }
 
   const openPersonalImport = async (targetAssetId?: string) => {
+    if (targetAssetId && assetImageOperationLocked(targetAssetId)) {
+      message.warning(l('图片任务尚未结束，暂时不能替换图片', 'Wait for the image task before replacing the image'))
+      return
+    }
     setPersonalImportTargetId(targetAssetId)
     setPersonalImportTargetSnapshot(targetAssetId
       ? scopedAssets.find((asset) => asset.id === targetAssetId)
@@ -984,6 +2719,69 @@ export default function ProjectAssetsStep({
     setGenerationWorkspaceOpen(true)
   }
 
+  const closeVoiceLibrary = () => {
+    setVoiceLibraryOpen(false)
+    setVoiceTargetAsset(undefined)
+  }
+
+  const openVoiceLibrary = (asset: AssetDraft) => {
+    if (assetImageOperationLocked(asset.id)) {
+      message.warning(l('图片任务尚未结束，请稍后配置音色', 'Wait for the image task before configuring a voice'))
+      return
+    }
+    if (getBackendAssetId(asset.backendAssetId) === null) {
+      message.warning(l(
+        '当前角色还没有后端资产 ID，暂时无法配置音色',
+        'This character does not have a backend asset ID yet',
+      ))
+      return
+    }
+    setVoiceTargetAsset(asset)
+    setVoiceLibraryOpen(true)
+  }
+
+  const applyAssetVoice = async (voice: SystemVoiceRead) => {
+    const targetAsset = voiceTargetAsset
+    const requestSourceSignature = sourceSignature
+    if (!targetAsset) throw new Error(l('未找到目标角色', 'No target character selected'))
+    const assetId = getBackendAssetId(targetAsset.backendAssetId)
+    if (assetId === null) {
+      throw new Error(l('目标角色缺少后端资产 ID', 'The target character has no backend asset ID'))
+    }
+    await StudioVoicesApi.updateAssetVoice({ assetId, voiceId: voice.id })
+    if (latestSourceSignatureRef.current !== requestSourceSignature) return
+    const appliedVoice: StudioScriptAssetVoice = {
+      id: voice.id,
+      name: voice.name,
+      languages: voice.languages,
+      previewUrl: voice.previewUrl,
+      emotionAdjustable: voice.emotionAdjustable,
+    }
+    setRemoteAssetsByScope((current) => {
+      let changed = false
+      const next = { ...current }
+      Object.entries(current).forEach(([scopeId, scopeAssets]) => {
+        const roleAssets = scopeAssets.role
+        if (!roleAssets) return
+        let roleAssetsChanged = false
+        const nextRoleAssets = roleAssets.map((asset) => {
+          if (asset.id !== targetAsset.id) return asset
+          changed = true
+          roleAssetsChanged = true
+          return { ...asset, voice: appliedVoice }
+        })
+        if (roleAssetsChanged) {
+          next[scopeId] = { ...scopeAssets, role: nextRoleAssets }
+        }
+      })
+      return changed ? next : current
+    })
+    message.success(l(
+      `已为“${targetAsset.name}”应用音色“${voice.name}”`,
+      `Applied “${voice.name}” to “${targetAsset.name}”`,
+    ))
+  }
+
   const storeAssetInPersonalSpace = async (asset: AssetDraft) => {
     try {
       const entityType = asset.kind === 'role' ? 'character' : asset.kind
@@ -1013,6 +2811,10 @@ export default function ProjectAssetsStep({
   }
 
   const deleteAsset = (asset: AssetDraft) => {
+    if (assetImageOperationLocked(asset.id)) {
+      message.warning(l('图片任务尚未结束，暂时不能删除资产', 'Wait for the image task before deleting the asset'))
+      return
+    }
     Modal.confirm({
       centered: true,
       title: l(`删除${KIND_LABELS[asset.kind].zh}`, `Delete ${KIND_LABELS[asset.kind].en.toLowerCase()}`),
@@ -1034,6 +2836,10 @@ export default function ProjectAssetsStep({
   }
 
   const handleAssetMenuClick = (asset: AssetDraft, key: string) => {
+    if (assetImageOperationLocked(asset.id)) {
+      message.warning(l('图片任务尚未结束，暂时不能修改资产', 'Wait for the image task before modifying the asset'))
+      return
+    }
     if (key === 'store') {
       void storeAssetInPersonalSpace(asset)
       return
@@ -1148,25 +2954,33 @@ export default function ProjectAssetsStep({
             )}
             <StudioSelect
               className="project-assets-step__model-select"
-              value={model}
+              value={model || undefined}
               aria-label={l('图片生成模型', 'Image generation model')}
-              options={[{ value: 'gpt-image-2', label: 'GPT Image 2' }, { value: 'gpt-image-1', label: 'GPT Image 1' }]}
+              placeholder={l('请选择模型', 'Select a model')}
+              loading={imageModelsLoading}
+              status={imageModelsError ? 'error' : undefined}
+              options={imageModelOptions}
               onChange={setModel}
+              onDropdownVisibleChange={(open) => {
+                if (open && imageModelsError) setImageModelsRetryToken((current) => current + 1)
+              }}
             />
             <StudioSelect
               className="project-assets-step__resolution-select"
-              value={resolution}
+              value={resolution || undefined}
               aria-label={l('图片分辨率', 'Image resolution')}
-              options={[{ value: '2k', label: '2K' }, { value: '4k', label: '4K' }]}
+              placeholder={l('分辨率', 'Resolution')}
+              disabled={!selectedImageModel || imageResolutionOptions.length === 0}
+              options={imageResolutionOptions}
               onChange={setResolution}
             />
             <Button
               type="primary"
-              disabled={scopedAssets.length === 0}
+              disabled={scopedAssets.length === 0 || !selectedImageModel || !resolution}
               onClick={() => requestGeneration(scopedAssets.length, scope)}
             >
               <span>{scope === 'overview' ? l('一键生成全剧资产', 'Generate all assets') : l('一键生成本集资产', 'Generate episode assets')}</span>
-              <span className="project-assets-step__generation-cost"><ThunderboltFilled />{generationCost}</span>
+              <span className="project-assets-step__generation-cost"><StarFilled />{generationCost}</span>
             </Button>
           </div>
         </header>
@@ -1209,9 +3023,10 @@ export default function ProjectAssetsStep({
             {visibleAssets.map((asset) => (
               <article
                 key={asset.id}
-                className={`project-assets-step__card${asset.imageUrl ? ' has-image' : ''}`}
+                className={`project-assets-step__card${asset.imageUrl ? ' has-image' : ''}${isAssetImageTaskActive(assetImageTasks[asset.id]) ? ' is-generating' : ''}`}
                 role="button"
                 tabIndex={0}
+                aria-busy={isAssetImageTaskActive(assetImageTasks[asset.id])}
                 aria-label={l(`打开${asset.name}资产详情`, `Open ${asset.name} asset details`)}
                 onClick={(event) => {
                   if (!event.currentTarget.contains(event.target as Node)) return
@@ -1233,16 +3048,28 @@ export default function ProjectAssetsStep({
                   {!asset.imageUrl && (
                     <span className="project-assets-step__empty-mark" aria-hidden="true">✦</span>
                   )}
-                  {asset.imageUrl && (
-                    <span className="project-assets-step__looks-badge">{l('1个造型', '1 look')}</span>
+                  {isAssetImageTaskActive(assetImageTasks[asset.id]) && (
+                    <span className="project-assets-step__card-generation" role="status" aria-live="polite">
+                      <Spin size="small" />
+                      <strong>{l('图片生成中', 'Generating image')}</strong>
+                      <small>{clampTaskProgress(assetImageTasks[asset.id]?.progress)}%</small>
+                    </span>
                   )}
-                  {!asset.imageUrl && (
+                  {asset.imageUrl && (asset.lookCount ?? 0) > 0 && (
+                    <span className="project-assets-step__looks-badge">
+                      {l(
+                        `${asset.lookCount ?? 0}个${LOOK_COUNT_LABELS[asset.kind].zh}`,
+                        `${asset.lookCount ?? 0} ${LOOK_COUNT_LABELS[asset.kind].en}`,
+                      )}
+                    </span>
+                  )}
+                  {!asset.imageUrl && !assetImageOperationLocked(asset.id) && (
                     <div className="project-assets-step__card-actions">
                       <Button icon={<UploadOutlined />} onClick={() => openImageImport(asset.id)}>
                         {l(`导入${KIND_LABELS[kind].zh}`, `Import ${KIND_LABELS[kind].en.toLowerCase()}`)}
                       </Button>
-                      <Button type="primary" onClick={() => requestGeneration(1)}>
-                        {l('生成', 'Generate')} <ThunderboltFilled /> {GENERATION_UNIT_COST}
+                      <Button type="primary" onClick={() => openAssetWorkspace(asset)}>
+                        {l('生成', 'Generate')} <StarFilled /> {GENERATION_UNIT_COST}
                       </Button>
                     </div>
                   )}
@@ -1252,11 +3079,18 @@ export default function ProjectAssetsStep({
                   {kind === 'role' && (
                     <Button
                       type="text"
-                      className="project-assets-step__voice-button"
+                      className={`project-assets-step__voice-button${asset.voice ? ' is-configured' : ''}`}
                       icon={<AudioOutlined />}
-                      onClick={() => setVoiceLibraryOpen(true)}
+                      disabled={getBackendAssetId(asset.backendAssetId) === null
+                        || assetImageOperationLocked(asset.id)}
+                      title={getBackendAssetId(asset.backendAssetId) === null
+                        ? l('本地角色需要先保存为后端资产才能配置音色', 'Save this local character before configuring a voice')
+                        : asset.voice?.name
+                          ? l(`当前音色：${asset.voice.name}`, `Current voice: ${asset.voice.name}`)
+                          : l('配置角色音色', 'Configure character voice')}
+                      onClick={() => openVoiceLibrary(asset)}
                     >
-                      {l('配置音色', 'Voice')}
+                      {asset.voice?.name ?? l('配置音色', 'Voice')}
                     </Button>
                   )}
                   <Dropdown
@@ -1281,6 +3115,7 @@ export default function ProjectAssetsStep({
                     <Button
                       type="text"
                       className="project-assets-step__more-button"
+                      disabled={assetImageOperationLocked(asset.id)}
                       aria-label={l('更多操作', 'More actions')}
                       icon={<MoreOutlined />}
                     />
@@ -1477,12 +3312,65 @@ export default function ProjectAssetsStep({
           kind={kind}
           ratio={ratio}
           styleName={styleName}
+          visualStyleNames={visualStyleNames}
+          visualStyleOptions={visualStyleOptions}
           model={model}
           resolution={resolution}
+          modelOptions={imageModelOptions}
+          resolutionOptions={imageResolutionOptions}
+          ratioOptions={imageAspectRatioOptions}
+          modelOptionsLoading={imageModelsLoading}
+          modelOptionsError={imageModelsError}
+          assetId={generationBackendAssetId}
+          episodeId={scope === 'overview' ? undefined : scope}
+          imageHistoryItems={generationAssetImageHistory?.items ?? []}
+          currentImageFileId={generationAsset?.coverFileId}
+          imageHistoryLoading={generationBackendAssetId !== null
+            && (generationAssetImageHistory?.loading ?? true)}
+          imageHistoryError={generationAssetImageHistory?.error}
+          referenceImages={generationAssetReferences?.items ?? []}
+          referenceImageCount={generationAssetReferences?.total}
+          referenceImageLimit={selectedImageModelReferenceLimit
+            ?? generationAssetReferences?.maxCount
+            ?? 14}
+          referenceImagesLoading={Boolean(generationAssetReferenceKey)
+            && (generationAssetReferences?.loading ?? true)}
+          referenceImagesError={generationAssetReferences?.error}
+          onReferenceImagesUpload={generationAssetReferenceKey
+            ? uploadGenerationAssetReferences
+            : undefined}
+          onPrimaryImageChange={generationAsset
+            && getBackendAssetId(generationAsset.backendAssetId) !== null
+            ? (item) => setGenerationAssetPrimaryImage(generationAsset, item)
+            : undefined}
+          generationState={generationAssetId ? assetImageTasks[generationAssetId] : undefined}
+          generationUnavailableReason={!pendingTasksHydrated
+            ? l(
+              '正在恢复未完成的图片任务，请稍候',
+              'Restoring unfinished image tasks; please wait',
+            )
+            : generationAssetId
+              && pendingAssetImageTaskKeys.has(generationAssetId)
+              && !assetImageTasks[generationAssetId]
+              ? l(
+                '正在恢复该资产未完成的图片任务，请稍候',
+                'Restoring the unfinished image task for this asset',
+              )
+            : getBackendAssetId(generationAsset?.backendAssetId) === null
+              ? l(
+                '新增或本地资产需要先保存为后端资产，才能创建图片生成任务',
+                'New or local assets must be saved before generating an image',
+              )
+              : undefined}
           initialAsset={generationAsset ? {
             name: generationAsset.name,
-            prompt: buildAssetPrompt(generationAsset, episodes),
+            prompt: generationLatestImageOptions?.prompt ?? buildAssetPrompt(generationAsset, episodes),
             imageUrl: generationAsset.imageUrl,
+            styleName: generationLatestImageOptions?.styleName ?? generationAsset.styleName,
+            visualStyleId: generationLatestImageOptions
+              ? generationLatestImageOptions.visualStyleId
+              : generationAsset.visualStyleId,
+            aspectRatio: generationLatestImageOptions?.aspectRatio ?? generationAsset.aspectRatio,
             description: generationAsset.description || l(
               `${generationAsset.name}的${KIND_LABELS[generationAsset.kind].zh}设定，可结合右侧提示词继续调整并重新生成。`,
               `${generationAsset.name} ${KIND_LABELS[generationAsset.kind].en.toLowerCase()} design. Refine the prompt and regenerate as needed.`,
@@ -1490,26 +3378,36 @@ export default function ProjectAssetsStep({
           } : undefined}
           onModelChange={setModel}
           onResolutionChange={setResolution}
+          onModelOptionsRetry={() => setImageModelsRetryToken((current) => current + 1)}
+          onGenerationResultRetry={generationAssetId
+            ? () => retryAssetImageTask(generationAssetId)
+            : undefined}
+          onGenerationTrackingDiscard={generationAssetId
+            ? () => discardAssetImageTaskTracking(generationAssetId)
+            : undefined}
+          onImageOptionsUpdate={generationAsset
+            && getBackendAssetId(generationAsset.backendAssetId) !== null
+            ? (input, clientRevision) => queueAssetImageOptionsUpdate(
+                generationAsset,
+                input,
+                clientRevision,
+              )
+            : undefined}
+          imageOptionsRequireSave={Boolean(
+            generationImageOptionsQueueKey
+            && unsavedAssetImageOptionKeys.has(generationImageOptionsQueueKey)
+          )}
+          onGenerationPreparationStateChange={setImageGenerationPreparationPending}
           onClose={() => {
             setGenerationWorkspaceOpen(false)
             setGenerationAssetId(undefined)
             setGenerationAssetSnapshot(undefined)
           }}
-          onGenerate={(assetName, assetPrompt) => {
-            if (generationAssetId) {
-              if (generationAsset) {
-                saveAssetOverride(
-                  { ...generationAsset, name: assetName, prompt: assetPrompt },
-                  ['name', 'prompt'],
-                )
-              }
-            } else {
-              appendAsset({ name: assetName, prompt: assetPrompt })
+          onGenerate={async (input) => {
+            if (!generationAsset) {
+              throw new Error(l('未找到可生成的后端资产', 'No persisted asset is available to generate'))
             }
-            requestGeneration(1)
-            setGenerationWorkspaceOpen(false)
-            setGenerationAssetId(undefined)
-            setGenerationAssetSnapshot(undefined)
+            await startAssetImageGeneration(generationAsset, input)
           }}
         />
       )}
@@ -1644,7 +3542,13 @@ export default function ProjectAssetsStep({
         </footer>
       </Modal>
 
-      <VoiceLibraryModal open={voiceLibraryOpen} onCancel={() => setVoiceLibraryOpen(false)} />
+      <VoiceLibraryModal
+        open={voiceLibraryOpen}
+        preload
+        currentVoiceId={voiceTargetAsset?.voice?.id}
+        onApply={applyAssetVoice}
+        onCancel={closeVoiceLibrary}
+      />
     </main>
   )
 }

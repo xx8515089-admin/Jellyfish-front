@@ -1,59 +1,242 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type React from 'react'
-import { Button, Input, message } from 'antd'
+import { Button, Input, Popover, Spin, message } from 'antd'
 import {
+  CheckOutlined,
   CloseOutlined,
   DeleteOutlined,
+  DownloadOutlined,
+  EyeOutlined,
   FileSyncOutlined,
   FullscreenExitOutlined,
   FullscreenOutlined,
+  StarFilled,
   PictureOutlined,
   PlusOutlined,
-  ThunderboltFilled,
+  SafetyCertificateOutlined,
+  StopOutlined,
+  SwapOutlined,
 } from '@ant-design/icons'
+import { getStoredAuthUser } from '../../../auth'
 import { useBilingualText } from '../../../i18n/useBilingualText'
+import { getApiErrorMessage } from '../../../services/apiErrors'
+import { StudioStylesApi } from '../../../services/studioStyles'
+import { StudioAssetGenerationApi } from '../../../services/studioAssetGeneration'
+import type {
+  StudioAssetImageHistoryItem,
+  StudioAssetLookItem,
+  StudioAssetReferenceItem,
+} from '../../../services/studioAssetGeneration'
+import { resolveAssetUrl } from '../assets/utils'
 import ImageViewer from './ImageViewer'
 import StudioSelect from './StudioSelect'
 import StudioRatioOption from './StudioRatioOption'
 import './AssetGenerationWorkspace.css'
 
 export type GenerationAssetKind = 'role' | 'scene' | 'prop'
+export type AssetVisualStyleOption = {
+  id?: string | number
+  name: string
+  coverUrl?: string
+}
+
+export type AssetImageOptionsInput = {
+  prompt: string
+  lookId: number | null
+  styleName: string
+  visualStyleId: number | null
+  aspectRatio: string
+}
+
+export type AssetImageGenerationInput = AssetImageOptionsInput & {
+  name: string
+}
+
+export type AssetImageGenerationViewState = {
+  phase: 'submitting' | 'running' | 'refreshing' | 'failed' | 'poll-failed' | 'refresh-failed'
+  progress: number
+  errorMessage?: string
+}
+
+type ResolvedAssetImageHistoryItem = {
+  id: string
+  fileId?: string
+  versionId?: string
+  imageUrl: string
+  thumbnailUrl: string
+  isCurrent: boolean
+  isSelected: boolean
+  createdAt?: string
+  prompt?: string
+  aspectRatio?: string
+  visualStyleId?: number | null
+  modelId?: number | null
+  resolution?: number | null
+  lookId?: number | null
+}
 
 type AssetGenerationWorkspaceProps = {
   kind: GenerationAssetKind
   ratio: string
   styleName: string
+  visualStyleNames?: string[]
+  visualStyleOptions?: AssetVisualStyleOption[]
   model: string
   resolution: string
+  modelOptions: Array<{ value: string; label: string }>
+  resolutionOptions: Array<{ value: string; label: string }>
+  ratioOptions?: string[]
+  modelOptionsLoading?: boolean
+  modelOptionsError?: unknown
+  assetId?: number | null
+  episodeId?: string | number
+  imageHistoryItems?: StudioAssetImageHistoryItem[]
+  currentImageFileId?: string | number
+  imageHistoryLoading?: boolean
+  imageHistoryError?: unknown
+  referenceImages?: StudioAssetReferenceItem[]
+  referenceImageCount?: number
+  referenceImageLimit?: number
+  referenceImagesLoading?: boolean
+  referenceImagesError?: unknown
+  generationState?: AssetImageGenerationViewState
+  generationUnavailableReason?: string
   initialAsset?: {
     name: string
     prompt?: string
     imageUrl?: string
     description?: string
+    styleName?: string
+    visualStyleId?: number | null
+    aspectRatio?: string
   }
   onModelChange: (value: string) => void
   onResolutionChange: (value: string) => void
+  onModelOptionsRetry?: () => void
+  onReferenceImagesUpload?: (files: File[]) => Promise<void>
+  onPrimaryImageChange?: (item: StudioAssetImageHistoryItem) => Promise<void>
+  onGenerationResultRetry?: () => void
+  onGenerationTrackingDiscard?: () => void
+  onImageOptionsUpdate?: (input: AssetImageOptionsInput, clientRevision: number) => Promise<void>
+  imageOptionsRequireSave?: boolean
+  onGenerationPreparationStateChange?: (pending: boolean) => void
   onClose: () => void
-  onGenerate: (name: string, prompt: string) => void
+  onGenerate: (input: AssetImageGenerationInput) => Promise<void>
 }
 
-type ReferenceImage = {
+type ResolvedReferenceImage = {
   id: string
+  fileId?: string
   name: string
   url: string
 }
 
 type LookDraft = {
   id: string
+  backendId?: number
   name: string
   prompt: string
   imageUrl?: string
-  references: ReferenceImage[]
+  aspectRatio?: string
+  visualStyleId?: number | null
+  modelId?: number | null
+  resolution?: number | null
+  status?: number | null
+  statusName?: string
+  defaultLook?: boolean
+  inEpisode?: boolean
 }
 
 const MAX_REFERENCE_IMAGES = 14
 const MAX_PROMPT_LENGTH = 5000
-const RATIO_OPTIONS = ['9:16', '4:3', '16:9', '3:4', '1:1', '21:9']
+const DEFAULT_RATIO_OPTIONS = ['9:16', '4:3', '16:9', '3:4', '1:1', '21:9']
+const LOOK_GENERATION_TASK_POLL_INTERVAL_MS = 1200
+let lastImageOptionsClientRevision = 0
+const visualStyleOptionCache = new Map<string, AssetVisualStyleOption[]>()
+const visualStyleOptionRequests = new Map<string, Promise<AssetVisualStyleOption[]>>()
+
+const getVisualStyleUserScope = () => {
+  const user = getStoredAuthUser()
+  return String(user?.id ?? user?.username ?? 'anonymous')
+}
+
+const isNoStyleName = (name: string) => {
+  const normalized = name.trim().toLowerCase()
+  return normalized === '无风格' || normalized === 'no style'
+}
+
+const getImageOptionsSignature = (input: AssetImageOptionsInput) => JSON.stringify([
+  input.prompt,
+  input.lookId,
+  input.aspectRatio,
+  input.visualStyleId,
+])
+
+const createImageOptionsClientRevision = () => {
+  lastImageOptionsClientRevision = Math.max(Date.now(), lastImageOptionsClientRevision + 1)
+  return lastImageOptionsClientRevision
+}
+
+const clampTaskProgress = (value: unknown) => {
+  const progress = Number(value)
+  return Number.isFinite(progress) ? Math.max(0, Math.min(100, Math.round(progress))) : 0
+}
+
+const isAssetTaskSucceeded = (detail: { status: number; statusName?: string | null }) => (
+  Number(detail.status) === 3 || detail.statusName?.trim() === '执行成功'
+)
+
+const isAssetTaskFailed = (detail: {
+  status: number
+  statusName?: string | null
+  error?: string | null
+  cancelReason?: string | null
+  cancelledAt?: string | null
+  finishedAt?: string | null
+}) => (
+  (
+    Number(detail.status) > 3
+    || /失败|取消|failed|cancel/i.test(detail.statusName?.trim() || '')
+    || Boolean(detail.cancelledAt || detail.finishedAt || detail.error?.trim())
+  )
+  && !isAssetTaskSucceeded(detail)
+)
+
+const wait = (delay: number) => new Promise((resolve) => {
+  window.setTimeout(resolve, delay)
+})
+
+/** 仅在资产编辑器没有上游快照时补查画面风格，并按用户合并并发请求。 */
+const loadAssetVisualStyleOptions = () => {
+  const userScope = getVisualStyleUserScope()
+  const cached = visualStyleOptionCache.get(userScope)
+  if (cached) return Promise.resolve(cached)
+
+  const pending = visualStyleOptionRequests.get(userScope)
+  if (pending) return pending
+
+  const request = StudioStylesApi.getOptions(1)
+    .then((options) => {
+      const uniqueOptions = new Map<string, AssetVisualStyleOption>()
+      options.forEach((option) => {
+        const name = option.name.trim()
+        if (!name || isNoStyleName(name) || uniqueOptions.has(name)) return
+        uniqueOptions.set(name, {
+          id: option.id,
+          name,
+          coverUrl: option.coverUrl?.trim() || undefined,
+        })
+      })
+      const result = [...uniqueOptions.values()]
+      visualStyleOptionCache.set(userScope, result)
+      return result
+    })
+    .finally(() => {
+      visualStyleOptionRequests.delete(userScope)
+    })
+  visualStyleOptionRequests.set(userScope, request)
+  return request
+}
 
 const COPY: Record<GenerationAssetKind, {
   titleZh: string
@@ -97,63 +280,634 @@ const COPY: Record<GenerationAssetKind, {
   },
 }
 
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Invalid image'))
-    reader.onerror = () => reject(reader.error ?? new Error('Failed to read image'))
-    reader.readAsDataURL(file)
-  })
-}
-
 export default function AssetGenerationWorkspace({
   kind,
   ratio,
   styleName,
+  visualStyleNames = [],
+  visualStyleOptions = [],
   model,
   resolution,
+  modelOptions,
+  resolutionOptions,
+  ratioOptions = DEFAULT_RATIO_OPTIONS,
+  modelOptionsLoading = false,
+  modelOptionsError,
+  assetId,
+  episodeId,
+  imageHistoryItems = [],
+  currentImageFileId,
+  imageHistoryLoading = false,
+  imageHistoryError,
+  referenceImages = [],
+  referenceImageCount,
+  referenceImageLimit = MAX_REFERENCE_IMAGES,
+  referenceImagesLoading = false,
+  referenceImagesError,
+  generationState,
+  generationUnavailableReason,
   initialAsset,
   onModelChange,
   onResolutionChange,
+  onModelOptionsRetry,
+  onReferenceImagesUpload,
+  onPrimaryImageChange,
+  onGenerationResultRetry,
+  onGenerationTrackingDiscard,
+  onImageOptionsUpdate,
+  imageOptionsRequireSave = false,
+  onGenerationPreparationStateChange,
   onClose,
   onGenerate,
 }: AssetGenerationWorkspaceProps) {
   const l = useBilingualText()
   const copy = COPY[kind]
+  const noStyleLabel = l('无风格', 'No style')
+  const projectStyleName = styleName.trim()
+  const savedStyleName = initialAsset?.styleName?.trim()
+  const savedAspectRatio = initialAsset?.aspectRatio?.trim()
+  const savedVisualStyleId = (() => {
+    const value = Number(initialAsset?.visualStyleId)
+    return Number.isInteger(value) && value > 0 ? value : null
+  })()
   const referenceInputRef = useRef<HTMLInputElement>(null)
   const localLookInputRef = useRef<HTMLInputElement>(null)
   const lookAddRef = useRef<HTMLDivElement>(null)
   const [name, setName] = useState(initialAsset?.name ?? '')
   const [prompt, setPrompt] = useState(initialAsset?.prompt ?? '')
-  const [references, setReferences] = useState<ReferenceImage[]>([])
   const [previewImage, setPreviewImage] = useState<string | undefined>(initialAsset?.imageUrl)
   const [looks, setLooks] = useState<LookDraft[]>(() => [{
     id: 'main',
     name: initialAsset?.name || l(copy.lookZh, copy.lookEn),
     prompt: initialAsset?.prompt ?? '',
     imageUrl: initialAsset?.imageUrl,
-    references: [],
   }])
   const [activeLookId, setActiveLookId] = useState('main')
-  const [selectedRatio, setSelectedRatio] = useState(ratio || '9:16')
-  const [selectedStyle, setSelectedStyle] = useState(styleName || l('无风格', 'No style'))
+  const supportedRatioOptions = useMemo(() => {
+    const normalized = [...new Set(ratioOptions.map((value) => value.trim()).filter(Boolean))]
+    return normalized.length ? normalized : DEFAULT_RATIO_OPTIONS
+  }, [ratioOptions])
+  const [selectedRatio, setSelectedRatio] = useState(() => (
+    (savedAspectRatio || ratio) && supportedRatioOptions.includes(savedAspectRatio || ratio)
+      ? savedAspectRatio || ratio
+      : supportedRatioOptions[0] ?? '9:16'
+  ))
+  const [selectedStyle, setSelectedStyle] = useState<string | undefined>(savedStyleName || undefined)
+  const providedVisualStyleNames = useMemo(() => [...new Set(visualStyleNames
+    .map((value) => value.trim())
+    .filter((value) => value && !isNoStyleName(value)))], [visualStyleNames])
+  const providedVisualStyleOptions = useMemo(() => {
+    const uniqueOptions = new Map<string, AssetVisualStyleOption>()
+    visualStyleOptions.forEach((option) => {
+      const optionName = option.name.trim()
+      if (!optionName || isNoStyleName(optionName) || uniqueOptions.has(optionName)) return
+      uniqueOptions.set(optionName, {
+        id: option.id,
+        name: optionName,
+        coverUrl: option.coverUrl?.trim() || undefined,
+      })
+    })
+    return [...uniqueOptions.values()]
+  }, [visualStyleOptions])
+  const [loadedVisualStyleOptions, setLoadedVisualStyleOptions] = useState<AssetVisualStyleOption[]>([])
+  const [visualStyleOptionsLoading, setVisualStyleOptionsLoading] = useState(
+    providedVisualStyleOptions.length === 0,
+  )
+  const [visualStyleOptionsError, setVisualStyleOptionsError] = useState<unknown>()
+  const [looksLoading, setLooksLoading] = useState(false)
+  const [looksError, setLooksError] = useState<unknown>()
   const [promptExpanded, setPromptExpanded] = useState(false)
   const [lookMenuOpen, setLookMenuOpen] = useState(false)
+  const [referenceMenuOpen, setReferenceMenuOpen] = useState<'panel' | 'description' | null>(null)
   const [rewriteOpen, setRewriteOpen] = useState(false)
   const [rewriteDraft, setRewriteDraft] = useState(initialAsset?.prompt ?? '')
   const [rewriteInstruction, setRewriteInstruction] = useState('')
   const [imageViewerOpen, setImageViewerOpen] = useState(false)
+  const [viewerImageUrl, setViewerImageUrl] = useState<string>()
+  const [previewDownloadPending, setPreviewDownloadPending] = useState(false)
+  const [generationSubmitPending, setGenerationSubmitPending] = useState(false)
+  const [referenceUploadPending, setReferenceUploadPending] = useState(false)
+  const [localLookUploadPending, setLocalLookUploadPending] = useState(false)
+  const [lookGenerationState, setLookGenerationState] = useState<AssetImageGenerationViewState>()
+  const [lookEpisodeSelectionPending, setLookEpisodeSelectionPending] = useState(false)
+  const [lookEpisodeConfirmId, setLookEpisodeConfirmId] = useState<string>()
+  const [lookRenamePendingId, setLookRenamePendingId] = useState<string>()
+  const [primaryImagePendingId, setPrimaryImagePendingId] = useState<string>()
+  const [referenceDragOver, setReferenceDragOver] = useState(false)
+  const generationSubmitPendingRef = useRef(false)
+  const referenceUploadPendingRef = useRef(false)
+  const savedLookNamesRef = useRef(new Map<string, string>())
+  const historyDragItemRef = useRef<ResolvedAssetImageHistoryItem | null>(null)
   const activeLook = looks.find((look) => look.id === activeLookId) ?? looks[0]
+  const episodeLook = looks.find((look) => look.status === 1)
+  const lookEpisodeConfirmTarget = looks.find((look) => look.id === lookEpisodeConfirmId)
+  const activeLookBackendId = activeLook?.backendId ?? null
   const workspaceTitle = initialAsset?.name || l(copy.titleZh, copy.titleEn)
-  const canGenerate = Boolean(name.trim() && prompt.trim())
+  const maxReferenceImages = Number.isFinite(referenceImageLimit)
+    ? Math.max(0, Math.floor(referenceImageLimit))
+    : MAX_REFERENCE_IMAGES
+  const references = useMemo<ResolvedReferenceImage[]>(() => {
+    const seen = new Set<string>()
+    return referenceImages.flatMap((reference) => {
+      const url = resolveAssetUrl(reference.url ?? reference.fileId)
+      const dedupeKey = reference.fileId ? `file:${reference.fileId}` : `url:${url}`
+      if (!url || seen.has(dedupeKey)) return []
+      seen.add(dedupeKey)
+      return [{ id: reference.id, fileId: reference.fileId, name: reference.name, url }]
+    })
+  }, [referenceImages])
+  const referenceCount = Number.isFinite(referenceImageCount)
+    ? Math.max(references.length, Math.max(0, Math.floor(referenceImageCount ?? 0)))
+    : references.length
+  const referenceImagesErrorMessage = referenceImagesError
+    ? getApiErrorMessage(
+        referenceImagesError,
+        l('参考图加载失败', 'Failed to load reference images'),
+      )
+    : ''
   const hasEmptyLook = looks.some((look) => (
     look.id !== 'main' && !(look.id === activeLookId ? previewImage : look.imageUrl)
   ))
+  const availableVisualStyleOptions: AssetVisualStyleOption[] = providedVisualStyleOptions.length
+    ? providedVisualStyleOptions
+    : loadedVisualStyleOptions.length
+      ? loadedVisualStyleOptions
+      : providedVisualStyleNames.map((optionName): AssetVisualStyleOption => ({ name: optionName }))
+  const selectedStyleOption = selectedStyle
+    ? availableVisualStyleOptions.find((option) => option.name === selectedStyle)
+    : undefined
+  const selectedStyleIsNone = Boolean(selectedStyle && isNoStyleName(selectedStyle))
+  const selectedVisualStyleId = selectedStyleIsNone
+    ? null
+    : (() => {
+        const value = Number(
+          selectedStyleOption?.id
+          ?? (selectedStyle === savedStyleName ? savedVisualStyleId : undefined),
+        )
+        return Number.isInteger(value) && value > 0 ? value : null
+      })()
+  const selectedStyleResolved = Boolean(
+    selectedStyle && (selectedStyleIsNone || selectedVisualStyleId !== null),
+  )
+  const displayGenerationState = lookGenerationState ?? generationState
+  const generationBusy = displayGenerationState?.phase === 'submitting'
+    || displayGenerationState?.phase === 'running'
+    || displayGenerationState?.phase === 'refreshing'
+  const generationRecoveryRequired = displayGenerationState?.phase === 'poll-failed'
+    || displayGenerationState?.phase === 'refresh-failed'
+  const generationLocked = generationBusy
+    || generationRecoveryRequired
+    || generationSubmitPending
+    || referenceUploadPending
+    || localLookUploadPending
+    || lookEpisodeSelectionPending
+    || Boolean(lookRenamePendingId)
+    || Boolean(primaryImagePendingId)
+  const referenceDropAllowed = Boolean(onReferenceImagesUpload)
+    && !generationLocked
+    && !referenceImagesLoading
+    && referenceCount < maxReferenceImages
+  const resolvedImageHistoryItems = useMemo<ResolvedAssetImageHistoryItem[]>(() => {
+    const seen = new Set<string>()
+    const items = imageHistoryItems.flatMap((item) => {
+      const fileId = item.fileId?.trim() || undefined
+      const imageUrl = resolveAssetUrl(item.imageUrl ?? item.fileId ?? item.thumbnailUrl)
+      const thumbnailUrl = resolveAssetUrl(item.thumbnailUrl ?? item.imageUrl ?? item.fileId)
+        ?? imageUrl
+      const dedupeKey = fileId ? `file:${fileId}` : `url:${imageUrl}`
+      if (!imageUrl || !thumbnailUrl || seen.has(dedupeKey)) return []
+      seen.add(dedupeKey)
+      return [{
+        id: item.id,
+        fileId,
+        versionId: item.versionId,
+        imageUrl,
+        thumbnailUrl,
+        isCurrent: Boolean(item.isCurrent),
+        isSelected: false,
+        createdAt: item.createdAt,
+        prompt: item.prompt,
+        aspectRatio: item.aspectRatio,
+        visualStyleId: item.visualStyleId,
+        modelId: item.modelId,
+        resolution: item.resolution,
+        lookId: item.lookId,
+      }]
+    })
+    const currentFileId = currentImageFileId === undefined || currentImageFileId === null
+      ? undefined
+      : String(currentImageFileId).trim() || undefined
+    const currentImageUrl = resolveAssetUrl(previewImage)
+    if (!currentImageUrl) return items
+    const currentFileIndex = currentFileId
+      ? items.findIndex((item) => item.fileId === currentFileId)
+      : -1
+    const currentIndex = currentFileIndex >= 0
+      ? currentFileIndex
+      : items.findIndex((item) => item.imageUrl === currentImageUrl)
+    if (currentIndex >= 0) {
+      return items.map((item, index) => ({
+        ...item,
+        isSelected: index === currentIndex,
+      }))
+    }
+    return [{
+      id: 'current-preview',
+      imageUrl: currentImageUrl,
+      thumbnailUrl: currentImageUrl,
+      isCurrent: true,
+      isSelected: true,
+    }, ...items.map((item) => ({ ...item, isSelected: false }))]
+  }, [currentImageFileId, imageHistoryItems, previewImage])
+  const selectedHistoryItem = resolvedImageHistoryItems.find((item) => item.isSelected)
+  const currentPreviewHistoryItem = resolvedImageHistoryItems.find((item) => item.isCurrent)
+  const currentAssetReferenceItem = selectedHistoryItem ?? currentPreviewHistoryItem
+  const selectedPastHistoryItem = selectedHistoryItem && !selectedHistoryItem.isCurrent
+    ? selectedHistoryItem
+    : resolvedImageHistoryItems.find((item) => !item.isCurrent)
+  const selectedHistoryCanSetPrimary = Boolean(
+    selectedHistoryItem?.versionId
+      && !selectedHistoryItem.isCurrent
+      && onPrimaryImageChange
+      && !primaryImagePendingId,
+  )
+  const imageHistoryErrorMessage = imageHistoryError
+    ? getApiErrorMessage(
+        imageHistoryError,
+        l('历史图片加载失败', 'Failed to load image history'),
+      )
+    : ''
+  const looksErrorMessage = looksError
+    ? getApiErrorMessage(
+        looksError,
+        l('造型列表加载失败', 'Failed to load looks'),
+      )
+    : ''
+  const resolveVisualStyleName = (value: number | null | undefined) => {
+    if (value === null || value === undefined) return undefined
+    return availableVisualStyleOptions.find((option) => Number(option.id) === value)?.name
+  }
+  const initialImageOptions = useRef<AssetImageOptionsInput>({
+    prompt: initialAsset?.prompt ?? '',
+    lookId: activeLookBackendId,
+    styleName: savedStyleName ?? '',
+    visualStyleId: savedVisualStyleId,
+    aspectRatio: selectedRatio,
+  })
+  const latestImageOptionsRef = useRef<AssetImageOptionsInput>(initialImageOptions.current)
+  const latestImageOptionsRevisionRef = useRef(0)
+  const savedImageOptionsSignatureRef = useRef(
+    imageOptionsRequireSave ? '' : getImageOptionsSignature(initialImageOptions.current),
+  )
+  const incomingImageOptionsSignatureRef = useRef(JSON.stringify([
+    getImageOptionsSignature(initialImageOptions.current),
+    initialImageOptions.current.styleName,
+  ]))
+  const imageOptionsTouchedRef = useRef(false)
+  const activeImageOptionsSaveRef = useRef<Promise<void> | null>(null)
+  const imageOptionsMountedRef = useRef(true)
+  const imageOptionsUpdateRef = useRef(onImageOptionsUpdate)
+  const imageOptionsRequireSaveRef = useRef(imageOptionsRequireSave)
+  imageOptionsUpdateRef.current = onImageOptionsUpdate
+  imageOptionsRequireSaveRef.current = imageOptionsRequireSave
+
+  const handleSetPrimaryImage = async (item: ResolvedAssetImageHistoryItem) => {
+    if (!item.versionId || item.isCurrent || !onPrimaryImageChange || primaryImagePendingId) return
+    setPrimaryImagePendingId(item.id)
+    try {
+      await onPrimaryImageChange({
+        id: item.id,
+        fileId: item.fileId,
+        imageUrl: item.imageUrl,
+        thumbnailUrl: item.thumbnailUrl,
+        versionId: item.versionId,
+        isCurrent: item.isCurrent,
+        createdAt: item.createdAt,
+      })
+      message.success(l('已设为主图', 'Primary image updated'))
+    } catch (error) {
+      message.error(getApiErrorMessage(
+        error,
+        l('设置主图失败，请重试', 'Failed to set primary image; try again'),
+      ))
+    } finally {
+      if (imageOptionsMountedRef.current) setPrimaryImagePendingId(undefined)
+    }
+  }
+
+  const flushImageOptions = useCallback(async (drainLatest = true, force = false): Promise<void> => {
+    const requestedRevision = latestImageOptionsRevisionRef.current
+
+    const activeSave = activeImageOptionsSaveRef.current
+    if (activeSave) {
+      try {
+        await activeSave
+      } catch {
+        // 下面会用最新快照重试一次，生成操作不会沿用失败的旧请求。
+      }
+    }
+
+    if (!drainLatest && latestImageOptionsRevisionRef.current !== requestedRevision) return
+
+    const update = imageOptionsUpdateRef.current
+    const input = latestImageOptionsRef.current
+    const signature = getImageOptionsSignature(input)
+    if (!update || (!force && signature === savedImageOptionsSignatureRef.current)) return
+    if (force || latestImageOptionsRevisionRef.current === 0) {
+      latestImageOptionsRevisionRef.current = createImageOptionsClientRevision()
+    }
+
+    const saveRequest = update(input, latestImageOptionsRevisionRef.current)
+    activeImageOptionsSaveRef.current = saveRequest
+    try {
+      await saveRequest
+      savedImageOptionsSignatureRef.current = signature
+    } finally {
+      if (activeImageOptionsSaveRef.current === saveRequest) {
+        activeImageOptionsSaveRef.current = null
+      }
+    }
+
+    if (
+      drainLatest
+      && getImageOptionsSignature(latestImageOptionsRef.current)
+      !== savedImageOptionsSignatureRef.current
+    ) {
+      await flushImageOptions(true, false)
+    }
+  }, [])
+
+  const createCurrentImageOptions = (
+    overrides: Partial<AssetImageOptionsInput> = {},
+  ): AssetImageOptionsInput => ({
+    prompt,
+    lookId: activeLookBackendId,
+    styleName: selectedStyle ?? '',
+    visualStyleId: selectedVisualStyleId,
+    aspectRatio: selectedRatio,
+    ...overrides,
+  })
+
+  const handlePromptChange = (value: string) => {
+    imageOptionsTouchedRef.current = true
+    setPrompt(value)
+  }
+
+  const handleRatioChange = (value: string) => {
+    imageOptionsTouchedRef.current = true
+    setSelectedRatio(value)
+  }
+
+  const handleStyleChange = (value: string) => {
+    imageOptionsTouchedRef.current = true
+    setSelectedStyle(value)
+  }
+
+  const closeWorkspace = useCallback(() => {
+    onClose()
+  }, [onClose])
+
+  const createLookDraftFromRemote = useCallback((item: StudioAssetLookItem): LookDraft => {
+    const backendId = Number(item.id)
+    const defaultLook = Boolean(item.defaultLook)
+    const lookId = defaultLook
+      ? 'main'
+      : Number.isInteger(backendId) && backendId > 0
+        ? `look-${backendId}`
+        : `look-${item.id}`
+    const inEpisode = item.status === 1
+    return {
+      id: lookId,
+      backendId: Number.isInteger(backendId) && backendId > 0 ? backendId : undefined,
+      name: defaultLook ? (initialAsset?.name || item.name) : item.name,
+      prompt: item.prompt ?? '',
+      imageUrl: resolveAssetUrl(item.coverUrl ?? item.coverFileId),
+      aspectRatio: item.aspectRatio,
+      visualStyleId: item.visualStyleId,
+      modelId: item.modelId,
+      resolution: item.resolution,
+      status: item.status,
+      statusName: item.statusName,
+      defaultLook,
+      inEpisode,
+    }
+  }, [initialAsset?.name])
+
+  const rememberSavedLookNames = (nextLooks: LookDraft[]) => {
+    savedLookNamesRef.current = new Map(
+      nextLooks
+        .filter((look) => look.backendId !== undefined)
+        .map((look) => [look.id, look.name]),
+    )
+  }
+
+  const applyLookDraftToEditor = (look: LookDraft) => {
+    setPrompt(look.prompt)
+    setRewriteDraft(look.prompt)
+    setPreviewImage(look.imageUrl)
+    if (look.aspectRatio && supportedRatioOptions.includes(look.aspectRatio)) {
+      setSelectedRatio(look.aspectRatio)
+    }
+    const nextStyleName = resolveVisualStyleName(look.visualStyleId)
+    if (nextStyleName) setSelectedStyle(nextStyleName)
+  }
+
+  const canGenerate = Boolean(
+    name.trim()
+    && prompt.trim()
+    && selectedStyleResolved
+    && supportedRatioOptions.includes(selectedRatio)
+    && model
+    && resolution
+    && !generationBusy
+    && !generationRecoveryRequired
+    && !generationSubmitPending
+    && !referenceUploadPending
+    && !localLookUploadPending
+    && !generationUnavailableReason,
+  )
+
+  useEffect(() => {
+    imageOptionsMountedRef.current = true
+    return () => {
+      imageOptionsMountedRef.current = false
+      referenceUploadPendingRef.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    const numericAssetId = Number(assetId)
+    if (!Number.isInteger(numericAssetId) || numericAssetId <= 0) return undefined
+
+    let active = true
+    setLooksLoading(true)
+    setLooksError(undefined)
+    const request = StudioAssetGenerationApi.requestLooks(numericAssetId, episodeId)
+    void request.promise
+      .then((items) => {
+        if (!active) return
+        const nextLooks = items.map(createLookDraftFromRemote)
+        if (!nextLooks.length) return
+        rememberSavedLookNames(nextLooks)
+        const nextActiveLook = nextLooks.find((look) => look.inEpisode)
+          ?? nextLooks.find((look) => look.defaultLook)
+          ?? nextLooks[0]
+        setLooks(nextLooks)
+        setActiveLookId(nextActiveLook.id)
+        applyLookDraftToEditor(nextActiveLook)
+      })
+      .catch((error) => {
+        if (!active) return
+        setLooksError(error)
+        message.error(getApiErrorMessage(
+          error,
+          l('造型列表加载失败', 'Failed to load looks'),
+        ))
+      })
+      .finally(() => {
+        if (active) setLooksLoading(false)
+      })
+
+    return () => {
+      active = false
+      request.cancel()
+    }
+  }, [assetId, createLookDraftFromRemote, episodeId])
 
   const styleOptions = useMemo(() => {
-    const values = [styleName, l('无风格', 'No style')].filter(Boolean)
-    return Array.from(new Set(values)).map((value) => ({ value, label: value }))
-  }, [l, styleName])
+    if (visualStyleOptionsLoading && providedVisualStyleOptions.length === 0) return []
+    const uniqueOptions = new Map<string, AssetVisualStyleOption>()
+    uniqueOptions.set(noStyleLabel, { name: noStyleLabel })
+    availableVisualStyleOptions.forEach((option) => uniqueOptions.set(option.name, option))
+    if (projectStyleName && !uniqueOptions.has(projectStyleName)) {
+      uniqueOptions.set(projectStyleName, { name: projectStyleName })
+    }
+    if (savedStyleName && !uniqueOptions.has(savedStyleName)) {
+      uniqueOptions.set(savedStyleName, {
+        id: savedVisualStyleId ?? undefined,
+        name: savedStyleName,
+      })
+    }
+    return [...uniqueOptions.values()].map((option) => ({
+      value: option.name,
+      trigger: option.name,
+      label: (
+        <span className="asset-generation-workspace__style-option">
+          <span className="asset-generation-workspace__style-option-thumb">
+            {option.coverUrl ? (
+              <img src={option.coverUrl} alt="" aria-hidden="true" />
+            ) : option.name === noStyleLabel ? <StopOutlined /> : <PictureOutlined />}
+          </span>
+          <span className="asset-generation-workspace__style-option-name" title={option.name}>
+            {option.name}
+          </span>
+        </span>
+      ),
+    }))
+  }, [
+    availableVisualStyleOptions,
+    noStyleLabel,
+    projectStyleName,
+    providedVisualStyleOptions.length,
+    savedStyleName,
+    savedVisualStyleId,
+    visualStyleOptionsLoading,
+  ])
+
+  useEffect(() => {
+    if (providedVisualStyleOptions.length) {
+      setVisualStyleOptionsError(undefined)
+      setVisualStyleOptionsLoading(false)
+      return undefined
+    }
+
+    let active = true
+    setVisualStyleOptionsError(undefined)
+    setVisualStyleOptionsLoading(true)
+    void loadAssetVisualStyleOptions()
+      .then((options) => {
+        if (active) setLoadedVisualStyleOptions(options)
+      })
+      .catch((error) => {
+        if (!active) return
+        setVisualStyleOptionsError(error)
+        message.error(getApiErrorMessage(
+          error,
+          l('画面风格加载失败', 'Failed to load visual styles'),
+        ))
+      })
+      .finally(() => {
+        if (active) setVisualStyleOptionsLoading(false)
+      })
+
+    return () => { active = false }
+  }, [l, providedVisualStyleOptions])
+
+  useEffect(() => {
+    if (selectedStyle || savedVisualStyleId === null) return
+    const savedOption = availableVisualStyleOptions.find((option) => (
+      Number(option.id) === savedVisualStyleId
+    ))
+    if (savedOption) setSelectedStyle(savedOption.name)
+  }, [availableVisualStyleOptions, savedVisualStyleId, selectedStyle])
+
+  useEffect(() => {
+    if (supportedRatioOptions.includes(selectedRatio)) return
+    setSelectedRatio(supportedRatioOptions[0] ?? '9:16')
+  }, [selectedRatio, supportedRatioOptions])
+
+  useEffect(() => {
+    const nextImageUrl = initialAsset?.imageUrl
+    if (!nextImageUrl) return
+    setPreviewImage((current) => current === nextImageUrl ? current : nextImageUrl)
+    setLooks((current) => current.map((look) => (
+      look.id === 'main' && look.imageUrl !== nextImageUrl
+        ? { ...look, imageUrl: nextImageUrl }
+        : look
+    )))
+  }, [initialAsset?.imageUrl])
+
+  useEffect(() => {
+    if (activeLookId !== 'main') return
+    const nextRatio = savedAspectRatio && supportedRatioOptions.includes(savedAspectRatio)
+      ? savedAspectRatio
+      : selectedRatio
+    const nextStyleName = savedStyleName || availableVisualStyleOptions.find((option) => (
+      savedVisualStyleId !== null && Number(option.id) === savedVisualStyleId
+    ))?.name || ''
+    const nextOptions: AssetImageOptionsInput = {
+      prompt: initialAsset?.prompt ?? '',
+      lookId: activeLookBackendId,
+      styleName: nextStyleName,
+      visualStyleId: savedVisualStyleId,
+      aspectRatio: nextRatio,
+    }
+    const incomingSignature = JSON.stringify([
+      getImageOptionsSignature(nextOptions),
+      nextOptions.styleName,
+    ])
+    if (incomingImageOptionsSignatureRef.current === incomingSignature) return
+    incomingImageOptionsSignatureRef.current = incomingSignature
+    if (imageOptionsTouchedRef.current) return
+
+    setPrompt(nextOptions.prompt)
+    setRewriteDraft(nextOptions.prompt)
+    setSelectedRatio(nextOptions.aspectRatio)
+    setSelectedStyle(nextOptions.styleName || undefined)
+    latestImageOptionsRef.current = nextOptions
+    if (!imageOptionsRequireSaveRef.current) {
+      savedImageOptionsSignatureRef.current = getImageOptionsSignature(nextOptions)
+    }
+  }, [
+    activeLookId,
+    availableVisualStyleOptions,
+    initialAsset?.prompt,
+    savedAspectRatio,
+    savedStyleName,
+    savedVisualStyleId,
+    selectedRatio,
+    supportedRatioOptions,
+  ])
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
@@ -170,15 +924,31 @@ export default function AssetGenerationWorkspace({
         setLookMenuOpen(false)
         return
       }
+      if (lookEpisodeConfirmId) {
+        setLookEpisodeConfirmId(undefined)
+        return
+      }
+      if (referenceMenuOpen) {
+        setReferenceMenuOpen(null)
+        return
+      }
       if (promptExpanded) {
         setPromptExpanded(false)
         return
       }
-      onClose()
+      closeWorkspace()
     }
     document.addEventListener('keydown', handleEscape)
     return () => document.removeEventListener('keydown', handleEscape)
-  }, [imageViewerOpen, lookMenuOpen, onClose, promptExpanded, rewriteOpen])
+  }, [
+    closeWorkspace,
+    imageViewerOpen,
+    lookEpisodeConfirmId,
+    lookMenuOpen,
+    promptExpanded,
+    referenceMenuOpen,
+    rewriteOpen,
+  ])
 
   useEffect(() => {
     if (!lookMenuOpen) return
@@ -189,41 +959,537 @@ export default function AssetGenerationWorkspace({
     return () => document.removeEventListener('pointerdown', closeLookMenu)
   }, [lookMenuOpen])
 
+  useEffect(() => {
+    if (!referenceMenuOpen) return
+    const closeReferenceMenu = (event: PointerEvent) => {
+      const target = event.target
+      if (
+        target instanceof Element
+        && (
+          target.closest('.asset-generation-workspace__reference-add-wrap')
+          || target.closest('.asset-generation-workspace__reference-add-popover')
+        )
+      ) return
+      setReferenceMenuOpen(null)
+    }
+    document.addEventListener('pointerdown', closeReferenceMenu, true)
+    return () => document.removeEventListener('pointerdown', closeReferenceMenu, true)
+  }, [referenceMenuOpen])
+
+  useEffect(() => {
+    if (!referenceDropAllowed) {
+      setReferenceDragOver(false)
+      return undefined
+    }
+
+    const hasFileDrag = (event: DragEvent) => Array.from(event.dataTransfer?.types ?? [])
+      .includes('Files')
+    const clearReferenceDrag = () => setReferenceDragOver(false)
+    const handleDocumentDragEnter = (event: DragEvent) => {
+      if (hasFileDrag(event)) {
+        setReferenceMenuOpen(null)
+        setReferenceDragOver(true)
+      }
+    }
+    const handleDocumentDragLeave = (event: DragEvent) => {
+      if (!event.relatedTarget) setReferenceDragOver(false)
+    }
+
+    document.addEventListener('dragenter', handleDocumentDragEnter)
+    document.addEventListener('dragleave', handleDocumentDragLeave)
+    document.addEventListener('drop', clearReferenceDrag)
+    document.addEventListener('dragend', clearReferenceDrag)
+
+    return () => {
+      document.removeEventListener('dragenter', handleDocumentDragEnter)
+      document.removeEventListener('dragleave', handleDocumentDragLeave)
+      document.removeEventListener('drop', clearReferenceDrag)
+      document.removeEventListener('dragend', clearReferenceDrag)
+    }
+  }, [referenceDropAllowed])
+
   const openPromptRewrite = () => {
     setRewriteDraft(prompt)
     setRewriteInstruction('')
     setRewriteOpen(true)
   }
 
-  const openImageViewer = () => {
-    if (!previewImage) return
+  const openImageViewer = (imageUrl = previewImage) => {
+    if (!imageUrl) return
+    setViewerImageUrl(imageUrl)
     setImageViewerOpen(true)
+  }
+
+  const downloadPreviewImage = async () => {
+    if (!previewImage) {
+      message.warning(l('当前没有可下载的图片', 'There is no image to download'))
+      return
+    }
+    if (previewDownloadPending) return
+    setPreviewDownloadPending(true)
+    const fileName = `${name.trim() || workspaceTitle}.png`.replace(/[\\/:*?"<>|]/g, '_')
+    const triggerDownload = (href: string, target?: HTMLAnchorElement['target']) => {
+      const link = document.createElement('a')
+      link.href = href
+      link.download = fileName
+      link.rel = 'noopener'
+      if (target) link.target = target
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+    }
+    try {
+      const response = await fetch(previewImage)
+      if (!response.ok) throw new Error(l('图片下载失败', 'Image download failed'))
+      const blob = await response.blob()
+      const objectUrl = URL.createObjectURL(blob)
+      triggerDownload(objectUrl)
+      URL.revokeObjectURL(objectUrl)
+    } catch (error) {
+      try {
+        const downloadUrl = new URL(previewImage, window.location.href)
+        if (downloadUrl.protocol === 'http:' || downloadUrl.protocol === 'https:') {
+          downloadUrl.searchParams.set(
+            'response-content-disposition',
+            `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+          )
+          downloadUrl.searchParams.set('response-content-type', 'application/octet-stream')
+        }
+        triggerDownload(downloadUrl.toString(), '_blank')
+      } catch {
+        message.error(getApiErrorMessage(error, l('图片下载失败，请重试', 'Image download failed; try again')))
+      }
+    } finally {
+      if (imageOptionsMountedRef.current) setPreviewDownloadPending(false)
+    }
+  }
+
+  const selectHistoryImage = (item: ResolvedAssetImageHistoryItem) => {
+    setPreviewImage(item.imageUrl)
+    setViewerImageUrl(undefined)
+    setImageViewerOpen(false)
+
+    const nextLook = item.lookId
+      ? looks.find((look) => look.backendId === item.lookId)
+      : undefined
+    if (nextLook && nextLook.id !== activeLookId) setActiveLookId(nextLook.id)
+
+    const nextPrompt = item.prompt
+    const nextRatio = item.aspectRatio && supportedRatioOptions.includes(item.aspectRatio)
+      ? item.aspectRatio
+      : undefined
+    const nextStyleName = resolveVisualStyleName(item.visualStyleId)
+    if (nextPrompt !== undefined) {
+      setPrompt(nextPrompt)
+      setRewriteDraft(nextPrompt)
+    }
+    if (nextRatio) setSelectedRatio(nextRatio)
+    if (nextStyleName) setSelectedStyle(nextStyleName)
+    if (item.modelId !== null && item.modelId !== undefined) {
+      const nextModel = String(item.modelId)
+      if (modelOptions.some((option) => option.value === nextModel)) onModelChange(nextModel)
+    }
+    if (item.resolution !== null && item.resolution !== undefined) {
+      const nextResolution = String(item.resolution)
+      if (resolutionOptions.some((option) => option.value === nextResolution)) {
+        onResolutionChange(nextResolution)
+      }
+    }
+
+    const nextOptions = createCurrentImageOptions({
+      prompt: nextPrompt ?? prompt,
+      lookId: item.lookId ?? nextLook?.backendId ?? activeLookBackendId,
+      styleName: nextStyleName ?? selectedStyle ?? '',
+      visualStyleId: item.visualStyleId ?? selectedVisualStyleId,
+      aspectRatio: nextRatio ?? selectedRatio,
+    })
+    latestImageOptionsRef.current = nextOptions
+    savedImageOptionsSignatureRef.current = getImageOptionsSignature(nextOptions)
+    imageOptionsTouchedRef.current = false
+  }
+
+  const notifyImageToolApiMissing = (toolName: string) => {
+    message.info(l(
+      `${toolName}接口还没配置，给我接口后我再接真实请求`,
+      `${toolName} API is not configured yet`,
+    ))
+  }
+
+  const refreshLooksAfterGeneration = async (preferredLookName: string) => {
+    const numericAssetId = Number(assetId)
+    if (!Number.isInteger(numericAssetId) || numericAssetId <= 0) return
+    const request = StudioAssetGenerationApi.requestLooks(numericAssetId, episodeId)
+    const nextLooks = (await request.promise).map(createLookDraftFromRemote)
+    if (!nextLooks.length) return
+    rememberSavedLookNames(nextLooks)
+    const nextLook = [...nextLooks].reverse().find((look) => (
+      !look.defaultLook && look.name === preferredLookName
+    )) ?? nextLooks[nextLooks.length - 1]
+    setLooks(nextLooks)
+    setActiveLookId(nextLook.id)
+    applyLookDraftToEditor(nextLook)
+  }
+
+  const submitLookGeneration = async (input: AssetImageGenerationInput) => {
+    const numericAssetId = Number(assetId)
+    const modelId = Number(model)
+    const resolutionValue = Number(resolution)
+    if (!Number.isInteger(numericAssetId) || numericAssetId <= 0) {
+      throw new Error(l('当前资产还没有后端资产 ID，无法生成造型', 'This asset does not have a backend asset ID yet'))
+    }
+    if (
+      !Number.isInteger(modelId)
+      || modelId <= 0
+      || !Number.isInteger(resolutionValue)
+      || resolutionValue <= 0
+    ) {
+      throw new Error(l('请选择可用的模型和分辨率', 'Select an available model and resolution'))
+    }
+    const lookName = activeLook?.name?.trim() || input.name
+    const referenceFileIds = references
+      .map((reference) => Number(reference.fileId))
+      .filter((value) => Number.isInteger(value) && value > 0)
+
+    setLookGenerationState({ phase: 'submitting', progress: 0 })
+    const request = StudioAssetGenerationApi.requestLookGenerate({
+      assetId: numericAssetId,
+      name: lookName,
+      prompt: input.prompt,
+      referenceFileIds,
+      aspectRatio: input.aspectRatio,
+      visualStyleId: input.visualStyleId,
+      quality: null,
+      resolution: resolutionValue,
+      modelId,
+    })
+    const taskId = await request.promise
+    setLookGenerationState({ phase: 'running', progress: 0 })
+    message.success(l('造型生成任务已提交', 'Look generation task submitted'))
+
+    while (imageOptionsMountedRef.current) {
+      await wait(LOOK_GENERATION_TASK_POLL_INTERVAL_MS)
+      const detailRequest = StudioAssetGenerationApi.requestTaskDetail(taskId)
+      const detail = await detailRequest.promise
+      const progress = clampTaskProgress(detail.progress)
+      if (isAssetTaskSucceeded(detail)) {
+        setLookGenerationState({ phase: 'refreshing', progress: 100 })
+        await refreshLooksAfterGeneration(lookName)
+        message.success(l('造型生成完成', 'Look generation complete'))
+        return
+      }
+      if (isAssetTaskFailed(detail)) {
+        throw new Error(
+          detail.error?.trim()
+          || detail.cancelReason?.trim()
+          || detail.statusName?.trim()
+          || l('造型生成失败', 'Look generation failed'),
+        )
+      }
+      setLookGenerationState({ phase: 'running', progress })
+    }
+  }
+
+  const submitGeneration = async () => {
+    if (!canGenerate || generationSubmitPendingRef.current) return
+    let keepLookGenerationError = false
+    const generationInput: AssetImageGenerationInput = {
+      name: name.trim(),
+      prompt: prompt.trim(),
+      lookId: activeLookBackendId,
+      styleName: selectedStyle ?? '',
+      visualStyleId: selectedVisualStyleId,
+      aspectRatio: selectedRatio,
+    }
+    generationSubmitPendingRef.current = true
+    setGenerationSubmitPending(true)
+    onGenerationPreparationStateChange?.(true)
+    try {
+      try {
+        latestImageOptionsRef.current = {
+          prompt: generationInput.prompt,
+          lookId: generationInput.lookId,
+          styleName: generationInput.styleName,
+          visualStyleId: generationInput.visualStyleId,
+          aspectRatio: generationInput.aspectRatio,
+        }
+        await flushImageOptions(true, true)
+      } catch (error) {
+        message.error(getApiErrorMessage(
+          error,
+          l('图片设置保存失败，暂未开始生成', 'Image settings could not be saved, so generation was not started'),
+        ))
+        return
+      }
+      try {
+        if (activeLookId !== 'main' && activeLookBackendId === null) {
+          await submitLookGeneration(generationInput)
+        } else {
+          await onGenerate(generationInput)
+        }
+      } catch (error) {
+        if (activeLookId !== 'main' && activeLookBackendId === null) {
+          keepLookGenerationError = true
+          const errorMessage = getApiErrorMessage(
+            error,
+            l('造型生成任务提交失败', 'Failed to submit the look generation task'),
+          )
+          setLookGenerationState({ phase: 'failed', progress: 0, errorMessage })
+          message.error(errorMessage)
+        }
+        // 普通图片生成的错误由父级记录并展示。
+      }
+    } finally {
+      generationSubmitPendingRef.current = false
+      if (imageOptionsMountedRef.current) setGenerationSubmitPending(false)
+      if (imageOptionsMountedRef.current && !keepLookGenerationError) {
+        setLookGenerationState(undefined)
+      }
+      onGenerationPreparationStateChange?.(false)
+    }
+  }
+
+  const uploadReferenceFiles = async (files: File[]) => {
+    if (
+      !files.length
+      || referenceUploadPendingRef.current
+      || referenceImagesLoading
+    ) return
+
+    const imageFiles = files.filter((file) => file.type.startsWith('image/'))
+    if (imageFiles.length !== files.length) message.warning(l('仅支持上传图片文件', 'Only image files are supported'))
+    const available = Math.max(0, maxReferenceImages - referenceCount)
+    const selectedFiles = imageFiles.slice(0, available)
+    if (imageFiles.length > available) {
+      message.warning(l(
+        `最多上传 ${maxReferenceImages} 张参考图`,
+        `You can upload up to ${maxReferenceImages} reference images`,
+      ))
+    }
+    if (!selectedFiles.length) return
+    if (!onReferenceImagesUpload) {
+      message.warning(l(
+        '请先保存资产，再上传参考图',
+        'Save the asset before uploading reference images',
+      ))
+      return
+    }
+
+    referenceUploadPendingRef.current = true
+    setReferenceUploadPending(true)
+    onGenerationPreparationStateChange?.(true)
+    try {
+      await onReferenceImagesUpload(selectedFiles)
+      if (imageOptionsMountedRef.current) {
+        message.success(l(
+          selectedFiles.length > 1
+            ? `已上传 ${selectedFiles.length} 张参考图`
+            : '参考图上传成功',
+          selectedFiles.length > 1
+            ? `${selectedFiles.length} reference images uploaded`
+            : 'Reference image uploaded',
+        ))
+      }
+    } catch (error) {
+      if (imageOptionsMountedRef.current) {
+        message.error(getApiErrorMessage(
+          error,
+          l('参考图上传失败，请重试', 'Failed to upload reference images; try again'),
+        ))
+      }
+    } finally {
+      referenceUploadPendingRef.current = false
+      if (imageOptionsMountedRef.current) setReferenceUploadPending(false)
+      onGenerationPreparationStateChange?.(false)
+    }
+  }
+
+  const createReferenceFileFromHistory = async (item: ResolvedAssetImageHistoryItem) => {
+    const response = await fetch(item.imageUrl)
+    if (!response.ok) throw new Error(l('历史图片下载失败', 'Failed to download the history image'))
+    const blob = await response.blob()
+    const mimeType = blob.type || 'image/png'
+    const urlExt = item.imageUrl
+      .split('?')[0]
+      .split('#')[0]
+      .match(/\.([a-z0-9]+)$/i)?.[1]
+    const mimeExt = mimeType.split('/')[1]?.split('+')[0]
+    const extension = (urlExt || mimeExt || 'png').replace(/[^a-z0-9]/gi, '').toLowerCase() || 'png'
+    return new File(
+      [blob],
+      `${name.trim() || workspaceTitle}-${item.versionId ?? item.id}.${extension}`,
+      { type: mimeType },
+    )
   }
 
   const handleReferenceUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? [])
     event.target.value = ''
-    if (!files.length) return
+    await uploadReferenceFiles(files)
+  }
 
-    const imageFiles = files.filter((file) => file.type.startsWith('image/'))
-    if (imageFiles.length !== files.length) message.warning(l('仅支持上传图片文件', 'Only image files are supported'))
-    const available = Math.max(0, MAX_REFERENCE_IMAGES - references.length)
-    const selectedFiles = imageFiles.slice(0, available)
-    if (imageFiles.length > available) message.warning(l('最多上传 14 张参考图', 'You can upload up to 14 reference images'))
-    if (!selectedFiles.length) return
-
+  const addReferenceFromHistory = async (
+    item: ResolvedAssetImageHistoryItem | undefined,
+    emptyMessage: string,
+  ) => {
+    setReferenceMenuOpen(null)
+    if (!item) {
+      message.warning(emptyMessage)
+      return
+    }
     try {
-      const urls = await Promise.all(selectedFiles.map(fileToDataUrl))
-      setReferences((current) => [
-        ...current,
-        ...selectedFiles.map((file, index) => ({
-          id: `${file.name}-${file.lastModified}-${index}`,
-          name: file.name,
-          url: urls[index],
-        })),
-      ])
-    } catch {
-      message.error(l('参考图读取失败', 'Failed to read the reference image'))
+      const file = await createReferenceFileFromHistory(item)
+      await uploadReferenceFiles([file])
+    } catch (error) {
+      message.error(getApiErrorMessage(
+        error,
+        l('图片转参考图失败，请重试', 'Failed to use the image as a reference'),
+      ))
+    }
+  }
+
+  const renderReferenceAddButton = (
+    placement: 'panel' | 'description',
+    className: string,
+    dragAware = false,
+  ) => {
+    const menuOpen = referenceMenuOpen === placement
+    const wrapClassName = [
+      'asset-generation-workspace__reference-add-wrap',
+      menuOpen ? 'is-open' : '',
+      dragAware && referenceDragOver ? 'is-dropzone' : '',
+    ].filter(Boolean).join(' ')
+    const menu = (
+      <div className="asset-generation-workspace__reference-add-menu" role="menu">
+        <button
+          type="button"
+          role="menuitem"
+          disabled={!currentAssetReferenceItem}
+          onClick={() => addReferenceFromHistory(
+            currentAssetReferenceItem,
+            l('当前没有可添加的资产图', 'No asset image to add'),
+          )}
+        >
+          {l('资产添加', 'Add asset')}
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          disabled={!selectedPastHistoryItem}
+          onClick={() => addReferenceFromHistory(
+            selectedPastHistoryItem,
+            l('暂无可添加的历史图', 'No history image to add'),
+          )}
+        >
+          {l('从历史记录添加', 'Add from history')}
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            setReferenceMenuOpen(null)
+            referenceInputRef.current?.click()
+          }}
+        >
+          {l('本地添加', 'Add local')}
+        </button>
+      </div>
+    )
+    return (
+      <div className={wrapClassName}>
+        <Popover
+          open={menuOpen}
+          trigger={[]}
+          placement="bottomLeft"
+          arrow={false}
+          content={menu}
+          rootClassName="asset-generation-workspace__reference-add-popover"
+          onOpenChange={(open) => setReferenceMenuOpen(open ? placement : null)}
+        >
+          <button
+            type="button"
+            className={className}
+            aria-label={referenceUploadPending
+              ? l('正在上传参考图', 'Uploading reference images')
+              : l('添加参考图', 'Add reference image')}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            title={referenceImagesErrorMessage
+              || (!onReferenceImagesUpload ? l('请先保存资产', 'Save the asset first') : undefined)}
+            disabled={generationLocked || !onReferenceImagesUpload}
+            onClick={(event) => {
+              if (generationLocked || !onReferenceImagesUpload) return
+              event.stopPropagation()
+              setReferenceMenuOpen((open) => (open === placement ? null : placement))
+            }}
+          >
+            {referenceUploadPending ? <Spin size="small" /> : <PlusOutlined />}
+            {dragAware && referenceDragOver && (
+              <span>
+                {referenceUploadPending
+                  ? l('正在上传参考图', 'Uploading reference images')
+                  : l('拖拽至此处作为参考图', 'Drop here to use as reference')}
+              </span>
+            )}
+          </button>
+        </Popover>
+      </div>
+    )
+  }
+
+  const handleHistoryDragStart = (
+    event: React.DragEvent<HTMLDivElement>,
+    item: ResolvedAssetImageHistoryItem,
+  ) => {
+    historyDragItemRef.current = item
+    if (referenceDropAllowed) setReferenceDragOver(true)
+    event.dataTransfer.effectAllowed = 'copy'
+    event.dataTransfer.setData('application/x-jellyfish-history-image', item.id)
+    event.dataTransfer.setData('text/plain', item.imageUrl)
+  }
+
+  const resolveDraggedHistoryItem = (event: React.DragEvent<HTMLElement>) => {
+    const itemId = event.dataTransfer.getData('application/x-jellyfish-history-image')
+    return historyDragItemRef.current
+      ?? resolvedImageHistoryItems.find((item) => item.id === itemId)
+      ?? null
+  }
+
+  const handleReferenceDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!referenceDropAllowed) return
+    const hasFiles = Array.from(event.dataTransfer.types).includes('Files')
+    const hasHistoryImage = Boolean(
+      historyDragItemRef.current
+      || event.dataTransfer.types.includes('application/x-jellyfish-history-image'),
+    )
+    if (!hasFiles && !hasHistoryImage) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    setReferenceDragOver(true)
+  }
+
+  const handleReferenceDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+    setReferenceDragOver(false)
+    if (!referenceDropAllowed) return
+    event.preventDefault()
+    const droppedFiles = Array.from(event.dataTransfer.files ?? [])
+    if (droppedFiles.length) {
+      await uploadReferenceFiles(droppedFiles)
+      return
+    }
+    const historyItem = resolveDraggedHistoryItem(event)
+    if (!historyItem) return
+    try {
+      const file = await createReferenceFileFromHistory(historyItem)
+      await uploadReferenceFiles([file])
+    } catch (error) {
+      if (imageOptionsMountedRef.current) {
+        message.error(getApiErrorMessage(
+          error,
+          l('历史图片转参考图失败，请重试', 'Failed to use the history image as a reference'),
+        ))
+      }
+    } finally {
+      historyDragItemRef.current = null
     }
   }
 
@@ -234,38 +1500,123 @@ export default function AssetGenerationWorkspace({
 
     setLooks((current) => current.map((look) => (
       look.id === activeLookId
-        ? { ...look, prompt, imageUrl: previewImage, references }
+        ? { ...look, prompt, imageUrl: previewImage }
         : look
     )))
     setActiveLookId(nextLook.id)
-    setPrompt(nextLook.prompt)
-    setRewriteDraft(nextLook.prompt)
-    setReferences(nextLook.references)
-    setPreviewImage(nextLook.imageUrl)
+    applyLookDraftToEditor(nextLook)
     setImageViewerOpen(false)
+  }
+
+  const renameActiveLook = async () => {
+    const selectedLook = looks.find((look) => look.id === activeLookId)
+    if (!selectedLook || selectedLook.id === 'main' || lookRenamePendingId) return
+    const lookId = Number(selectedLook.backendId)
+    const savedName = savedLookNamesRef.current.get(selectedLook.id) ?? selectedLook.name
+    const nextName = selectedLook.name.trim()
+    if (!nextName) {
+      setLooks((current) => current.map((look) => (
+        look.id === activeLookId ? { ...look, name: savedName } : look
+      )))
+      message.warning(l('造型名称不能为空', 'Look name cannot be empty'))
+      return
+    }
+    if (!Number.isInteger(lookId) || lookId <= 0) return
+    if (nextName === savedName) return
+
+    setLookRenamePendingId(selectedLook.id)
+    try {
+      const request = StudioAssetGenerationApi.requestLookRename({
+        lookId,
+        name: nextName,
+      })
+      await request.promise
+      savedLookNamesRef.current.set(selectedLook.id, nextName)
+      setLooks((current) => current.map((look) => (
+        look.id === activeLookId ? { ...look, name: nextName } : look
+      )))
+      message.success(l('造型名称已更新', 'Look name updated'))
+    } catch (error) {
+      setLooks((current) => current.map((look) => (
+        look.id === activeLookId ? { ...look, name: savedName } : look
+      )))
+      message.error(getApiErrorMessage(
+        error,
+        l('造型重命名失败，请重试', 'Failed to rename the look; try again'),
+      ))
+    } finally {
+      if (imageOptionsMountedRef.current) setLookRenamePendingId(undefined)
+    }
+  }
+
+  const useLookInEpisode = async (selectedLook: LookDraft) => {
+    if (!selectedLook || selectedLook.status === 1 || lookEpisodeSelectionPending) return
+    const numericAssetId = Number(assetId)
+    const lookId = Number(selectedLook.backendId)
+    const numericEpisodeId = Number(episodeId)
+    if (!Number.isInteger(numericAssetId) || numericAssetId <= 0) {
+      message.error(l('当前资产还没有后端资产 ID，无法出演本集', 'This asset does not have a backend asset ID yet'))
+      return
+    }
+    if (!Number.isInteger(lookId) || lookId <= 0) {
+      message.error(l('当前造型还没有后端造型 ID，无法出演本集', 'This look does not have a backend look ID yet'))
+      return
+    }
+    if (!Number.isInteger(numericEpisodeId) || numericEpisodeId <= 0) {
+      message.error(l('当前集 ID 不存在，无法出演本集', 'This episode ID is unavailable'))
+      return
+    }
+    setLookEpisodeSelectionPending(true)
+    try {
+      const request = StudioAssetGenerationApi.requestLookEpisodeSelection({
+        lookId,
+        episodeId: numericEpisodeId,
+        selected: true,
+      })
+      await request.promise
+      const refreshRequest = StudioAssetGenerationApi.requestLooks(numericAssetId, episodeId)
+      const nextLooks = (await refreshRequest.promise).map(createLookDraftFromRemote)
+      if (nextLooks.length) {
+        rememberSavedLookNames(nextLooks)
+        setLooks(nextLooks)
+        const refreshedActiveLook = nextLooks.find((look) => look.backendId === lookId)
+          ?? nextLooks.find((look) => look.id === activeLookId)
+          ?? nextLooks[0]
+        setActiveLookId(refreshedActiveLook.id)
+        applyLookDraftToEditor(refreshedActiveLook)
+      }
+      setLookEpisodeConfirmId(undefined)
+      message.success(l('已设为本集出演', 'Look selected for this episode'))
+    } catch (error) {
+      message.error(getApiErrorMessage(
+        error,
+        l('设置本集出演失败，请重试', 'Failed to select this look for the episode; try again'),
+      ))
+    } finally {
+      if (imageOptionsMountedRef.current) setLookEpisodeSelectionPending(false)
+    }
+  }
+
+  const openLookEpisodeConfirm = () => {
+    const selectedLook = looks.find((look) => look.id === activeLookId)
+    if (!selectedLook || selectedLook.status === 1 || lookEpisodeSelectionPending) return
+    setLookEpisodeConfirmId(selectedLook.id)
   }
 
   const addLook = (imageUrl?: string) => {
     if (hasEmptyLook) return
     const lookNumber = looks.filter((look) => look.id !== 'main').length + 1
-    const mainLook = looks.find((look) => look.id === 'main')
-    const mainImage = activeLookId === 'main' ? previewImage : mainLook?.imageUrl
     const newLook: LookDraft = {
       id: `look-${Date.now()}-${lookNumber}`,
       name: l(`造型${lookNumber}`, `Look ${lookNumber}`),
       prompt: '',
       imageUrl,
-      references: mainImage ? [{
-        id: `main-look-reference-${Date.now()}`,
-        name: initialAsset?.name || l(copy.lookZh, copy.lookEn),
-        url: mainImage,
-      }] : [],
     }
 
     setLooks((current) => [
       ...current.map((look) => (
         look.id === activeLookId
-          ? { ...look, prompt, imageUrl: previewImage, references }
+          ? { ...look, prompt, imageUrl: previewImage }
           : look
       )),
       newLook,
@@ -273,7 +1624,6 @@ export default function AssetGenerationWorkspace({
     setActiveLookId(newLook.id)
     setPrompt('')
     setRewriteDraft('')
-    setReferences(newLook.references)
     setPreviewImage(imageUrl)
     setImageViewerOpen(false)
   }
@@ -281,22 +1631,72 @@ export default function AssetGenerationWorkspace({
   const handleLocalLookImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     event.target.value = ''
-    if (!file) return
+    if (!file || localLookUploadPending) return
     if (!file.type.startsWith('image/')) {
       message.error(l('请选择图片文件', 'Choose an image file'))
       return
     }
+    const numericAssetId = Number(assetId)
+    if (!Number.isInteger(numericAssetId) || numericAssetId <= 0) {
+      message.error(l(
+        '当前资产还没有后端资产 ID，无法导入造型',
+        'This asset does not have a backend asset ID, so the look cannot be imported',
+      ))
+      return
+    }
+    const lookNumber = looks.filter((look) => look.id !== 'main').length + 1
+    const lookName = l(`造型${lookNumber}`, `Look ${lookNumber}`)
+    setLocalLookUploadPending(true)
     try {
-      addLook(await fileToDataUrl(file))
-    } catch {
-      message.error(l('造型图片读取失败', 'Failed to read the look image'))
+      const request = StudioAssetGenerationApi.requestLookUpload({
+        assetId: numericAssetId,
+        name: lookName,
+        file,
+      })
+      const uploadedLook = await request.promise
+      if (uploadedLook) {
+        const nextLook = createLookDraftFromRemote(uploadedLook)
+        savedLookNamesRef.current.set(nextLook.id, nextLook.name)
+        setLooks((current) => {
+          const nextCurrent = current.map((look) => (
+            look.id === activeLookId
+              ? { ...look, prompt, imageUrl: previewImage }
+              : look
+          ))
+          const existingIndex = nextCurrent.findIndex((look) => look.id === nextLook.id)
+          if (existingIndex >= 0) {
+            return nextCurrent.map((look, index) => (index === existingIndex ? nextLook : look))
+          }
+          return [...nextCurrent, nextLook]
+        })
+        setActiveLookId(nextLook.id)
+        applyLookDraftToEditor(nextLook)
+      } else {
+        const refreshRequest = StudioAssetGenerationApi.requestLooks(numericAssetId, episodeId)
+        const nextLooks = (await refreshRequest.promise).map(createLookDraftFromRemote)
+        if (nextLooks.length) {
+          rememberSavedLookNames(nextLooks)
+          const nextLook = nextLooks[nextLooks.length - 1]
+          setLooks(nextLooks)
+          setActiveLookId(nextLook.id)
+          applyLookDraftToEditor(nextLook)
+        }
+      }
+      message.success(l('造型导入成功', 'Look imported'))
+    } catch (error) {
+      message.error(getApiErrorMessage(
+        error,
+        l('造型导入失败，请重试', 'Failed to import the look; try again'),
+      ))
+    } finally {
+      if (imageOptionsMountedRef.current) setLocalLookUploadPending(false)
     }
   }
 
   return (
     <section className="asset-generation-workspace" role="dialog" aria-modal="true" aria-label={workspaceTitle}>
       <header className="asset-generation-workspace__header">
-        <Button type="text" icon={<CloseOutlined />} aria-label={l('关闭', 'Close')} onClick={onClose} />
+        <Button type="text" icon={<CloseOutlined />} aria-label={l('关闭', 'Close')} onClick={closeWorkspace} />
         <strong>{workspaceTitle}</strong>
       </header>
 
@@ -314,13 +1714,83 @@ export default function AssetGenerationWorkspace({
                   type="button"
                   className="asset-generation-workspace__viewer-trigger"
                   aria-label={l('查看人物大图', 'View full-size character image')}
-                  onClick={openImageViewer}
+                  onClick={() => openImageViewer()}
                 >
                   <img src={previewImage} alt={name || l(copy.nameZh, copy.nameEn)} />
                 </button>
-                <span className="asset-generation-workspace__main-badge">
-                  {l('当前选中主图', 'Current main image')}
-                </span>
+                <div className="asset-generation-workspace__preview-top-actions" aria-label={l('主图操作', 'Main image actions')}>
+                  <button
+                    type="button"
+                    className="is-highlighted"
+                    title={l('版权审查', 'Copyright review')}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      notifyImageToolApiMissing(l('版权审查', 'Copyright review'))
+                    }}
+                  >
+                    <SafetyCertificateOutlined />
+                    <span>{l('版权审查', 'Copyright')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!selectedHistoryCanSetPrimary}
+                    title={selectedHistoryCanSetPrimary
+                      ? l('设为主图', 'Set as primary image')
+                      : l('已设为主图', 'Already primary image')}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      if (selectedHistoryCanSetPrimary && selectedHistoryItem) {
+                        void handleSetPrimaryImage(selectedHistoryItem)
+                      }
+                    }}
+                  >
+                    {selectedHistoryItem && primaryImagePendingId === selectedHistoryItem.id
+                      ? <Spin size="small" />
+                      : <CheckOutlined />}
+                    <span>{selectedHistoryCanSetPrimary
+                      ? l('设为主图', 'Set primary')
+                      : l('已设为主图', 'Primary')}</span>
+                  </button>
+                </div>
+                <div className="asset-generation-workspace__preview-hover-actions" aria-label={l('图片操作', 'Image actions')}>
+                  <button
+                    type="button"
+                    aria-label={l('查看大图', 'View full image')}
+                    title={l('查看大图', 'View full image')}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      openImageViewer()
+                    }}
+                  >
+                    <EyeOutlined />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={l('下载图片', 'Download image')}
+                    title={l('下载图片', 'Download image')}
+                    disabled={previewDownloadPending}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      void downloadPreviewImage()
+                    }}
+                  >
+                    {previewDownloadPending ? <Spin size="small" /> : <DownloadOutlined />}
+                  </button>
+                  <button
+                    type="button"
+                    disabled
+                    aria-label={l('删除图片', 'Delete image')}
+                    title={l('暂无删除接口', 'No delete API yet')}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <DeleteOutlined />
+                  </button>
+                </div>
+                {selectedHistoryItem?.isCurrent && (
+                  <span className="asset-generation-workspace__main-badge">
+                    {l('当前选中主图', 'Current main image')}
+                  </span>
+                )}
               </>
             ) : (
               <>
@@ -328,21 +1798,75 @@ export default function AssetGenerationWorkspace({
                 <span>{l('待生成', 'Ready to generate')}</span>
               </>
             )}
+            {generationBusy && (
+              <div className="asset-generation-workspace__generation-state" role="status" aria-live="polite">
+                <Spin size="small" />
+                <strong>{l('正在生成图片', 'Generating image')}</strong>
+                <small>
+                  {displayGenerationState?.phase === 'refreshing'
+                    ? l('正在加载生成结果…', 'Loading the generated result…')
+                    : `${Math.max(0, Math.min(100, Math.round(displayGenerationState?.progress ?? 0)))}%`}
+                </small>
+              </div>
+            )}
           </div>
           <p className="asset-generation-workspace__description">
             {initialAsset?.description || l('暂无图像描述', 'No image description yet')}
           </p>
           <section className="asset-generation-workspace__history" aria-label={l('历史记录', 'History')}>
             <h2>{l('历史记录', 'History')} <small>History</small></h2>
-            <button
-              type="button"
-              className={previewImage ? 'has-image is-selected' : ''}
-              disabled={!previewImage}
-              aria-label={previewImage ? l('当前历史图片', 'Current history image') : l('暂无历史图片', 'No history image')}
-              onClick={openImageViewer}
+            <div
+              className="asset-generation-workspace__history-list"
+              aria-busy={imageHistoryLoading}
+              title={imageHistoryErrorMessage}
             >
-              {previewImage ? <img src={previewImage} alt="" /> : <PictureOutlined />}
-            </button>
+              {resolvedImageHistoryItems.map((item, index) => {
+                return (
+                  <div
+                    key={`${item.id}-${index}`}
+                    className={`asset-generation-workspace__history-item${item.isSelected ? ' is-selected' : ''}`}
+                    draggable
+                    onDragStart={(event) => handleHistoryDragStart(event, item)}
+                    onDragEnd={() => {
+                      historyDragItemRef.current = null
+                      setReferenceDragOver(false)
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="has-image"
+                      aria-label={item.isSelected
+                        ? l('当前正在查看这张历史图片', 'Currently viewing this history image')
+                        : l(`切换到第${index + 1}张历史图片`, `Switch to history image ${index + 1}`)}
+                      title={item.createdAt}
+                      onClick={() => selectHistoryImage(item)}
+                    >
+                      <img src={item.thumbnailUrl} alt="" loading="lazy" decoding="async" />
+                    </button>
+                  </div>
+                )
+              })}
+              {imageHistoryLoading && (
+                <span
+                  className="asset-generation-workspace__history-loading"
+                  role="status"
+                  aria-label={l('正在加载历史图片', 'Loading image history')}
+                >
+                  <Spin size="small" />
+                </span>
+              )}
+              {!imageHistoryLoading
+                && resolvedImageHistoryItems.length === 0 && (
+                  <button
+                    type="button"
+                    className="asset-generation-workspace__history-empty"
+                    disabled
+                    aria-label={l('暂无历史图片', 'No history image')}
+                  >
+                    <PictureOutlined />
+                  </button>
+                )}
+            </div>
           </section>
         </main>
 
@@ -355,7 +1879,7 @@ export default function AssetGenerationWorkspace({
                   className={activeLookId !== 'main' ? 'asset-generation-workspace__character-name is-locked' : 'asset-generation-workspace__character-name'}
                   value={name}
                   maxLength={30}
-                  disabled={activeLookId !== 'main'}
+                  disabled={activeLookId !== 'main' || generationLocked}
                   placeholder={l(`请输入${copy.nameZh}`, `Enter ${copy.nameEn.toLowerCase()} name`)}
                   onChange={(event) => setName(event.target.value)}
                 />
@@ -363,6 +1887,8 @@ export default function AssetGenerationWorkspace({
                   <Input
                     value={activeLook?.name ?? ''}
                     maxLength={30}
+                    disabled={generationLocked}
+                    suffix={lookRenamePendingId === activeLookId ? <Spin size="small" /> : null}
                     aria-label={l('造型名称', 'Look name')}
                     placeholder={l('请输入造型名称', 'Enter look name')}
                     onChange={(event) => {
@@ -371,6 +1897,8 @@ export default function AssetGenerationWorkspace({
                         look.id === activeLookId ? { ...look, name: value } : look
                       )))
                     }}
+                    onBlur={() => { void renameActiveLook() }}
+                    onPressEnter={(event) => event.currentTarget.blur()}
                   />
                 )}
               </div>
@@ -378,31 +1906,50 @@ export default function AssetGenerationWorkspace({
 
             <div className="asset-generation-workspace__reference-heading">
               <strong>{l('参考图', 'Reference images')}</strong>
-              <span>{references.length}/{MAX_REFERENCE_IMAGES}</span>
+              <span>{referenceCount}/{maxReferenceImages}</span>
             </div>
-            <div className="asset-generation-workspace__references">
+            <div
+              className={[
+                'asset-generation-workspace__references',
+                references.length === 0 ? 'is-empty' : '',
+                referenceDragOver ? 'is-drag-over' : '',
+              ].filter(Boolean).join(' ')}
+              aria-busy={referenceImagesLoading || referenceUploadPending}
+              onDragOver={handleReferenceDragOver}
+              onDragLeave={(event) => {
+                const nextTarget = event.relatedTarget as Node | null
+                if (nextTarget && event.currentTarget.contains(nextTarget)) return
+                setReferenceDragOver(false)
+              }}
+              onDrop={handleReferenceDrop}
+            >
               {references.map((reference) => (
                 <div key={reference.id} className="asset-generation-workspace__reference">
-                  <img src={reference.url} alt={reference.name} />
-                  <button
-                    type="button"
-                    aria-label={l('删除参考图', 'Remove reference image')}
-                    onClick={() => setReferences((current) => current.filter((item) => item.id !== reference.id))}
-                  >
-                    <DeleteOutlined />
-                  </button>
+                  <img
+                    src={reference.url}
+                    alt={reference.name}
+                    loading="lazy"
+                    decoding="async"
+                  />
                 </div>
               ))}
-              {references.length < MAX_REFERENCE_IMAGES && (
-                <button
-                  type="button"
-                  className="asset-generation-workspace__reference-add"
-                  aria-label={l('添加参考图', 'Add reference image')}
-                  onClick={() => referenceInputRef.current?.click()}
+              {referenceImagesLoading && (
+                <span
+                  className="asset-generation-workspace__reference-add asset-generation-workspace__reference-loading"
+                  role="status"
+                  aria-label={l('正在加载参考图', 'Loading reference images')}
                 >
-                  <PlusOutlined />
-                </button>
+                  <Spin size="small" />
+                </span>
               )}
+              {!referenceImagesLoading
+                && referenceCount < maxReferenceImages && (
+                  renderReferenceAddButton(
+                    'panel',
+                    `asset-generation-workspace__reference-add${referenceDragOver ? ' asset-generation-workspace__reference-dropzone' : ''}`,
+                    true,
+                  )
+                )}
             </div>
 
             <div className="asset-generation-workspace__prompt-section">
@@ -433,26 +1980,35 @@ export default function AssetGenerationWorkspace({
                 <Input.TextArea
                   value={prompt}
                   maxLength={MAX_PROMPT_LENGTH}
+                  disabled={generationLocked}
                   autoSize={false}
                   variant="borderless"
                   placeholder={l(copy.promptZh, copy.promptEn)}
-                  onChange={(event) => setPrompt(event.target.value)}
+                  onChange={(event) => handlePromptChange(event.target.value)}
                 />
                 <div className="asset-generation-workspace__prompt-options">
                   <StudioSelect
                     className="asset-generation-workspace__ratio-select"
                     value={selectedRatio}
+                    disabled={generationLocked}
                     aria-label={l('图片比例', 'Image ratio')}
-                    options={RATIO_OPTIONS.map((value) => ({ value, label: <StudioRatioOption value={value} /> }))}
-                    onChange={setSelectedRatio}
+                    options={supportedRatioOptions.map((value) => ({ value, label: <StudioRatioOption value={value} /> }))}
+                    onChange={handleRatioChange}
                     popupClassName="asset-generation-workspace__ratio-popup"
                     getPopupContainer={(trigger) => trigger.parentElement ?? trigger}
                   />
                   <StudioSelect
                     value={selectedStyle}
+                    disabled={generationLocked}
                     aria-label={l('画面风格', 'Visual style')}
+                    placeholder={l('请选择画面风格', 'Select visual style')}
+                    loading={visualStyleOptionsLoading}
+                    status={visualStyleOptionsError ? 'error' : undefined}
+                    optionLabelProp="trigger"
+                    popupClassName="asset-generation-workspace__style-popup"
+                    popupMatchSelectWidth={280}
                     options={styleOptions}
-                    onChange={setSelectedStyle}
+                    onChange={handleStyleChange}
                     getPopupContainer={(trigger) => trigger.parentElement ?? trigger}
                   />
                   <small>{prompt.length}/{MAX_PROMPT_LENGTH}</small>
@@ -461,7 +2017,11 @@ export default function AssetGenerationWorkspace({
             </div>
           </div>
 
-          <div className="asset-generation-workspace__look-rail">
+          <div
+            className="asset-generation-workspace__look-rail"
+            aria-busy={looksLoading}
+            title={looksErrorMessage}
+          >
             <strong>{l('全部造型', 'Looks')}</strong>
             <div ref={lookAddRef} className={`asset-generation-workspace__look-add-wrap${lookMenuOpen ? ' is-open' : ''}`}>
               <button
@@ -472,7 +2032,7 @@ export default function AssetGenerationWorkspace({
                   : l('添加造型', 'Add look')}
                 aria-haspopup="menu"
                 aria-expanded={lookMenuOpen}
-                disabled={hasEmptyLook}
+                disabled={hasEmptyLook || generationLocked}
                 onClick={() => setLookMenuOpen((open) => !open)}
               >
                 <PlusOutlined />
@@ -503,47 +2063,115 @@ export default function AssetGenerationWorkspace({
                 </div>
               )}
             </div>
+            {looksLoading && (
+              <span
+                className="asset-generation-workspace__look-loading"
+                role="status"
+                aria-label={l('正在加载造型', 'Loading looks')}
+              >
+                <Spin size="small" />
+              </span>
+            )}
             {looks.map((look) => {
               const imageUrl = look.id === activeLookId ? previewImage : look.imageUrl
+              const lookName = look.id === 'main' ? (name || look.name) : look.name
+              const lookInEpisode = look.status === 1
+              const showEpisodeAction = look.id === activeLookId
+                && look.status === 0
+                && !lookInEpisode
               return (
-                <button
-                  key={look.id}
-                  type="button"
-                  className={`asset-generation-workspace__look-main${imageUrl ? ' has-image' : ''}${look.id === activeLookId ? ' is-selected' : ''}`}
-                  aria-pressed={look.id === activeLookId}
-                  onClick={() => selectLook(look.id)}
-                >
-                  <span className="asset-generation-workspace__look-preview">
-                    {imageUrl ? <img src={imageUrl} alt="" /> : <PictureOutlined />}
-                  </span>
-                  <span
-                    className="asset-generation-workspace__look-name"
-                    title={look.id === 'main' ? (name || look.name) : look.name}
+                <Fragment key={look.id}>
+                  <button
+                    type="button"
+                    className={`asset-generation-workspace__look-main${imageUrl ? ' has-image' : ''}${look.id === activeLookId ? ' is-selected' : ''}`}
+                    aria-pressed={look.id === activeLookId}
+                    disabled={generationLocked}
+                    onClick={() => selectLook(look.id)}
                   >
-                    {look.id === 'main' ? (name || look.name) : look.name}
-                  </span>
-                </button>
+                    <span className="asset-generation-workspace__look-preview">
+                      {imageUrl ? <img src={imageUrl} alt="" /> : <PictureOutlined />}
+                    </span>
+                    {lookInEpisode && (
+                      <span className="asset-generation-workspace__look-status">
+                        {l('本集出演中', 'In episode')}
+                      </span>
+                    )}
+                    <span className="asset-generation-workspace__look-meta">
+                      <span className="asset-generation-workspace__look-name" title={lookName}>
+                        {lookName}
+                      </span>
+                    </span>
+                  </button>
+                  {showEpisodeAction && (
+                    <button
+                      type="button"
+                      className="asset-generation-workspace__look-episode-action"
+                      disabled={generationLocked}
+                      title={l('出演本集', 'Use in episode')}
+                      onClick={openLookEpisodeConfirm}
+                    >
+                      {lookEpisodeSelectionPending ? <Spin size="small" /> : l('出演本集', 'Use in episode')}
+                    </button>
+                  )}
+                </Fragment>
               )
             })}
           </div>
 
           <footer className="asset-generation-workspace__footer">
+            {(generationUnavailableReason || displayGenerationState?.errorMessage) && (
+              <div className={`asset-generation-workspace__generation-message${displayGenerationState?.errorMessage ? ' is-error' : ''}`}>
+                <span>{displayGenerationState?.errorMessage ?? generationUnavailableReason}</span>
+                {(displayGenerationState?.phase === 'poll-failed' || displayGenerationState?.phase === 'refresh-failed')
+                  && onGenerationResultRetry && (
+                  <span className="asset-generation-workspace__generation-message-actions">
+                    <Button size="small" onClick={onGenerationResultRetry}>
+                      {displayGenerationState?.phase === 'poll-failed'
+                        ? l('继续查询任务', 'Resume task query')
+                        : l('重新加载结果', 'Reload result')}
+                    </Button>
+                    {onGenerationTrackingDiscard && (
+                      <Button size="small" danger onClick={onGenerationTrackingDiscard}>
+                        {l('放弃跟踪', 'Stop tracking')}
+                      </Button>
+                    )}
+                  </span>
+                )}
+              </div>
+            )}
             <StudioSelect
-              value={model}
+              value={model || undefined}
               aria-label={l('图片生成模型', 'Image generation model')}
-              options={[{ value: 'gpt-image-2', label: 'GPT Image 2' }, { value: 'gpt-image-1', label: 'GPT Image 1' }]}
+              placeholder={l('请选择模型', 'Select a model')}
+              loading={modelOptionsLoading}
+              status={modelOptionsError ? 'error' : undefined}
+              disabled={generationLocked}
+              options={modelOptions}
               onChange={onModelChange}
+              onDropdownVisibleChange={(open) => {
+                if (open && modelOptionsError) onModelOptionsRetry?.()
+              }}
               getPopupContainer={(trigger) => trigger.parentElement ?? trigger}
             />
             <StudioSelect
-              value={resolution}
+              value={resolution || undefined}
               aria-label={l('图片分辨率', 'Image resolution')}
-              options={[{ value: '2k', label: '2K' }, { value: '4k', label: '4K' }]}
+              placeholder={l('分辨率', 'Resolution')}
+              disabled={generationLocked || !model || resolutionOptions.length === 0}
+              options={resolutionOptions}
               onChange={onResolutionChange}
               getPopupContainer={(trigger) => trigger.parentElement ?? trigger}
             />
-            <Button type="primary" disabled={!canGenerate} onClick={() => onGenerate(name.trim(), prompt.trim())}>
-              {l('生成', 'Generate')} <span><ThunderboltFilled /> 6</span>
+            <Button
+              type="primary"
+              disabled={!canGenerate}
+              onClick={() => void submitGeneration()}
+            >
+              {generationBusy
+                ? l(`生成中 ${Math.max(0, Math.min(100, Math.round(displayGenerationState?.progress ?? 0)))}%`, `Generating ${Math.max(0, Math.min(100, Math.round(displayGenerationState?.progress ?? 0)))}%`)
+                : generationSubmitPending
+                  ? l('正在保存设置…', 'Saving settings…')
+                : l('生成', 'Generate')} <span><StarFilled /> 6</span>
             </Button>
           </footer>
           </aside>
@@ -580,36 +2208,40 @@ export default function AssetGenerationWorkspace({
             <div className="asset-generation-workspace__description-body">
               <div className="asset-generation-workspace__description-reference-heading">
                 <strong>{l('参考图', 'Reference images')}</strong>
-                <span>{references.length + (previewImage ? 1 : 0)}/{MAX_REFERENCE_IMAGES}</span>
+                <span>{referenceCount}/{maxReferenceImages}</span>
               </div>
               <div className="asset-generation-workspace__description-references">
                 {previewImage && (
-                  <button type="button" className="is-selected" onClick={openImageViewer}>
+                  <button type="button" className="is-selected" onClick={() => openImageViewer()}>
                     <img src={previewImage} alt={name || l(copy.nameZh, copy.nameEn)} />
                     <span>{name || l(copy.lookZh, copy.lookEn)}</span>
                   </button>
                 )}
                 {references.map((reference) => (
                   <div key={reference.id}>
-                    <img src={reference.url} alt={reference.name} />
-                    <button
-                      type="button"
-                      aria-label={l('删除参考图', 'Remove reference image')}
-                      onClick={() => setReferences((current) => current.filter((item) => item.id !== reference.id))}
-                    >
-                      <DeleteOutlined />
-                    </button>
+                    <img
+                      src={reference.url}
+                      alt={reference.name}
+                      loading="lazy"
+                      decoding="async"
+                    />
                   </div>
                 ))}
-                {!previewImage && references.length === 0 && (
-                  <button
-                    type="button"
-                    className="asset-generation-workspace__description-reference-add"
-                    aria-label={l('添加参考图', 'Add reference image')}
-                    onClick={() => referenceInputRef.current?.click()}
+                {referenceImagesLoading && (
+                  <span
+                    className="asset-generation-workspace__description-reference-add asset-generation-workspace__description-reference-loading"
+                    role="status"
+                    aria-label={l('正在加载参考图', 'Loading reference images')}
                   >
-                    <PlusOutlined />
-                  </button>
+                    <Spin size="small" />
+                  </span>
+                )}
+                {!referenceImagesLoading
+                  && referenceCount < maxReferenceImages && (
+                    renderReferenceAddButton(
+                      'description',
+                      'asset-generation-workspace__description-reference-add',
+                    )
                 )}
               </div>
 
@@ -620,27 +2252,36 @@ export default function AssetGenerationWorkspace({
                 <Input.TextArea
                   value={prompt}
                   maxLength={MAX_PROMPT_LENGTH}
+                  disabled={generationLocked}
                   autoSize={false}
                   variant="borderless"
                   placeholder={l(copy.promptZh, copy.promptEn)}
-                  onChange={(event) => setPrompt(event.target.value)}
+                  onChange={(event) => handlePromptChange(event.target.value)}
                 />
                 <div className="asset-generation-workspace__description-options">
                   <StudioSelect
                     className="asset-generation-workspace__ratio-select"
                     value={selectedRatio}
+                    disabled={generationLocked}
                     aria-label={l('图片比例', 'Image ratio')}
-                    options={RATIO_OPTIONS.map((value) => ({ value, label: <StudioRatioOption value={value} /> }))}
-                    onChange={setSelectedRatio}
+                    options={supportedRatioOptions.map((value) => ({ value, label: <StudioRatioOption value={value} /> }))}
+                    onChange={handleRatioChange}
                     popupClassName="asset-generation-workspace__ratio-popup"
                     getPopupContainer={(trigger) => trigger.parentElement ?? trigger}
                   />
                   <StudioSelect
                     className="asset-generation-workspace__description-style-select"
                     value={selectedStyle}
+                    disabled={generationLocked}
                     aria-label={l('画面风格', 'Visual style')}
+                    placeholder={l('请选择画面风格', 'Select visual style')}
+                    loading={visualStyleOptionsLoading}
+                    status={visualStyleOptionsError ? 'error' : undefined}
+                    optionLabelProp="trigger"
+                    popupClassName="asset-generation-workspace__style-popup"
+                    popupMatchSelectWidth={280}
                     options={styleOptions}
-                    onChange={setSelectedStyle}
+                    onChange={handleStyleChange}
                     getPopupContainer={(trigger) => trigger.parentElement ?? trigger}
                   />
                   <small>{prompt.length}/{MAX_PROMPT_LENGTH}</small>
@@ -709,15 +2350,90 @@ export default function AssetGenerationWorkspace({
         </div>
       )}
 
+      {lookEpisodeConfirmTarget && (
+        <div className="asset-generation-workspace__episode-confirm" role="presentation">
+          <div
+            className="asset-generation-workspace__episode-confirm-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="asset-generation-workspace-episode-confirm-title"
+          >
+            <div className="asset-generation-workspace__episode-confirm-images" aria-hidden="true">
+              {episodeLook?.imageUrl && (
+                <img
+                  src={episodeLook.imageUrl}
+                  alt=""
+                  className="asset-generation-workspace__episode-confirm-thumb"
+                />
+              )}
+              {episodeLook?.imageUrl && lookEpisodeConfirmTarget.imageUrl && (
+                <span className="asset-generation-workspace__episode-confirm-swap">
+                  <SwapOutlined />
+                </span>
+              )}
+              {lookEpisodeConfirmTarget.imageUrl && (
+                <img
+                  src={lookEpisodeConfirmTarget.imageUrl}
+                  alt=""
+                  className="asset-generation-workspace__episode-confirm-thumb"
+                />
+              )}
+            </div>
+            <strong id="asset-generation-workspace-episode-confirm-title">
+              {l('确定更换出镜造型？', 'Switch the episode look?')}
+            </strong>
+            <p>
+              {l(
+                `${name || copy.nameZh}在当前集已由「${episodeLook?.name ?? '当前造型'}」出演，确定要换成「${lookEpisodeConfirmTarget.name}」？`,
+                `${name || copy.nameEn} is currently using “${episodeLook?.name ?? 'the current look'}” in this episode. Switch to “${lookEpisodeConfirmTarget.name}”?`,
+              )}
+            </p>
+            <div className="asset-generation-workspace__episode-confirm-actions">
+              <Button
+                disabled={lookEpisodeSelectionPending}
+                onClick={() => setLookEpisodeConfirmId(undefined)}
+              >
+                {l('取消', 'Cancel')}
+              </Button>
+              <Button
+                type="primary"
+                loading={lookEpisodeSelectionPending}
+                onClick={() => { void useLookInEpisode(lookEpisodeConfirmTarget) }}
+              >
+                {l('更换出镜造型', 'Switch look')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ImageViewer
         open={imageViewerOpen}
-        imageUrl={previewImage}
+        imageUrl={viewerImageUrl ?? previewImage}
         alt={name || l(copy.nameZh, copy.nameEn)}
-        onClose={() => setImageViewerOpen(false)}
+        onClose={() => {
+          setImageViewerOpen(false)
+          setViewerImageUrl(undefined)
+        }}
       />
 
-      <input ref={referenceInputRef} type="file" accept="image/*" multiple hidden onChange={handleReferenceUpload} />
-      <input ref={localLookInputRef} type="file" accept="image/*" hidden onChange={handleLocalLookImport} />
+      <input
+        ref={referenceInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        hidden
+        disabled={referenceImagesLoading || referenceUploadPending || !onReferenceImagesUpload}
+        onChange={handleReferenceUpload}
+      />
+      <input
+        ref={localLookInputRef}
+        type="file"
+        accept="image/*"
+        hidden
+        disabled={localLookUploadPending}
+        onChange={handleLocalLookImport}
+      />
     </section>
   )
 }
