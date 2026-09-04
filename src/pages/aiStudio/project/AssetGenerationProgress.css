@@ -1,0 +1,130 @@
+.asset-generation-progress {
+  max-width: calc(100% - 20px);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.9);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  text-shadow: 0 1px 8px rgba(15, 23, 42, 0.62);
+}
+
+.asset-generation-progress__sparkle {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #84fff0;
+  filter: drop-shadow(0 0 12px rgba(94, 234, 212, 0.46));
+  animation: asset-generation-sparkle-breathe 1.65s ease-in-out infinite;
+}
+
+.asset-generation-progress__sparkle::before {
+  position: absolute;
+  inset: 6px;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle, rgba(148, 255, 241, 0.42), rgba(82, 108, 244, 0.08) 66%, transparent 70%);
+  content: '';
+  animation: asset-generation-sparkle-halo 1.65s ease-in-out infinite;
+}
+
+.asset-generation-progress__sparkle-core {
+  position: relative;
+  z-index: 1;
+  display: inline-block;
+  color: #98fff3;
+  font-size: 30px;
+  line-height: 1;
+  transform-origin: center;
+  animation: asset-generation-sparkle-turn 2.8s ease-in-out infinite;
+}
+
+.asset-generation-progress__status {
+  max-width: 100%;
+  display: block;
+  overflow: hidden;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-generation-progress.is-result-loading {
+  gap: 7px;
+}
+
+.asset-generation-progress.is-compact {
+  gap: 5px;
+}
+
+.asset-generation-progress.is-compact .asset-generation-progress__sparkle {
+  width: 25px;
+  height: 25px;
+  filter: drop-shadow(0 0 8px rgba(94, 234, 212, 0.4));
+}
+
+.asset-generation-progress.is-compact .asset-generation-progress__sparkle::before {
+  inset: 4px;
+}
+
+.asset-generation-progress.is-compact .asset-generation-progress__sparkle-core {
+  font-size: 20px;
+}
+
+.asset-generation-progress.is-compact .asset-generation-progress__status {
+  font-size: 10px;
+  line-height: 13px;
+}
+
+@keyframes asset-generation-sparkle-breathe {
+  0%,
+  100% {
+    opacity: 0.82;
+    transform: scale(0.94);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes asset-generation-sparkle-halo {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.78);
+  }
+
+  50% {
+    opacity: 0.88;
+    transform: scale(1.28);
+  }
+}
+
+@keyframes asset-generation-sparkle-turn {
+  0%,
+  100% {
+    transform: rotate(-7deg);
+  }
+
+  50% {
+    transform: rotate(8deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .asset-generation-progress__sparkle,
+  .asset-generation-progress__sparkle::before,
+  .asset-generation-progress__sparkle-core {
+    animation: none;
+  }
+}

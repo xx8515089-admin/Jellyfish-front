@@ -1,13 +1,12 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type React from 'react'
 import { Button, Input, Popover, Spin, message } from 'antd'
 import {
-  CheckOutlined,
   CloseOutlined,
   DeleteOutlined,
-  DownloadOutlined,
   EyeOutlined,
   FileSyncOutlined,
+  FlagOutlined,
   FullscreenExitOutlined,
   FullscreenOutlined,
   StarFilled,
@@ -31,7 +30,17 @@ import { resolveAssetUrl } from '../assets/utils'
 import ImageViewer from './ImageViewer'
 import StudioSelect from './StudioSelect'
 import StudioRatioOption from './StudioRatioOption'
+import AssetGenerationProgress, { hasAssetGenerationProgress } from './AssetGenerationProgress'
+import { getAssetLookGenerationTask } from './assetLookGenerationTask'
+import type { AssetLookGenerationTaskSnapshot } from './assetLookGenerationTask'
+import {
+  createImageOptionsClientRevision,
+  DEFAULT_ASSET_IMAGE_RATIO_OPTIONS as DEFAULT_RATIO_OPTIONS,
+  resolveAssetImageOptions,
+  selectInitialAssetLook,
+} from './assetImageGenerationSettings'
 import './AssetGenerationWorkspace.css'
+import { captureLookEditorOptions, getLookGenerationState, resolvePreviewImageFileId } from './assetGenerationWorkspaceState'
 
 export type GenerationAssetKind = 'role' | 'scene' | 'prop'
 export type AssetVisualStyleOption = {
@@ -55,6 +64,7 @@ export type AssetImageGenerationInput = AssetImageOptionsInput & {
 export type AssetImageGenerationViewState = {
   phase: 'submitting' | 'running' | 'refreshing' | 'failed' | 'poll-failed' | 'refresh-failed'
   progress: number
+  lookId?: number | null
   errorMessage?: string
 }
 
@@ -100,6 +110,8 @@ type AssetGenerationWorkspaceProps = {
   referenceImagesLoading?: boolean
   referenceImagesError?: unknown
   generationState?: AssetImageGenerationViewState
+  batchGenerationStatesByLookId?: Record<string, AssetImageGenerationViewState>
+  resultsRefreshToken?: string | number
   generationUnavailableReason?: string
   initialAsset?: {
     name: string
@@ -114,11 +126,14 @@ type AssetGenerationWorkspaceProps = {
   onResolutionChange: (value: string) => void
   onModelOptionsRetry?: () => void
   onReferenceImagesUpload?: (files: File[]) => Promise<void>
+  onReferenceImageIdsUpload?: (fileIds: string[]) => Promise<void>
   onPrimaryImageChange?: (item: StudioAssetImageHistoryItem) => Promise<void>
+  onActiveLookChange?: (lookId: number | null) => void
   onGenerationResultRetry?: () => void
   onGenerationTrackingDiscard?: () => void
   onImageOptionsUpdate?: (input: AssetImageOptionsInput, clientRevision: number) => Promise<void>
   imageOptionsRequireSave?: boolean
+  queuedImageOptions?: AssetImageOptionsInput
   onGenerationPreparationStateChange?: (pending: boolean) => void
   onClose: () => void
   onGenerate: (input: AssetImageGenerationInput) => Promise<void>
@@ -132,6 +147,8 @@ type ResolvedReferenceImage = {
 }
 
 type LookDraft = {
+  coverFileId?: string
+  editorOptionsTouched?: boolean
   id: string
   backendId?: number
   name: string
@@ -149,9 +166,13 @@ type LookDraft = {
 
 const MAX_REFERENCE_IMAGES = 14
 const MAX_PROMPT_LENGTH = 5000
-const DEFAULT_RATIO_OPTIONS = ['9:16', '4:3', '16:9', '3:4', '1:1', '21:9']
-const LOOK_GENERATION_TASK_POLL_INTERVAL_MS = 1200
-let lastImageOptionsClientRevision = 0
+const EMPTY_LOOK_GENERATION_TASK: AssetLookGenerationTaskSnapshot = {
+  phase: 'idle',
+  progress: 0,
+  revision: 0,
+}
+const getEmptyLookGenerationTask = () => EMPTY_LOOK_GENERATION_TASK
+const subscribeToEmptyLookGenerationTask = () => () => {}
 const visualStyleOptionCache = new Map<string, AssetVisualStyleOption[]>()
 const visualStyleOptionRequests = new Map<string, Promise<AssetVisualStyleOption[]>>()
 
@@ -172,42 +193,8 @@ const getImageOptionsSignature = (input: AssetImageOptionsInput) => JSON.stringi
   input.visualStyleId,
 ])
 
-const createImageOptionsClientRevision = () => {
-  lastImageOptionsClientRevision = Math.max(Date.now(), lastImageOptionsClientRevision + 1)
-  return lastImageOptionsClientRevision
-}
-
-const clampTaskProgress = (value: unknown) => {
-  const progress = Number(value)
-  return Number.isFinite(progress) ? Math.max(0, Math.min(100, Math.round(progress))) : 0
-}
-
-const isAssetTaskSucceeded = (detail: { status: number; statusName?: string | null }) => (
-  Number(detail.status) === 3 || detail.statusName?.trim() === '执行成功'
-)
-
-const isAssetTaskFailed = (detail: {
-  status: number
-  statusName?: string | null
-  error?: string | null
-  cancelReason?: string | null
-  cancelledAt?: string | null
-  finishedAt?: string | null
-}) => (
-  (
-    Number(detail.status) > 3
-    || /失败|取消|failed|cancel/i.test(detail.statusName?.trim() || '')
-    || Boolean(detail.cancelledAt || detail.finishedAt || detail.error?.trim())
-  )
-  && !isAssetTaskSucceeded(detail)
-)
-
-const wait = (delay: number) => new Promise((resolve) => {
-  window.setTimeout(resolve, delay)
-})
-
 /** 仅在资产编辑器没有上游快照时补查画面风格，并按用户合并并发请求。 */
-const loadAssetVisualStyleOptions = () => {
+export const loadAssetVisualStyleOptions = () => {
   const userScope = getVisualStyleUserScope()
   const cached = visualStyleOptionCache.get(userScope)
   if (cached) return Promise.resolve(cached)
@@ -305,22 +292,36 @@ export default function AssetGenerationWorkspace({
   referenceImagesLoading = false,
   referenceImagesError,
   generationState,
+  batchGenerationStatesByLookId,
+  resultsRefreshToken,
   generationUnavailableReason,
   initialAsset,
   onModelChange,
   onResolutionChange,
   onModelOptionsRetry,
   onReferenceImagesUpload,
+  onReferenceImageIdsUpload,
   onPrimaryImageChange,
+  onActiveLookChange,
   onGenerationResultRetry,
   onGenerationTrackingDiscard,
   onImageOptionsUpdate,
   imageOptionsRequireSave = false,
+  queuedImageOptions,
   onGenerationPreparationStateChange,
   onClose,
   onGenerate,
 }: AssetGenerationWorkspaceProps) {
   const l = useBilingualText()
+  const numericAssetId = Number(assetId)
+  const lookGenerationTask = Number.isInteger(numericAssetId) && numericAssetId > 0
+    ? getAssetLookGenerationTask(numericAssetId)
+    : undefined
+  const lookTaskSnapshot = useSyncExternalStore(
+    lookGenerationTask?.subscribe ?? subscribeToEmptyLookGenerationTask,
+    lookGenerationTask?.getSnapshot ?? getEmptyLookGenerationTask,
+    getEmptyLookGenerationTask,
+  )
   const copy = COPY[kind]
   const noStyleLabel = l('无风格', 'No style')
   const projectStyleName = styleName.trim()
@@ -330,17 +331,21 @@ export default function AssetGenerationWorkspace({
     const value = Number(initialAsset?.visualStyleId)
     return Number.isInteger(value) && value > 0 ? value : null
   })()
+  const currentImageFileIdString = currentImageFileId === undefined || currentImageFileId === null
+    ? undefined
+    : String(currentImageFileId).trim() || undefined
+  const initialPreviewImageUrl = initialAsset?.imageUrl
   const referenceInputRef = useRef<HTMLInputElement>(null)
   const localLookInputRef = useRef<HTMLInputElement>(null)
   const lookAddRef = useRef<HTMLDivElement>(null)
   const [name, setName] = useState(initialAsset?.name ?? '')
   const [prompt, setPrompt] = useState(initialAsset?.prompt ?? '')
-  const [previewImage, setPreviewImage] = useState<string | undefined>(initialAsset?.imageUrl)
+  const [previewImage, setPreviewImage] = useState<string | undefined>(initialPreviewImageUrl)
   const [looks, setLooks] = useState<LookDraft[]>(() => [{
     id: 'main',
     name: initialAsset?.name || l(copy.lookZh, copy.lookEn),
     prompt: initialAsset?.prompt ?? '',
-    imageUrl: initialAsset?.imageUrl,
+    imageUrl: initialPreviewImageUrl,
   }])
   const [activeLookId, setActiveLookId] = useState('main')
   const supportedRatioOptions = useMemo(() => {
@@ -374,7 +379,7 @@ export default function AssetGenerationWorkspace({
     providedVisualStyleOptions.length === 0,
   )
   const [visualStyleOptionsError, setVisualStyleOptionsError] = useState<unknown>()
-  const [looksLoading, setLooksLoading] = useState(false)
+  const [looksLoading, setLooksLoading] = useState(Number.isInteger(numericAssetId) && numericAssetId > 0)
   const [looksError, setLooksError] = useState<unknown>()
   const [promptExpanded, setPromptExpanded] = useState(false)
   const [lookMenuOpen, setLookMenuOpen] = useState(false)
@@ -384,11 +389,11 @@ export default function AssetGenerationWorkspace({
   const [rewriteInstruction, setRewriteInstruction] = useState('')
   const [imageViewerOpen, setImageViewerOpen] = useState(false)
   const [viewerImageUrl, setViewerImageUrl] = useState<string>()
-  const [previewDownloadPending, setPreviewDownloadPending] = useState(false)
   const [generationSubmitPending, setGenerationSubmitPending] = useState(false)
+  const [generationCreditCost, setGenerationCreditCost] = useState<number>()
+  const [generationCreditEstimateLoading, setGenerationCreditEstimateLoading] = useState(false)
   const [referenceUploadPending, setReferenceUploadPending] = useState(false)
   const [localLookUploadPending, setLocalLookUploadPending] = useState(false)
-  const [lookGenerationState, setLookGenerationState] = useState<AssetImageGenerationViewState>()
   const [lookEpisodeSelectionPending, setLookEpisodeSelectionPending] = useState(false)
   const [lookEpisodeConfirmId, setLookEpisodeConfirmId] = useState<string>()
   const [lookRenamePendingId, setLookRenamePendingId] = useState<string>()
@@ -397,11 +402,25 @@ export default function AssetGenerationWorkspace({
   const generationSubmitPendingRef = useRef(false)
   const referenceUploadPendingRef = useRef(false)
   const savedLookNamesRef = useRef(new Map<string, string>())
+  const looksLoadRevisionRef = useRef(0)
   const historyDragItemRef = useRef<ResolvedAssetImageHistoryItem | null>(null)
   const activeLook = looks.find((look) => look.id === activeLookId) ?? looks[0]
+  const latestLooksRef = useRef(looks)
+  const activeLookIdRef = useRef(activeLookId)
+  const loadedLooksContextRef = useRef<string>()
+  latestLooksRef.current = looks
+  activeLookIdRef.current = activeLookId
   const episodeLook = looks.find((look) => look.status === 1)
   const lookEpisodeConfirmTarget = looks.find((look) => look.id === lookEpisodeConfirmId)
   const activeLookBackendId = activeLook?.backendId ?? null
+  const lookGenerationState: AssetImageGenerationViewState | undefined = lookTaskSnapshot.phase === 'idle'
+    || (lookTaskSnapshot.phase === 'failed' && (activeLookId === 'main' || activeLookBackendId !== null))
+    ? undefined
+    : {
+      phase: lookTaskSnapshot.phase,
+      progress: lookTaskSnapshot.progress,
+      errorMessage: lookTaskSnapshot.errorMessage,
+    }
   const workspaceTitle = initialAsset?.name || l(copy.titleZh, copy.titleEn)
   const maxReferenceImages = Number.isFinite(referenceImageLimit)
     ? Math.max(0, Math.floor(referenceImageLimit))
@@ -450,9 +469,36 @@ export default function AssetGenerationWorkspace({
     selectedStyle && (selectedStyleIsNone || selectedVisualStyleId !== null),
   )
   const displayGenerationState = lookGenerationState ?? generationState
+  const generationTargetLook = lookGenerationState
+    ? looks.find((look) => look.id === lookTaskSnapshot.clientLookId)
+    : generationState?.lookId === undefined
+      ? activeLook
+      : looks.find((look) => generationState.lookId === null
+        ? look.id === 'main'
+        : look.backendId === generationState.lookId)
+  const getGenerationStateForLook = (look: LookDraft | undefined) => {
+    if (!look) return undefined
+    const singleState = look.id === generationTargetLook?.id ? displayGenerationState : undefined
+    return lookGenerationState
+      ? singleState
+      : getLookGenerationState(look.backendId, batchGenerationStatesByLookId, singleState)
+  }
+  const previewGenerationState = getGenerationStateForLook(activeLook)
+  const showPendingLookProgress = hasAssetGenerationProgress(lookGenerationState) && !generationTargetLook
+  const retryGenerationResult = lookGenerationState
+    ? () => lookGenerationTask?.resume()
+    : onGenerationResultRetry
   const generationBusy = displayGenerationState?.phase === 'submitting'
     || displayGenerationState?.phase === 'running'
     || displayGenerationState?.phase === 'refreshing'
+  const displayGenerationProgress = Math.max(0, Math.min(100, Math.round(displayGenerationState?.progress ?? 0)))
+  const generationButtonLabel = generationBusy
+    ? displayGenerationState?.phase === 'refreshing' && displayGenerationProgress >= 100
+      ? l('正在加载结果…', 'Loading result…')
+      : l(`生成中 ${displayGenerationProgress}%`, `Generating ${displayGenerationProgress}%`)
+    : generationSubmitPending
+      ? l('正在保存设置…', 'Saving settings…')
+      : l('生成', 'Generate')
   const generationRecoveryRequired = displayGenerationState?.phase === 'poll-failed'
     || displayGenerationState?.phase === 'refresh-failed'
   const generationLocked = generationBusy
@@ -463,7 +509,14 @@ export default function AssetGenerationWorkspace({
     || lookEpisodeSelectionPending
     || Boolean(lookRenamePendingId)
     || Boolean(primaryImagePendingId)
-  const referenceDropAllowed = Boolean(onReferenceImagesUpload)
+  const generationCreditCostText = generationCreditEstimateLoading && generationCreditCost === undefined
+    ? '…'
+    : generationCreditCost === undefined
+      ? '--'
+      : Number.isInteger(generationCreditCost)
+        ? String(generationCreditCost)
+        : generationCreditCost.toFixed(2).replace(/\.?0+$/, '')
+  const referenceDropAllowed = (Boolean(onReferenceImagesUpload) || Boolean(onReferenceImageIdsUpload))
     && !generationLocked
     && !referenceImagesLoading
     && referenceCount < maxReferenceImages
@@ -494,17 +547,15 @@ export default function AssetGenerationWorkspace({
         lookId: item.lookId,
       }]
     })
-    const currentFileId = currentImageFileId === undefined || currentImageFileId === null
-      ? undefined
-      : String(currentImageFileId).trim() || undefined
-    const currentImageUrl = resolveAssetUrl(previewImage)
+    const currentFileId = currentImageFileIdString
+    const currentImageUrl = resolveAssetUrl(previewImage ?? currentFileId)
     if (!currentImageUrl) return items
-    const currentFileIndex = currentFileId
+    // 选中项跟随预览；文件 ID 仅用于原主图地址不一致时的兜底。
+    const previewImageIndex = items.findIndex((item) => item.imageUrl === currentImageUrl)
+    const currentFileIndex = currentFileId && currentImageUrl === resolveAssetUrl(initialAsset?.imageUrl)
       ? items.findIndex((item) => item.fileId === currentFileId)
       : -1
-    const currentIndex = currentFileIndex >= 0
-      ? currentFileIndex
-      : items.findIndex((item) => item.imageUrl === currentImageUrl)
+    const currentIndex = previewImageIndex >= 0 ? previewImageIndex : currentFileIndex
     if (currentIndex >= 0) {
       return items.map((item, index) => ({
         ...item,
@@ -513,12 +564,19 @@ export default function AssetGenerationWorkspace({
     }
     return [{
       id: 'current-preview',
+      fileId: resolvePreviewImageFileId(currentImageUrl, {
+        imageUrl: resolveAssetUrl(activeLook?.imageUrl),
+        fileId: activeLook?.coverFileId,
+      }, {
+        imageUrl: resolveAssetUrl(initialAsset?.imageUrl),
+        fileId: currentFileId,
+      }),
       imageUrl: currentImageUrl,
       thumbnailUrl: currentImageUrl,
       isCurrent: true,
       isSelected: true,
     }, ...items.map((item) => ({ ...item, isSelected: false }))]
-  }, [currentImageFileId, imageHistoryItems, previewImage])
+  }, [activeLook?.coverFileId, activeLook?.imageUrl, currentImageFileIdString, imageHistoryItems, initialAsset?.imageUrl, previewImage])
   const selectedHistoryItem = resolvedImageHistoryItems.find((item) => item.isSelected)
   const currentPreviewHistoryItem = resolvedImageHistoryItems.find((item) => item.isCurrent)
   const currentAssetReferenceItem = selectedHistoryItem ?? currentPreviewHistoryItem
@@ -583,7 +641,13 @@ export default function AssetGenerationWorkspace({
         versionId: item.versionId,
         isCurrent: item.isCurrent,
         createdAt: item.createdAt,
+        lookId: item.lookId ?? activeLookBackendId,
       })
+      setLooks((current) => current.map((look) => (
+        look.backendId === (item.lookId ?? activeLookBackendId)
+          ? { ...look, imageUrl: item.imageUrl, coverFileId: item.fileId }
+          : look
+      )))
       message.success(l('已设为主图', 'Primary image updated'))
     } catch (error) {
       message.error(getApiErrorMessage(
@@ -682,6 +746,7 @@ export default function AssetGenerationWorkspace({
       name: defaultLook ? (initialAsset?.name || item.name) : item.name,
       prompt: item.prompt ?? '',
       imageUrl: resolveAssetUrl(item.coverUrl ?? item.coverFileId),
+      coverFileId: item.coverFileId === undefined || item.coverFileId === null ? undefined : String(item.coverFileId),
       aspectRatio: item.aspectRatio,
       visualStyleId: item.visualStyleId,
       modelId: item.modelId,
@@ -702,14 +767,34 @@ export default function AssetGenerationWorkspace({
   }
 
   const applyLookDraftToEditor = (look: LookDraft) => {
-    setPrompt(look.prompt)
-    setRewriteDraft(look.prompt)
+    const nextOptions = resolveAssetImageOptions({
+      asset: initialAsset ?? {},
+      look: { ...look, id: String(look.backendId ?? look.id), episodeIds: [] },
+      ratio,
+      ratioOptions: supportedRatioOptions,
+      styleOptions: availableVisualStyleOptions,
+      queuedInput: look.editorOptionsTouched ? undefined : queuedImageOptions,
+      noStyleName: noStyleLabel,
+    })
+    setPrompt(nextOptions.prompt)
+    setRewriteDraft(nextOptions.prompt)
     setPreviewImage(look.imageUrl)
-    if (look.aspectRatio && supportedRatioOptions.includes(look.aspectRatio)) {
-      setSelectedRatio(look.aspectRatio)
-    }
-    const nextStyleName = resolveVisualStyleName(look.visualStyleId)
-    if (nextStyleName) setSelectedStyle(nextStyleName)
+    setSelectedRatio(nextOptions.aspectRatio)
+    setSelectedStyle(nextOptions.styleName || undefined)
+    latestImageOptionsRef.current = nextOptions
+  }
+  const applyLookDraftToEditorRef = useRef(applyLookDraftToEditor)
+  applyLookDraftToEditorRef.current = applyLookDraftToEditor
+
+  const applyGeneratedLooksRef = useRef<(items: StudioAssetLookItem[], selected: StudioAssetLookItem) => void>()
+  applyGeneratedLooksRef.current = (items, selected) => {
+    const nextLooks = items.map(createLookDraftFromRemote)
+    const nextLook = createLookDraftFromRemote(selected)
+    rememberSavedLookNames(nextLooks)
+    setLooks(nextLooks)
+    setActiveLookId(nextLook.id)
+    applyLookDraftToEditor(nextLook)
+    onActiveLookChange?.(nextLook.backendId ?? null)
   }
 
   const canGenerate = Boolean(
@@ -724,6 +809,8 @@ export default function AssetGenerationWorkspace({
     && !generationSubmitPending
     && !referenceUploadPending
     && !localLookUploadPending
+    && !looksLoading
+    && !looksError
     && !generationUnavailableReason,
   )
 
@@ -736,28 +823,99 @@ export default function AssetGenerationWorkspace({
   }, [])
 
   useEffect(() => {
-    const numericAssetId = Number(assetId)
-    if (!Number.isInteger(numericAssetId) || numericAssetId <= 0) return undefined
+    onGenerationPreparationStateChange?.(
+      generationSubmitPending
+      || referenceUploadPending
+      || lookTaskSnapshot.phase === 'submitting'
+      || lookTaskSnapshot.phase === 'running'
+      || lookTaskSnapshot.phase === 'refreshing',
+    )
+  }, [generationSubmitPending, lookTaskSnapshot.phase, onGenerationPreparationStateChange, referenceUploadPending])
+
+  useEffect(() => () => {
+    onGenerationPreparationStateChange?.(false)
+  }, [onGenerationPreparationStateChange])
+
+  useEffect(() => {
+    const modelId = Number(model)
+    const resolutionValue = Number(resolution)
+    if (
+      !Number.isInteger(modelId)
+      || modelId <= 0
+      || !Number.isInteger(resolutionValue)
+      || resolutionValue <= 0
+    ) {
+      setGenerationCreditCost(undefined)
+      setGenerationCreditEstimateLoading(false)
+      return undefined
+    }
 
     let active = true
+    setGenerationCreditEstimateLoading(true)
+    const request = StudioAssetGenerationApi.requestGenerateEstimate({
+      modelId,
+      quality: null,
+      resolution: resolutionValue,
+    })
+
+    request.promise
+      .then((estimate) => {
+        if (!active) return
+        setGenerationCreditCost(estimate.creditCost)
+      })
+      .catch(() => {
+        if (!active) return
+        setGenerationCreditCost(undefined)
+      })
+      .finally(() => {
+        if (active) setGenerationCreditEstimateLoading(false)
+      })
+
+    return () => {
+      active = false
+      request.cancel()
+    }
+  }, [model, resolution])
+
+  useEffect(() => {
+    const numericAssetId = Number(assetId)
+    if (!Number.isInteger(numericAssetId) || numericAssetId <= 0) return undefined
+    // The dedicated result loader owns this phase and must not be invalidated by a parallel refresh.
+    if (lookGenerationTask?.getSnapshot().phase === 'refreshing') return undefined
+
+    let active = true
+    const requestRevision = ++looksLoadRevisionRef.current
     setLooksLoading(true)
     setLooksError(undefined)
     const request = StudioAssetGenerationApi.requestLooks(numericAssetId, episodeId)
     void request.promise
       .then((items) => {
-        if (!active) return
-        const nextLooks = items.map(createLookDraftFromRemote)
+        if (!active || requestRevision !== looksLoadRevisionRef.current) return
+        const context = `${numericAssetId}:${episodeId ?? 'overview'}`
+        const refreshExisting = loadedLooksContextRef.current === context
+        const previousLooks = latestLooksRef.current
+        const previousLook = previousLooks.find((look) => look.id === activeLookIdRef.current)
+        const nextLooks = [
+          ...items.map(createLookDraftFromRemote),
+          ...(refreshExisting ? previousLooks.filter((look) => look.id !== 'main' && look.backendId === undefined) : []),
+        ]
         if (!nextLooks.length) return
+        loadedLooksContextRef.current = context
         rememberSavedLookNames(nextLooks)
-        const nextActiveLook = nextLooks.find((look) => look.inEpisode)
-          ?? nextLooks.find((look) => look.defaultLook)
-          ?? nextLooks[0]
+        const nextActiveLook = (refreshExisting
+          ? nextLooks.find((look) => look.id === activeLookIdRef.current)
+          : undefined) ?? selectInitialAssetLook(nextLooks)!
         setLooks(nextLooks)
         setActiveLookId(nextActiveLook.id)
-        applyLookDraftToEditor(nextActiveLook)
+        if (refreshExisting && nextActiveLook.id === previousLook?.id) {
+          setPreviewImage((current) => !current || current === previousLook.imageUrl ? nextActiveLook.imageUrl : current)
+        } else {
+          applyLookDraftToEditorRef.current(nextActiveLook)
+        }
+        onActiveLookChange?.(nextActiveLook.backendId ?? null)
       })
       .catch((error) => {
-        if (!active) return
+        if (!active || requestRevision !== looksLoadRevisionRef.current) return
         setLooksError(error)
         message.error(getApiErrorMessage(
           error,
@@ -765,14 +923,14 @@ export default function AssetGenerationWorkspace({
         ))
       })
       .finally(() => {
-        if (active) setLooksLoading(false)
+        if (active && requestRevision === looksLoadRevisionRef.current) setLooksLoading(false)
       })
 
     return () => {
       active = false
       request.cancel()
     }
-  }, [assetId, createLookDraftFromRemote, episodeId])
+  }, [assetId, createLookDraftFromRemote, episodeId, l, lookGenerationTask, onActiveLookChange, resultsRefreshToken])
 
   const styleOptions = useMemo(() => {
     if (visualStyleOptionsLoading && providedVisualStyleOptions.length === 0) return []
@@ -857,7 +1015,9 @@ export default function AssetGenerationWorkspace({
   }, [selectedRatio, supportedRatioOptions])
 
   useEffect(() => {
-    const nextImageUrl = initialAsset?.imageUrl
+    // Character covers belong to individual looks and are refreshed through requestLooks.
+    if (kind === 'role') return
+    const nextImageUrl = initialPreviewImageUrl
     if (!nextImageUrl) return
     setPreviewImage((current) => current === nextImageUrl ? current : nextImageUrl)
     setLooks((current) => current.map((look) => (
@@ -865,23 +1025,23 @@ export default function AssetGenerationWorkspace({
         ? { ...look, imageUrl: nextImageUrl }
         : look
     )))
-  }, [initialAsset?.imageUrl])
+  }, [initialPreviewImageUrl, kind])
 
   useEffect(() => {
     if (activeLookId !== 'main') return
-    const nextRatio = savedAspectRatio && supportedRatioOptions.includes(savedAspectRatio)
-      ? savedAspectRatio
-      : selectedRatio
-    const nextStyleName = savedStyleName || availableVisualStyleOptions.find((option) => (
-      savedVisualStyleId !== null && Number(option.id) === savedVisualStyleId
-    ))?.name || ''
-    const nextOptions: AssetImageOptionsInput = {
-      prompt: initialAsset?.prompt ?? '',
-      lookId: activeLookBackendId,
-      styleName: nextStyleName,
-      visualStyleId: savedVisualStyleId,
-      aspectRatio: nextRatio,
-    }
+    const nextOptions = resolveAssetImageOptions({
+      asset: initialAsset ?? {},
+      look: activeLook?.backendId === undefined ? undefined : {
+        ...activeLook,
+        id: String(activeLook.backendId),
+        episodeIds: [],
+      },
+      ratio,
+      ratioOptions: supportedRatioOptions,
+      styleOptions: availableVisualStyleOptions,
+      queuedInput: queuedImageOptions,
+      noStyleName: noStyleLabel,
+    })
     const incomingSignature = JSON.stringify([
       getImageOptionsSignature(nextOptions),
       nextOptions.styleName,
@@ -899,15 +1059,27 @@ export default function AssetGenerationWorkspace({
       savedImageOptionsSignatureRef.current = getImageOptionsSignature(nextOptions)
     }
   }, [
+    activeLook,
     activeLookId,
     availableVisualStyleOptions,
-    initialAsset?.prompt,
-    savedAspectRatio,
-    savedStyleName,
-    savedVisualStyleId,
-    selectedRatio,
+    initialAsset,
+    noStyleLabel,
+    queuedImageOptions,
+    ratio,
     supportedRatioOptions,
   ])
+
+  useEffect(() => {
+    if (activeLookId === 'main' || activeLookBackendId === null || imageOptionsTouchedRef.current) return
+    // 造型可能先于风格列表返回，只补齐当前设置的风格名称，保留已选历史图的其他参数。
+    const options = latestImageOptionsRef.current
+    const resolvedName = options.visualStyleId === null
+      ? noStyleLabel
+      : availableVisualStyleOptions.find((style) => Number(style.id) === options.visualStyleId)?.name
+    if (!resolvedName || resolvedName === selectedStyle) return
+    setSelectedStyle(resolvedName)
+    latestImageOptionsRef.current = { ...options, styleName: resolvedName }
+  }, [activeLookBackendId, activeLookId, availableVisualStyleOptions, noStyleLabel, selectedStyle])
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
@@ -1020,50 +1192,6 @@ export default function AssetGenerationWorkspace({
     setImageViewerOpen(true)
   }
 
-  const downloadPreviewImage = async () => {
-    if (!previewImage) {
-      message.warning(l('当前没有可下载的图片', 'There is no image to download'))
-      return
-    }
-    if (previewDownloadPending) return
-    setPreviewDownloadPending(true)
-    const fileName = `${name.trim() || workspaceTitle}.png`.replace(/[\\/:*?"<>|]/g, '_')
-    const triggerDownload = (href: string, target?: HTMLAnchorElement['target']) => {
-      const link = document.createElement('a')
-      link.href = href
-      link.download = fileName
-      link.rel = 'noopener'
-      if (target) link.target = target
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-    }
-    try {
-      const response = await fetch(previewImage)
-      if (!response.ok) throw new Error(l('图片下载失败', 'Image download failed'))
-      const blob = await response.blob()
-      const objectUrl = URL.createObjectURL(blob)
-      triggerDownload(objectUrl)
-      URL.revokeObjectURL(objectUrl)
-    } catch (error) {
-      try {
-        const downloadUrl = new URL(previewImage, window.location.href)
-        if (downloadUrl.protocol === 'http:' || downloadUrl.protocol === 'https:') {
-          downloadUrl.searchParams.set(
-            'response-content-disposition',
-            `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
-          )
-          downloadUrl.searchParams.set('response-content-type', 'application/octet-stream')
-        }
-        triggerDownload(downloadUrl.toString(), '_blank')
-      } catch {
-        message.error(getApiErrorMessage(error, l('图片下载失败，请重试', 'Image download failed; try again')))
-      }
-    } finally {
-      if (imageOptionsMountedRef.current) setPreviewDownloadPending(false)
-    }
-  }
-
   const selectHistoryImage = (item: ResolvedAssetImageHistoryItem) => {
     setPreviewImage(item.imageUrl)
     setViewerImageUrl(undefined)
@@ -1072,7 +1200,10 @@ export default function AssetGenerationWorkspace({
     const nextLook = item.lookId
       ? looks.find((look) => look.backendId === item.lookId)
       : undefined
-    if (nextLook && nextLook.id !== activeLookId) setActiveLookId(nextLook.id)
+    if (nextLook && nextLook.id !== activeLookId) {
+      setActiveLookId(nextLook.id)
+      onActiveLookChange?.(nextLook.backendId ?? null)
+    }
 
     const nextPrompt = item.prompt
     const nextRatio = item.aspectRatio && supportedRatioOptions.includes(item.aspectRatio)
@@ -1115,26 +1246,58 @@ export default function AssetGenerationWorkspace({
     ))
   }
 
-  const refreshLooksAfterGeneration = async (preferredLookName: string) => {
-    const numericAssetId = Number(assetId)
-    if (!Number.isInteger(numericAssetId) || numericAssetId <= 0) return
+  useEffect(() => {
+    if (!lookGenerationTask || lookTaskSnapshot.phase !== 'refreshing' || !lookTaskSnapshot.taskId) {
+      return undefined
+    }
+
+    const taskId = lookTaskSnapshot.taskId
+    const requestRevision = ++looksLoadRevisionRef.current
+    let active = true
+    setLooksLoading(true)
+    setLooksError(undefined)
     const request = StudioAssetGenerationApi.requestLooks(numericAssetId, episodeId)
-    const nextLooks = (await request.promise).map(createLookDraftFromRemote)
-    if (!nextLooks.length) return
-    rememberSavedLookNames(nextLooks)
-    const nextLook = [...nextLooks].reverse().find((look) => (
-      !look.defaultLook && look.name === preferredLookName
-    )) ?? nextLooks[nextLooks.length - 1]
-    setLooks(nextLooks)
-    setActiveLookId(nextLook.id)
-    applyLookDraftToEditor(nextLook)
-  }
+    void request.promise.then((items) => {
+      if (!active || requestRevision !== looksLoadRevisionRef.current) return
+      const generatedLook = items.find((item) => {
+        if (!resolveAssetUrl(item.coverUrl ?? item.coverFileId)) return false
+        if (lookTaskSnapshot.expectedFileId) {
+          return String(item.coverFileId) === lookTaskSnapshot.expectedFileId
+        }
+        return !item.defaultLook
+          && item.name.trim() === lookTaskSnapshot.lookName
+          && !lookTaskSnapshot.previousLookIds?.includes(String(item.id))
+      })
+      if (!generatedLook) {
+        throw new Error(l(
+          '造型任务已完成，但新造型暂未回显，请重新加载结果',
+          'The look task finished, but the new look is not visible yet. Reload the result.',
+        ))
+      }
+      applyGeneratedLooksRef.current?.(items, generatedLook)
+      setLooksLoading(false)
+      lookGenerationTask.complete(taskId)
+      message.success(l('造型生成完成', 'Look generation complete'))
+    }).catch((error) => {
+      if (!active || requestRevision !== looksLoadRevisionRef.current) return
+      setLooksLoading(false)
+      lookGenerationTask.setRefreshFailed(taskId, getApiErrorMessage(
+        error,
+        l('造型已生成，但结果加载失败，请重新加载结果', 'The look was generated, but its result could not be loaded. Reload the result.'),
+      ))
+    })
+
+    return () => {
+      active = false
+      request.cancel()
+    }
+  }, [episodeId, l, lookGenerationTask, lookTaskSnapshot, numericAssetId])
 
   const submitLookGeneration = async (input: AssetImageGenerationInput) => {
     const numericAssetId = Number(assetId)
     const modelId = Number(model)
     const resolutionValue = Number(resolution)
-    if (!Number.isInteger(numericAssetId) || numericAssetId <= 0) {
+    if (!Number.isInteger(numericAssetId) || numericAssetId <= 0 || !lookGenerationTask) {
       throw new Error(l('当前资产还没有后端资产 ID，无法生成造型', 'This asset does not have a backend asset ID yet'))
     }
     if (
@@ -1150,8 +1313,7 @@ export default function AssetGenerationWorkspace({
       .map((reference) => Number(reference.fileId))
       .filter((value) => Number.isInteger(value) && value > 0)
 
-    setLookGenerationState({ phase: 'submitting', progress: 0 })
-    const request = StudioAssetGenerationApi.requestLookGenerate({
+    await lookGenerationTask.submit({
       assetId: numericAssetId,
       name: lookName,
       prompt: input.prompt,
@@ -1161,37 +1323,14 @@ export default function AssetGenerationWorkspace({
       quality: null,
       resolution: resolutionValue,
       modelId,
-    })
-    const taskId = await request.promise
-    setLookGenerationState({ phase: 'running', progress: 0 })
-    message.success(l('造型生成任务已提交', 'Look generation task submitted'))
-
-    while (imageOptionsMountedRef.current) {
-      await wait(LOOK_GENERATION_TASK_POLL_INTERVAL_MS)
-      const detailRequest = StudioAssetGenerationApi.requestTaskDetail(taskId)
-      const detail = await detailRequest.promise
-      const progress = clampTaskProgress(detail.progress)
-      if (isAssetTaskSucceeded(detail)) {
-        setLookGenerationState({ phase: 'refreshing', progress: 100 })
-        await refreshLooksAfterGeneration(lookName)
-        message.success(l('造型生成完成', 'Look generation complete'))
-        return
-      }
-      if (isAssetTaskFailed(detail)) {
-        throw new Error(
-          detail.error?.trim()
-          || detail.cancelReason?.trim()
-          || detail.statusName?.trim()
-          || l('造型生成失败', 'Look generation failed'),
-        )
-      }
-      setLookGenerationState({ phase: 'running', progress })
+    }, looks.flatMap((look) => look.backendId === undefined ? [] : [String(look.backendId)]), activeLookId)
+    if (imageOptionsMountedRef.current) {
+      message.success(l('造型生成任务已提交', 'Look generation task submitted'))
     }
   }
 
   const submitGeneration = async () => {
     if (!canGenerate || generationSubmitPendingRef.current) return
-    let keepLookGenerationError = false
     const generationInput: AssetImageGenerationInput = {
       name: name.trim(),
       prompt: prompt.trim(),
@@ -1202,7 +1341,6 @@ export default function AssetGenerationWorkspace({
     }
     generationSubmitPendingRef.current = true
     setGenerationSubmitPending(true)
-    onGenerationPreparationStateChange?.(true)
     try {
       try {
         latestImageOptionsRef.current = {
@@ -1220,6 +1358,7 @@ export default function AssetGenerationWorkspace({
         ))
         return
       }
+      if (!imageOptionsMountedRef.current) return
       try {
         if (activeLookId !== 'main' && activeLookBackendId === null) {
           await submitLookGeneration(generationInput)
@@ -1228,23 +1367,17 @@ export default function AssetGenerationWorkspace({
         }
       } catch (error) {
         if (activeLookId !== 'main' && activeLookBackendId === null) {
-          keepLookGenerationError = true
           const errorMessage = getApiErrorMessage(
             error,
             l('造型生成任务提交失败', 'Failed to submit the look generation task'),
           )
-          setLookGenerationState({ phase: 'failed', progress: 0, errorMessage })
-          message.error(errorMessage)
+          if (imageOptionsMountedRef.current) message.error(errorMessage)
         }
         // 普通图片生成的错误由父级记录并展示。
       }
     } finally {
       generationSubmitPendingRef.current = false
       if (imageOptionsMountedRef.current) setGenerationSubmitPending(false)
-      if (imageOptionsMountedRef.current && !keepLookGenerationError) {
-        setLookGenerationState(undefined)
-      }
-      onGenerationPreparationStateChange?.(false)
     }
   }
 
@@ -1276,7 +1409,6 @@ export default function AssetGenerationWorkspace({
 
     referenceUploadPendingRef.current = true
     setReferenceUploadPending(true)
-    onGenerationPreparationStateChange?.(true)
     try {
       await onReferenceImagesUpload(selectedFiles)
       if (imageOptionsMountedRef.current) {
@@ -1299,26 +1431,59 @@ export default function AssetGenerationWorkspace({
     } finally {
       referenceUploadPendingRef.current = false
       if (imageOptionsMountedRef.current) setReferenceUploadPending(false)
-      onGenerationPreparationStateChange?.(false)
     }
   }
 
-  const createReferenceFileFromHistory = async (item: ResolvedAssetImageHistoryItem) => {
-    const response = await fetch(item.imageUrl)
-    if (!response.ok) throw new Error(l('历史图片下载失败', 'Failed to download the history image'))
-    const blob = await response.blob()
-    const mimeType = blob.type || 'image/png'
-    const urlExt = item.imageUrl
-      .split('?')[0]
-      .split('#')[0]
-      .match(/\.([a-z0-9]+)$/i)?.[1]
-    const mimeExt = mimeType.split('/')[1]?.split('+')[0]
-    const extension = (urlExt || mimeExt || 'png').replace(/[^a-z0-9]/gi, '').toLowerCase() || 'png'
-    return new File(
-      [blob],
-      `${name.trim() || workspaceTitle}-${item.versionId ?? item.id}.${extension}`,
-      { type: mimeType },
-    )
+  const uploadReferenceImageIds = async (fileIds: string[]) => {
+    if (
+      !fileIds.length
+      || referenceUploadPendingRef.current
+      || referenceImagesLoading
+    ) return
+
+    const uniqueFileIds = [...new Set(fileIds.map((fileId) => fileId.trim()).filter(Boolean))]
+    const available = Math.max(0, maxReferenceImages - referenceCount)
+    const selectedFileIds = uniqueFileIds.slice(0, available)
+    if (uniqueFileIds.length > available) {
+      message.warning(l(
+        `最多上传 ${maxReferenceImages} 张参考图`,
+        `You can upload up to ${maxReferenceImages} reference images`,
+      ))
+    }
+    if (!selectedFileIds.length) return
+    if (!onReferenceImageIdsUpload) {
+      message.warning(l(
+        '请先保存资产，再添加参考图',
+        'Save the asset before adding reference images',
+      ))
+      return
+    }
+
+    referenceUploadPendingRef.current = true
+    setReferenceUploadPending(true)
+    try {
+      await onReferenceImageIdsUpload(selectedFileIds)
+      if (imageOptionsMountedRef.current) {
+        message.success(l(
+          selectedFileIds.length > 1
+            ? `已添加 ${selectedFileIds.length} 张参考图`
+            : '参考图添加成功',
+          selectedFileIds.length > 1
+            ? `${selectedFileIds.length} reference images added`
+            : 'Reference image added',
+        ))
+      }
+    } catch (error) {
+      if (imageOptionsMountedRef.current) {
+        message.error(getApiErrorMessage(
+          error,
+          l('参考图添加失败，请重试', 'Failed to add reference images; try again'),
+        ))
+      }
+    } finally {
+      referenceUploadPendingRef.current = false
+      if (imageOptionsMountedRef.current) setReferenceUploadPending(false)
+    }
   }
 
   const handleReferenceUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1336,15 +1501,14 @@ export default function AssetGenerationWorkspace({
       message.warning(emptyMessage)
       return
     }
-    try {
-      const file = await createReferenceFileFromHistory(item)
-      await uploadReferenceFiles([file])
-    } catch (error) {
-      message.error(getApiErrorMessage(
-        error,
-        l('图片转参考图失败，请重试', 'Failed to use the image as a reference'),
+    if (!item.fileId) {
+      message.warning(l(
+        '当前历史图缺少文件 ID，请刷新后重试',
+        'This history image has no file ID; refresh and try again',
       ))
+      return
     }
+    await uploadReferenceImageIds([item.fileId])
   }
 
   const renderReferenceAddButton = (
@@ -1414,10 +1578,12 @@ export default function AssetGenerationWorkspace({
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             title={referenceImagesErrorMessage
-              || (!onReferenceImagesUpload ? l('请先保存资产', 'Save the asset first') : undefined)}
-            disabled={generationLocked || !onReferenceImagesUpload}
+              || (!onReferenceImagesUpload && !onReferenceImageIdsUpload
+                ? l('请先保存资产', 'Save the asset first')
+                : undefined)}
+            disabled={generationLocked || (!onReferenceImagesUpload && !onReferenceImageIdsUpload)}
             onClick={(event) => {
-              if (generationLocked || !onReferenceImagesUpload) return
+              if (generationLocked || (!onReferenceImagesUpload && !onReferenceImageIdsUpload)) return
               event.stopPropagation()
               setReferenceMenuOpen((open) => (open === placement ? null : placement))
             }}
@@ -1444,7 +1610,6 @@ export default function AssetGenerationWorkspace({
     if (referenceDropAllowed) setReferenceDragOver(true)
     event.dataTransfer.effectAllowed = 'copy'
     event.dataTransfer.setData('application/x-jellyfish-history-image', item.id)
-    event.dataTransfer.setData('text/plain', item.imageUrl)
   }
 
   const resolveDraggedHistoryItem = (event: React.DragEvent<HTMLElement>) => {
@@ -1478,16 +1643,18 @@ export default function AssetGenerationWorkspace({
     }
     const historyItem = resolveDraggedHistoryItem(event)
     if (!historyItem) return
-    try {
-      const file = await createReferenceFileFromHistory(historyItem)
-      await uploadReferenceFiles([file])
-    } catch (error) {
+    if (!historyItem.fileId) {
       if (imageOptionsMountedRef.current) {
-        message.error(getApiErrorMessage(
-          error,
-          l('历史图片转参考图失败，请重试', 'Failed to use the history image as a reference'),
+        message.warning(l(
+          '当前历史图缺少文件 ID，请刷新后重试',
+          'This history image has no file ID; refresh and try again',
         ))
       }
+      historyDragItemRef.current = null
+      return
+    }
+    try {
+      await uploadReferenceImageIds([historyItem.fileId])
     } finally {
       historyDragItemRef.current = null
     }
@@ -1498,13 +1665,13 @@ export default function AssetGenerationWorkspace({
     const nextLook = looks.find((look) => look.id === lookId)
     if (!nextLook) return
 
-    setLooks((current) => current.map((look) => (
-      look.id === activeLookId
-        ? { ...look, prompt, imageUrl: previewImage }
-        : look
-    )))
+    setLooks((current) => captureLookEditorOptions(current, activeLookId, {
+      prompt, aspectRatio: selectedRatio, visualStyleId: selectedVisualStyleId,
+    }))
     setActiveLookId(nextLook.id)
+    imageOptionsTouchedRef.current = Boolean(nextLook.editorOptionsTouched)
     applyLookDraftToEditor(nextLook)
+    onActiveLookChange?.(nextLook.backendId ?? null)
     setImageViewerOpen(false)
   }
 
@@ -1549,7 +1716,7 @@ export default function AssetGenerationWorkspace({
     }
   }
 
-  const useLookInEpisode = async (selectedLook: LookDraft) => {
+  const applyLookInEpisode = async (selectedLook: LookDraft) => {
     if (!selectedLook || selectedLook.status === 1 || lookEpisodeSelectionPending) return
     const numericAssetId = Number(assetId)
     const lookId = Number(selectedLook.backendId)
@@ -1574,8 +1741,10 @@ export default function AssetGenerationWorkspace({
         selected: true,
       })
       await request.promise
+      if (!imageOptionsMountedRef.current) return
       const refreshRequest = StudioAssetGenerationApi.requestLooks(numericAssetId, episodeId)
       const nextLooks = (await refreshRequest.promise).map(createLookDraftFromRemote)
+      if (!imageOptionsMountedRef.current) return
       if (nextLooks.length) {
         rememberSavedLookNames(nextLooks)
         setLooks(nextLooks)
@@ -1584,10 +1753,12 @@ export default function AssetGenerationWorkspace({
           ?? nextLooks[0]
         setActiveLookId(refreshedActiveLook.id)
         applyLookDraftToEditor(refreshedActiveLook)
+        onActiveLookChange?.(refreshedActiveLook.backendId ?? null)
       }
       setLookEpisodeConfirmId(undefined)
       message.success(l('已设为本集出演', 'Look selected for this episode'))
     } catch (error) {
+      if (!imageOptionsMountedRef.current) return
       message.error(getApiErrorMessage(
         error,
         l('设置本集出演失败，请重试', 'Failed to select this look for the episode; try again'),
@@ -1614,14 +1785,13 @@ export default function AssetGenerationWorkspace({
     }
 
     setLooks((current) => [
-      ...current.map((look) => (
-        look.id === activeLookId
-          ? { ...look, prompt, imageUrl: previewImage }
-          : look
-      )),
+      ...captureLookEditorOptions(current, activeLookId, {
+        prompt, aspectRatio: selectedRatio, visualStyleId: selectedVisualStyleId,
+      }),
       newLook,
     ])
     setActiveLookId(newLook.id)
+    onActiveLookChange?.(newLook.backendId ?? null)
     setPrompt('')
     setRewriteDraft('')
     setPreviewImage(imageUrl)
@@ -1654,15 +1824,14 @@ export default function AssetGenerationWorkspace({
         file,
       })
       const uploadedLook = await request.promise
+      if (!imageOptionsMountedRef.current) return
       if (uploadedLook) {
         const nextLook = createLookDraftFromRemote(uploadedLook)
         savedLookNamesRef.current.set(nextLook.id, nextLook.name)
         setLooks((current) => {
-          const nextCurrent = current.map((look) => (
-            look.id === activeLookId
-              ? { ...look, prompt, imageUrl: previewImage }
-              : look
-          ))
+          const nextCurrent = captureLookEditorOptions(current, activeLookId, {
+            prompt, aspectRatio: selectedRatio, visualStyleId: selectedVisualStyleId,
+          })
           const existingIndex = nextCurrent.findIndex((look) => look.id === nextLook.id)
           if (existingIndex >= 0) {
             return nextCurrent.map((look, index) => (index === existingIndex ? nextLook : look))
@@ -1671,19 +1840,23 @@ export default function AssetGenerationWorkspace({
         })
         setActiveLookId(nextLook.id)
         applyLookDraftToEditor(nextLook)
+        onActiveLookChange?.(nextLook.backendId ?? null)
       } else {
         const refreshRequest = StudioAssetGenerationApi.requestLooks(numericAssetId, episodeId)
         const nextLooks = (await refreshRequest.promise).map(createLookDraftFromRemote)
+        if (!imageOptionsMountedRef.current) return
         if (nextLooks.length) {
           rememberSavedLookNames(nextLooks)
           const nextLook = nextLooks[nextLooks.length - 1]
           setLooks(nextLooks)
           setActiveLookId(nextLook.id)
           applyLookDraftToEditor(nextLook)
+          onActiveLookChange?.(nextLook.backendId ?? null)
         }
       }
       message.success(l('造型导入成功', 'Look imported'))
     } catch (error) {
+      if (!imageOptionsMountedRef.current) return
       message.error(getApiErrorMessage(
         error,
         l('造型导入失败，请重试', 'Failed to import the look; try again'),
@@ -1746,10 +1919,10 @@ export default function AssetGenerationWorkspace({
                   >
                     {selectedHistoryItem && primaryImagePendingId === selectedHistoryItem.id
                       ? <Spin size="small" />
-                      : <CheckOutlined />}
+                      : <FlagOutlined />}
                     <span>{selectedHistoryCanSetPrimary
                       ? l('设为主图', 'Set primary')
-                      : l('已设为主图', 'Primary')}</span>
+                      : l('已设为主图', 'Primary set')}</span>
                   </button>
                 </div>
                 <div className="asset-generation-workspace__preview-hover-actions" aria-label={l('图片操作', 'Image actions')}>
@@ -1763,18 +1936,6 @@ export default function AssetGenerationWorkspace({
                     }}
                   >
                     <EyeOutlined />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={l('下载图片', 'Download image')}
-                    title={l('下载图片', 'Download image')}
-                    disabled={previewDownloadPending}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      void downloadPreviewImage()
-                    }}
-                  >
-                    {previewDownloadPending ? <Spin size="small" /> : <DownloadOutlined />}
                   </button>
                   <button
                     type="button"
@@ -1798,15 +1959,10 @@ export default function AssetGenerationWorkspace({
                 <span>{l('待生成', 'Ready to generate')}</span>
               </>
             )}
-            {generationBusy && (
-              <div className="asset-generation-workspace__generation-state" role="status" aria-live="polite">
-                <Spin size="small" />
-                <strong>{l('正在生成图片', 'Generating image')}</strong>
-                <small>
-                  {displayGenerationState?.phase === 'refreshing'
-                    ? l('正在加载生成结果…', 'Loading the generated result…')
-                    : `${Math.max(0, Math.min(100, Math.round(displayGenerationState?.progress ?? 0)))}%`}
-                </small>
+            {hasAssetGenerationProgress(previewGenerationState) && (
+              <div className="asset-generation-workspace__generation-state">
+                {lookGenerationState && lookTaskSnapshot.lookName && <strong>{lookTaskSnapshot.lookName}</strong>}
+                <AssetGenerationProgress state={previewGenerationState} />
               </div>
             )}
           </div>
@@ -2090,6 +2246,11 @@ export default function AssetGenerationWorkspace({
                   >
                     <span className="asset-generation-workspace__look-preview">
                       {imageUrl ? <img src={imageUrl} alt="" /> : <PictureOutlined />}
+                      {hasAssetGenerationProgress(getGenerationStateForLook(look)) && (
+                        <span className="asset-generation-workspace__look-progress">
+                          <AssetGenerationProgress state={getGenerationStateForLook(look)} compact />
+                        </span>
+                      )}
                     </span>
                     {lookInEpisode && (
                       <span className="asset-generation-workspace__look-status">
@@ -2116,6 +2277,20 @@ export default function AssetGenerationWorkspace({
                 </Fragment>
               )
             })}
+            {showPendingLookProgress && (
+              <button type="button" className="asset-generation-workspace__look-main" disabled>
+                <span className="asset-generation-workspace__look-preview">
+                  <span className="asset-generation-workspace__look-progress">
+                    <AssetGenerationProgress state={lookGenerationState} compact />
+                  </span>
+                </span>
+                <span className="asset-generation-workspace__look-meta">
+                  <span className="asset-generation-workspace__look-name" title={lookTaskSnapshot.lookName}>
+                    {lookTaskSnapshot.lookName || l('新造型', 'New look')}
+                  </span>
+                </span>
+              </button>
+            )}
           </div>
 
           <footer className="asset-generation-workspace__footer">
@@ -2123,14 +2298,14 @@ export default function AssetGenerationWorkspace({
               <div className={`asset-generation-workspace__generation-message${displayGenerationState?.errorMessage ? ' is-error' : ''}`}>
                 <span>{displayGenerationState?.errorMessage ?? generationUnavailableReason}</span>
                 {(displayGenerationState?.phase === 'poll-failed' || displayGenerationState?.phase === 'refresh-failed')
-                  && onGenerationResultRetry && (
+                  && retryGenerationResult && (
                   <span className="asset-generation-workspace__generation-message-actions">
-                    <Button size="small" onClick={onGenerationResultRetry}>
+                    <Button size="small" onClick={retryGenerationResult}>
                       {displayGenerationState?.phase === 'poll-failed'
                         ? l('继续查询任务', 'Resume task query')
                         : l('重新加载结果', 'Reload result')}
                     </Button>
-                    {onGenerationTrackingDiscard && (
+                    {!lookGenerationState && onGenerationTrackingDiscard && (
                       <Button size="small" danger onClick={onGenerationTrackingDiscard}>
                         {l('放弃跟踪', 'Stop tracking')}
                       </Button>
@@ -2167,11 +2342,7 @@ export default function AssetGenerationWorkspace({
               disabled={!canGenerate}
               onClick={() => void submitGeneration()}
             >
-              {generationBusy
-                ? l(`生成中 ${Math.max(0, Math.min(100, Math.round(displayGenerationState?.progress ?? 0)))}%`, `Generating ${Math.max(0, Math.min(100, Math.round(displayGenerationState?.progress ?? 0)))}%`)
-                : generationSubmitPending
-                  ? l('正在保存设置…', 'Saving settings…')
-                : l('生成', 'Generate')} <span><StarFilled /> 6</span>
+              {generationButtonLabel} <span><StarFilled /> {generationCreditCostText}</span>
             </Button>
           </footer>
           </aside>
@@ -2398,7 +2569,7 @@ export default function AssetGenerationWorkspace({
               <Button
                 type="primary"
                 loading={lookEpisodeSelectionPending}
-                onClick={() => { void useLookInEpisode(lookEpisodeConfirmTarget) }}
+                onClick={() => { void applyLookInEpisode(lookEpisodeConfirmTarget) }}
               >
                 {l('更换出镜造型', 'Switch look')}
               </Button>

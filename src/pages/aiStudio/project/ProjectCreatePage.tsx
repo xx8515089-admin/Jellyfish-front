@@ -13,6 +13,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { getStoredAuthUser } from '../../../auth'
 import { getApiErrorMessage } from '../../../services/apiErrors'
 import { StudioScriptsApi } from '../../../services/studioScripts'
+import { StudioAssetGenerationApi, type StudioAssetImageTaskRequest, type StudioEpisodeAssetsGenerateStatusResult } from '../../../services/studioAssetGeneration'
 import type {
   StudioScriptAssetEpisode,
   StudioScriptAssetEpisodeListRequest,
@@ -427,6 +428,8 @@ const ProjectCreatePage: React.FC = () => {
     )
     : shouldRestoreProjectDraft && restoredEpisodes.length ? restoredStep : 0)
   const [assetImageSubmissionPending, setAssetImageSubmissionPending] = useState(false)
+  const [assetCompletionCheckPending, setAssetCompletionCheckPending] = useState(false)
+  const assetCompletionRequestRef = useRef<StudioAssetImageTaskRequest<StudioEpisodeAssetsGenerateStatusResult> | null>(null)
   const navigateToWorkflowStep = useCallback((step: number) => {
     workflowNavigationRevisionRef.current += 1
     setCurrentStep(step)
@@ -1152,6 +1155,14 @@ const ProjectCreatePage: React.FC = () => {
       rawText: sourceEpisode?.rawText ?? '',
     }
   }), [assetEpisodes, episodes, l])
+
+  useEffect(() => {
+    setAssetCompletionCheckPending(false)
+    return () => {
+      assetCompletionRequestRef.current?.cancel()
+      assetCompletionRequestRef.current = null
+    }
+  }, [currentStep, scriptImportId])
 
   const getRatioShape = (value: string) => {
     const [rawWidth, rawHeight] = value.split(':').map(Number)
@@ -1924,6 +1935,7 @@ const ProjectCreatePage: React.FC = () => {
       && !localDraftRestoreFailed
       && assetStepReady
       && !assetImageSubmissionPending
+      && !assetCompletionCheckPending
     : !restoringLocalDraft
       && !localDraftRestoreFailed
       && !restoringBasicInfo
@@ -1939,7 +1951,7 @@ const ProjectCreatePage: React.FC = () => {
             ? styleSelectionReady
             : true)
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (currentStep === 0) {
       void handleEnterEpisodes()
       return
@@ -1954,7 +1966,31 @@ const ProjectCreatePage: React.FC = () => {
       return
     }
     if (currentStep === 2) {
-      navigateToWorkflowStep(3)
+      if (scriptImportId === null || assetCompletionRequestRef.current) return
+      // Confirm once on demand: users need not visit overview after completing episodes.
+      const request = StudioAssetGenerationApi.requestEpisodeAssetsGenerateStatus({ scriptImportId })
+      assetCompletionRequestRef.current = request
+      setAssetCompletionCheckPending(true)
+      try {
+        const status = await request.promise
+        if (assetCompletionRequestRef.current !== request) return
+        if (!status.allGenerated) {
+          message.warning(l(
+            '资产还没有生成完，请先完成全部资产生成后再进入下一步',
+            'Assets are not fully generated yet. Please finish generating all assets before continuing.',
+          ))
+          return
+        }
+        navigateToWorkflowStep(3)
+      } catch (error) {
+        if (assetCompletionRequestRef.current !== request) return
+        message.error(getApiErrorMessage(error, l('资产完成状态查询失败，请重试', 'Unable to verify asset completion; retry')))
+      } finally {
+        if (assetCompletionRequestRef.current === request) {
+          assetCompletionRequestRef.current = null
+          setAssetCompletionCheckPending(false)
+        }
+      }
       return
     }
     if (currentStep === 3) message.info(l('剪辑表导出功能待接入', 'Export is not connected yet'))
@@ -2194,7 +2230,7 @@ const ProjectCreatePage: React.FC = () => {
             icon={<ArrowRightOutlined />}
             iconPosition="end"
             disabled={!canProceed || submitting || parsingScript || creatingEpisode || assetEstimatePending}
-            loading={submitting || assetEstimatePending || (currentStep === 2 && assetEpisodesLoading)}
+            loading={submitting || assetEstimatePending || (currentStep === 2 && (assetEpisodesLoading || assetCompletionCheckPending))}
             title={currentStep === 1
               ? assetEstimateErrorMessage
                 || (assetExtractEstimate

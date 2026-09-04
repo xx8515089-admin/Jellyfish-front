@@ -20,6 +20,90 @@ export type StudioAssetImageGenerateRequest = {
   modelId: number
 }
 
+export type StudioAssetGenerateEstimateRequest = {
+  modelId: number
+  quality: string | number | null
+  resolution: number
+}
+
+export type StudioAssetGenerateEstimateResult = {
+  modelId?: number | null
+  modelName?: string
+  quality?: string | number | null
+  resolution?: number | null
+  billingUnit?: string
+  creditCost: number
+}
+
+export type StudioEpisodeAssetsGenerateEstimateRequest = {
+  modelId: number
+  quality: string | number | null
+  resolution: number
+  scriptImportId: string | number
+  episodeId?: string | number
+}
+
+export type StudioEpisodeAssetsGenerateRequest = {
+  scriptImportId: string | number
+  episodeId?: string | number
+  modelId: number
+  quality: number | null
+  resolution: number
+  regenerate: boolean
+}
+
+export type StudioEpisodeAssetsGenerateEstimateResult = {
+  scriptImportId?: string | number | null
+  chapterId?: string | number | null
+  episodeIndex?: number | null
+  modelId?: number | null
+  modelName?: string
+  quality?: string | number | null
+  resolution?: number | null
+  totalCount: number
+  generatedCount: number
+  pendingCount: number
+  unitCreditCost: number
+  totalCreditCost: number
+}
+
+export type StudioEpisodeAssetsGenerateStatusRequest = {
+  scriptImportId: string | number
+  episodeId?: string | number
+}
+
+export type StudioEpisodeAssetsGenerateStatusItem = {
+  scopeKey?: string | number | null
+  scopeCode?: string
+  assetId?: number | null
+  assetType?: number | null
+  assetName?: string
+  characterLookId?: number | null
+  characterLookName?: string | null
+  coverFileId?: string | number | null
+  coverUrl?: string | null
+  status?: number | null
+  statusName?: string
+  taskId?: string | number | null
+  progress?: number | null
+  error?: string
+}
+
+export type StudioEpisodeAssetsGenerateStatusResult = {
+  scriptImportId?: string | number | null
+  episodeId?: string | number | null
+  episodeIndex?: number | null
+  totalCount: number
+  generatedCount: number
+  generatingCount: number
+  pendingCount: number
+  failedCount: number
+  allGenerated: boolean
+  shouldPoll: boolean
+  batch?: unknown
+  items: StudioEpisodeAssetsGenerateStatusItem[]
+}
+
 export type StudioAssetImageOptionsUpdateRequest = {
   id: number
   prompt: string
@@ -31,6 +115,7 @@ export type StudioAssetImageOptionsUpdateRequest = {
 export type StudioAssetPrimaryImageRequest = {
   assetId: number
   versionId: number
+  lookId: number
 }
 
 export type StudioAssetLookUploadRequest = {
@@ -116,6 +201,11 @@ export type StudioAssetReferenceListResult = {
   list: StudioAssetReferenceItem[]
 }
 
+export type StudioAssetReferenceAttachRequest = {
+  assetId: number
+  fileId: string
+}
+
 export type StudioAssetImageTaskDetail = {
   createdAt?: string | null
   updatedAt?: string | null
@@ -176,13 +266,78 @@ function updateAssetImageOptions(
   })
 }
 
+function estimateAssetGenerateCredits(
+  requestBody: StudioAssetGenerateEstimateRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'GET',
+    url: '/api/v1/studio/assets/generate/estimate',
+    query: requestBody,
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function estimateEpisodeAssetsGenerateCredits(
+  requestBody: StudioEpisodeAssetsGenerateEstimateRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  const { episodeId, ...query } = requestBody
+  return __request(OpenAPI, {
+    method: 'GET',
+    url: '/api/v1/studio/episodes/assets/generate/estimate',
+    query: episodeId === undefined || episodeId === null || String(episodeId).trim() === ''
+      ? query
+      : { ...query, episodeId },
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function createEpisodeAssetsGenerateTask(
+  requestBody: StudioEpisodeAssetsGenerateRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  const { episodeId, ...body } = requestBody
+  return __request(OpenAPI, {
+    method: 'POST',
+    url: '/api/v1/studio/episodes/assets/generate',
+    body: episodeId === undefined || episodeId === null || String(episodeId).trim() === ''
+      ? body
+      : { ...body, episodeId },
+    mediaType: 'application/json',
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function getEpisodeAssetsGenerateStatus(
+  requestBody: StudioEpisodeAssetsGenerateStatusRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  const { episodeId, ...query } = requestBody
+  return __request(OpenAPI, {
+    method: 'GET',
+    url: '/api/v1/studio/episodes/assets/generate/status',
+    query: episodeId === undefined || episodeId === null || String(episodeId).trim() === ''
+      ? query
+      : { ...query, episodeId },
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
 function getAssetImageHistory(
   assetId: number,
+  lookId?: number | null,
 ): CancelablePromise<ApiEnvelope<unknown>> {
   return __request(OpenAPI, {
     method: 'GET',
     url: '/api/v1/studio/assets/images/history',
-    query: { assetId },
+    query: lookId === undefined || lookId === null
+      ? { assetId }
+      : { assetId, lookId },
     errors: {
       422: 'Validation Error',
     },
@@ -297,6 +452,20 @@ function uploadAssetReference(
     url: '/api/v1/studio/assets/references',
     formData: { assetId, file },
     mediaType: 'multipart/form-data',
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function attachAssetReference(
+  requestBody: StudioAssetReferenceAttachRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'POST',
+    url: '/api/v1/studio/assets/references',
+    body: requestBody,
+    mediaType: 'application/json',
     errors: {
       422: 'Validation Error',
     },
@@ -516,6 +685,87 @@ function normalizeNumberOrNull(value: unknown): number | null {
   return normalized === undefined ? null : normalized
 }
 
+function normalizeAssetGenerateEstimate(data: unknown): StudioAssetGenerateEstimateResult {
+  const record = asRecord(data)
+  const creditCost = normalizeFiniteNumber(record?.creditCost)
+  return {
+    modelId: normalizeNumberOrNull(record?.modelId),
+    modelName: typeof record?.modelName === 'string' ? record.modelName : undefined,
+    quality: typeof record?.quality === 'string' || typeof record?.quality === 'number'
+      ? record.quality
+      : null,
+    resolution: normalizeNumberOrNull(record?.resolution),
+    billingUnit: typeof record?.billingUnit === 'string' ? record.billingUnit : undefined,
+    creditCost: creditCost ?? 0,
+  }
+}
+
+function normalizeEpisodeAssetsGenerateEstimate(data: unknown): StudioEpisodeAssetsGenerateEstimateResult {
+  const record = asRecord(data)
+  return {
+    scriptImportId: typeof record?.scriptImportId === 'string' || typeof record?.scriptImportId === 'number'
+      ? record.scriptImportId
+      : null,
+    chapterId: typeof record?.chapterId === 'string' || typeof record?.chapterId === 'number'
+      ? record.chapterId
+      : null,
+    episodeIndex: normalizeNumberOrNull(record?.episodeIndex),
+    modelId: normalizeNumberOrNull(record?.modelId),
+    modelName: typeof record?.modelName === 'string' ? record.modelName : undefined,
+    quality: typeof record?.quality === 'string' || typeof record?.quality === 'number'
+      ? record.quality
+      : null,
+    resolution: normalizeNumberOrNull(record?.resolution),
+    totalCount: Math.max(0, Math.floor(normalizeFiniteNumber(record?.totalCount) ?? 0)),
+    generatedCount: Math.max(0, Math.floor(normalizeFiniteNumber(record?.generatedCount) ?? 0)),
+    pendingCount: Math.max(0, Math.floor(normalizeFiniteNumber(record?.pendingCount) ?? 0)),
+    unitCreditCost: normalizeFiniteNumber(record?.unitCreditCost) ?? 0,
+    totalCreditCost: normalizeFiniteNumber(record?.totalCreditCost) ?? 0,
+  }
+}
+
+function normalizeEpisodeAssetsGenerateStatus(data: unknown): StudioEpisodeAssetsGenerateStatusResult {
+  const record = asRecord(data)
+  const rows = Array.isArray(record?.items) ? record.items : []
+  return {
+    scriptImportId: typeof record?.scriptImportId === 'string' || typeof record?.scriptImportId === 'number'
+      ? record.scriptImportId
+      : null,
+    episodeId: typeof record?.episodeId === 'string' || typeof record?.episodeId === 'number'
+      ? record.episodeId
+      : null,
+    episodeIndex: normalizeNumberOrNull(record?.episodeIndex),
+    totalCount: Math.max(0, Math.floor(normalizeFiniteNumber(record?.totalCount) ?? 0)),
+    generatedCount: Math.max(0, Math.floor(normalizeFiniteNumber(record?.generatedCount) ?? 0)),
+    generatingCount: Math.max(0, Math.floor(normalizeFiniteNumber(record?.generatingCount) ?? 0)),
+    pendingCount: Math.max(0, Math.floor(normalizeFiniteNumber(record?.pendingCount) ?? 0)),
+    failedCount: Math.max(0, Math.floor(normalizeFiniteNumber(record?.failedCount) ?? 0)),
+    allGenerated: Boolean(normalizeHistoryBoolean(record?.allGenerated)),
+    shouldPoll: Boolean(normalizeHistoryBoolean(record?.shouldPoll)),
+    batch: record?.batch,
+    items: rows.flatMap((value): StudioEpisodeAssetsGenerateStatusItem[] => {
+      const item = asRecord(value)
+      if (!item) return []
+      return [{
+        scopeKey: typeof item.scopeKey === 'string' || typeof item.scopeKey === 'number' ? item.scopeKey : null,
+        scopeCode: normalizeHistoryValue(item.scopeCode),
+        assetId: normalizeNumberOrNull(item.assetId),
+        assetType: normalizeNumberOrNull(item.assetType),
+        assetName: normalizeHistoryValue(item.assetName),
+        characterLookId: normalizeNumberOrNull(item.characterLookId),
+        characterLookName: normalizeHistoryValue(item.characterLookName) ?? null,
+        coverFileId: normalizeHistoryValue(item.coverFileId) ?? null,
+        coverUrl: normalizeHistoryValue(item.coverUrl) ?? null,
+        status: normalizeNumberOrNull(item.status),
+        statusName: normalizeHistoryValue(item.statusName),
+        taskId: normalizeHistoryValue(item.taskId) ?? null,
+        progress: normalizeNumberOrNull(item.progress),
+        error: normalizeHistoryValue(item.error),
+      }]
+    }),
+  }
+}
+
 function normalizeStringList(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return [...new Set(value.flatMap((item) => {
@@ -597,6 +847,65 @@ export function parseStudioAssetImageTaskResult(
 }
 
 export const StudioAssetGenerationApi = {
+  requestGenerateEstimate(
+    requestBody: StudioAssetGenerateEstimateRequest,
+  ): StudioAssetImageTaskRequest<StudioAssetGenerateEstimateResult> {
+    const request = estimateAssetGenerateCredits(requestBody)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw new Error(response.message || 'Asset generation credit estimate failed')
+        }
+        return normalizeAssetGenerateEstimate(response.data)
+      }),
+    }
+  },
+
+  requestEpisodeAssetsGenerateEstimate(
+    requestBody: StudioEpisodeAssetsGenerateEstimateRequest,
+  ): StudioAssetImageTaskRequest<StudioEpisodeAssetsGenerateEstimateResult> {
+    const request = estimateEpisodeAssetsGenerateCredits(requestBody)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw new Error(response.message || 'Episode assets generation credit estimate failed')
+        }
+        return normalizeEpisodeAssetsGenerateEstimate(response.data)
+      }),
+    }
+  },
+
+  requestEpisodeAssetsGenerate(
+    requestBody: StudioEpisodeAssetsGenerateRequest,
+  ): StudioAssetImageTaskRequest<void> {
+    const request = createEpisodeAssetsGenerateTask(requestBody)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw new Error(response.message || 'Episode assets generation task creation failed')
+        }
+      }),
+    }
+  },
+
+  requestEpisodeAssetsGenerateStatus(
+    requestBody: StudioEpisodeAssetsGenerateStatusRequest,
+  ): StudioAssetImageTaskRequest<StudioEpisodeAssetsGenerateStatusResult> {
+    const request = getEpisodeAssetsGenerateStatus(requestBody)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw Object.assign(new Error(response.message || 'Episode assets generation status loading failed'), { status: response.code })
+        }
+        return normalizeEpisodeAssetsGenerateStatus(response.data)
+      }),
+    }
+  },
+
   requestLooks(assetId: number, episodeId?: string | number): StudioAssetImageTaskRequest<StudioAssetLookItem[]> {
     const request = getAssetLooks(assetId, episodeId)
     return {
@@ -697,8 +1006,20 @@ export const StudioAssetGenerationApi = {
     }
   },
 
-  requestImageHistory(assetId: number): StudioAssetImageTaskRequest<StudioAssetImageHistoryItem[]> {
-    const request = getAssetImageHistory(assetId)
+  requestReferenceAttach(assetId: number, fileId: string): StudioAssetImageTaskRequest<void> {
+    const request = attachAssetReference({ assetId, fileId })
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw new Error(response.message || 'Asset reference image attach failed')
+        }
+      }),
+    }
+  },
+
+  requestImageHistory(assetId: number, lookId?: number | null): StudioAssetImageTaskRequest<StudioAssetImageHistoryItem[]> {
+    const request = getAssetImageHistory(assetId, lookId)
     return {
       cancel: () => request.cancel(),
       promise: request.then((response) => {

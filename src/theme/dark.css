@@ -587,6 +587,184 @@ code {
   color: var(--jf-text) !important;
 }
 
+.project-clip-editor__controls {
+  box-shadow: none !important;
+}
+
+.project-clip-editor__mode-tabs {
+  background: var(--jf-panel) !important;
+  border-bottom-color: var(--jf-border) !important;
+}
+
+.project-clip-editor__mode-tabs button {
+  color: var(--jf-muted) !important;
+}
+
+.project-clip-editor__mode-tabs button:hover {
+  background: var(--jf-selected) !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.project-clip-editor__mode-tabs button.is-selected {
+  background: var(--jf-panel-2) !important;
+  color: var(--jf-text) !important;
+}
+
+.project-clip-editor__mode-tabs button::after {
+  background: var(--jf-primary) !important;
+}
+
+.project-clip-editor__mode-tabs button.is-selected .anticon,
+.project-clip-editor__prompt-help:hover,
+.project-clip-editor__prompt-help:focus-visible {
+  color: var(--jf-accent-strong) !important;
+}
+
+.project-clip-editor__reference-section,
+.project-clip-editor__prompt-tools {
+  border-color: var(--jf-border-soft) !important;
+}
+
+.project-clip-editor__reference-section,
+.project-clip-editor__prompt-tools,
+.project-clip-editor__generation-footer,
+.project-clip-editor__voice-panel {
+  background: var(--jf-panel) !important;
+}
+
+.project-clip-editor__section-title strong,
+.project-clip-editor__ratio-select .ant-select-selection-item,
+.project-clip-editor__prompt-tools .studio-select .ant-select-selection-item,
+.project-clip-editor__generation-selects .studio-select .ant-select-selection-item,
+.project-clip-editor__video-spec-trigger {
+  color: var(--jf-text-soft) !important;
+}
+
+.project-clip-editor__section-title strong small {
+  background: var(--jf-panel-2) !important;
+  color: var(--jf-muted) !important;
+}
+
+.project-clip-editor__section-title > span,
+.project-clip-editor__prompt-help,
+.project-clip-editor__prompt-count,
+.project-clip-editor__prompt-rich-input:empty::before,
+.project-clip-editor__prompt-section .ant-input::placeholder {
+  color: var(--jf-muted) !important;
+}
+
+.project-clip-editor__reference-add,
+.project-clip-editor__reference,
+.project-clip-editor__prompt-rich-input,
+.project-clip-editor__prompt-section .ant-input,
+.project-clip-editor__prompt-tools .ant-btn,
+.project-clip-editor__prompt-tools .studio-select.studio-select.ant-select-single .ant-select-selector,
+.project-clip-editor__generation-selects .studio-select.studio-select.ant-select-single .ant-select-selector,
+.project-clip-editor__video-spec-trigger {
+  background: var(--jf-panel-2) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-text-soft) !important;
+  box-shadow: none !important;
+}
+
+.project-clip-editor__reference-add:hover,
+.project-clip-editor__reference:hover,
+.project-clip-editor__prompt-rich-input:hover,
+.project-clip-editor__prompt-section .ant-input:hover,
+.project-clip-editor__prompt-tools .ant-btn:hover,
+.project-clip-editor__video-spec-trigger:hover,
+.project-clip-editor__prompt-tools .studio-select.studio-select.ant-select-single:not(.ant-select-disabled):hover .ant-select-selector,
+.project-clip-editor__generation-selects .studio-select.studio-select.ant-select-single:not(.ant-select-disabled):hover .ant-select-selector {
+  background: var(--jf-panel-3) !important;
+  border-color: var(--jf-accent-border) !important;
+  color: var(--jf-text) !important;
+}
+
+.project-clip-editor__prompt-rich-input:focus,
+.project-clip-editor__prompt-section .ant-input:focus,
+.project-clip-editor__video-spec-trigger:focus-visible,
+.project-clip-editor__video-spec-trigger.is-open,
+.project-clip-editor__generation-selects .studio-select.studio-select.ant-select-single.ant-select-focused .ant-select-selector,
+.project-clip-editor__generation-selects .studio-select.studio-select.ant-select-single.ant-select-open .ant-select-selector {
+  background: var(--jf-panel-2) !important;
+  border-color: var(--jf-accent-border) !important;
+  box-shadow: 0 0 0 2px var(--jf-accent-soft) !important;
+}
+
+.project-clip-editor__prompt-mention {
+  background: rgba(51, 215, 196, 0.14) !important;
+  border-color: rgba(51, 215, 196, 0.24) !important;
+}
+
+.project-clip-editor__prompt-mention strong {
+  color: #62e6d9 !important;
+}
+
+.project-clip-editor__mention-menu,
+.project-clip-editor__skill-popover .ant-popover-inner,
+.project-clip-editor__video-spec-popover .ant-popover-inner {
+  background: var(--jf-panel-2) !important;
+  border-color: var(--jf-border) !important;
+  box-shadow: 0 16px 38px rgb(0 0 0 / 36%) !important;
+}
+
+.project-clip-editor__mention-menu > header,
+.project-clip-editor__mention-empty,
+.project-clip-editor__skill-title small,
+.project-clip-editor__skill-list span,
+.project-clip-editor__video-spec-label {
+  color: var(--jf-muted) !important;
+}
+
+.project-clip-editor__mention-group + .project-clip-editor__mention-group {
+  border-top-color: var(--jf-border-soft) !important;
+}
+
+.project-clip-editor__mention-group > strong,
+.project-clip-editor__mention-group button,
+.project-clip-editor__skill-list strong {
+  color: var(--jf-text-soft) !important;
+}
+
+.project-clip-editor__mention-group button:hover,
+.project-clip-editor__mention-group button.is-highlighted,
+.project-clip-editor__skill-list button:not(.is-selected):hover {
+  background: var(--jf-selected-hover) !important;
+  color: var(--jf-text) !important;
+}
+
+.project-clip-editor__skill-list button,
+.project-clip-editor__video-resolution-options,
+.project-clip-editor__video-duration-control output {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.project-clip-editor__skill-list button.is-selected,
+.project-clip-editor__prompt-tools .project-clip-editor__skill-trigger.is-active,
+.project-clip-editor__video-resolution-options button.is-selected {
+  background: var(--jf-selected) !important;
+  border-color: var(--jf-accent-border) !important;
+  color: var(--jf-text) !important;
+  box-shadow: none !important;
+}
+
+.project-clip-editor__video-resolution-options button {
+  color: var(--jf-muted) !important;
+}
+
+.project-clip-editor__video-resolution-options button:hover {
+  background: var(--jf-selected) !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.project-clip-editor__video-duration-slider {
+  --project-slider-fill: var(--jf-accent);
+  --project-slider-rail: var(--jf-panel-3);
+  box-shadow: inset 0 0 0 1px var(--jf-border) !important;
+}
+
 /* 项目创建页是 MainLayout 之外的全屏路由，因此需要单独设置暗色表面样式。 */
 .project-create-page {
   background: var(--jf-bg) !important;
@@ -1515,24 +1693,17 @@ code {
 }
 
 .asset-generation-workspace .asset-generation-workspace__generation-state,
+.asset-generation-workspace .asset-generation-workspace__look-progress,
 .project-assets-step .project-assets-step__card-generation {
-  background: color-mix(in srgb, var(--jf-panel) 88%, transparent) !important;
-  color: var(--jf-muted) !important;
-}
-
-.asset-generation-workspace .asset-generation-workspace__generation-state strong,
-.project-assets-step .project-assets-step__card-generation strong {
+  background:
+    radial-gradient(circle at 50% 46%, rgba(7, 10, 18, 0.24), rgba(7, 10, 18, 0.46) 58%, rgba(7, 10, 18, 0.58)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(7, 10, 18, 0.24)) !important;
   color: var(--jf-text-soft) !important;
 }
 
-.asset-generation-workspace .asset-generation-workspace__generation-state small,
-.project-assets-step .project-assets-step__card-generation small {
-  color: var(--jf-muted) !important;
-}
-
-.asset-generation-workspace .asset-generation-workspace__generation-state .ant-spin-dot-item,
-.project-assets-step .project-assets-step__card-generation .ant-spin-dot-item {
-  background-color: var(--jf-accent-strong) !important;
+.asset-generation-workspace .asset-generation-progress__sparkle,
+.project-assets-step .asset-generation-progress__sparkle {
+  color: var(--jf-accent-strong) !important;
 }
 
 .asset-generation-workspace .asset-generation-workspace__main-badge {
