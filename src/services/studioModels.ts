@@ -18,6 +18,17 @@ export type StudioImageModelCapabilities = {
   referenceTokenStyle?: string | null
 }
 
+export type StudioVideoModelCapabilities = {
+  resolutions: string[]
+  minDurationSeconds: number
+  maxDurationSeconds: number
+  maxReferenceImages: number
+  nativeAudioSupported: boolean
+  maxPromptCharacters: number
+  promptTemplateCategory?: string | null
+  referenceTokenStyle?: string | null
+}
+
 export type StudioGenerationModel = {
   id: number
   supplierId: number
@@ -29,6 +40,7 @@ export type StudioGenerationModel = {
   description?: string | null
   billingRules?: unknown[] | null
   imageCapabilities?: StudioImageModelCapabilities | null
+  videoCapabilities?: StudioVideoModelCapabilities | null
 }
 
 function getStudioModels(type = 2): CancelablePromise<ApiEnvelope<StudioGenerationModel[]>> {
@@ -43,29 +55,45 @@ function getStudioModels(type = 2): CancelablePromise<ApiEnvelope<StudioGenerati
 }
 
 let imageModelsRequest: Promise<StudioGenerationModel[]> | null = null
+let videoModelsRequest: Promise<StudioGenerationModel[]> | null = null
+
+function loadStudioModels(type: number, errorMessage: string): Promise<StudioGenerationModel[]> {
+  return getStudioModels(type)
+    .then((response) => {
+      if ((response.code ?? 200) >= 400) {
+        throw new Error(response.message || errorMessage)
+      }
+      const models = Array.isArray(response.data)
+        ? response.data.filter((model) => (
+          Number.isFinite(Number(model.id))
+          && Boolean(model.name?.trim())
+          && Boolean(model.modelCode?.trim())
+        ))
+        : []
+      return models
+    })
+}
 
 export const StudioModelsApi = {
   /** 查询图片生成模型；默认固定为后端模型类型 2，并合并 StrictMode 等并发请求。 */
   async getImageModels(): Promise<StudioGenerationModel[]> {
     if (imageModelsRequest) return imageModelsRequest
 
-    imageModelsRequest = getStudioModels(2)
-      .then((response) => {
-        if ((response.code ?? 200) >= 400) {
-          throw new Error(response.message || 'Image model loading failed')
-        }
-        const models = Array.isArray(response.data)
-          ? response.data.filter((model) => (
-            Number.isFinite(Number(model.id))
-            && Boolean(model.name?.trim())
-            && Boolean(model.modelCode?.trim())
-          ))
-          : []
-        return models
-      })
+    imageModelsRequest = loadStudioModels(2, 'Image model loading failed')
       .finally(() => {
         imageModelsRequest = null
       })
     return imageModelsRequest
+  },
+
+  /** 查询视频生成模型；后端模型类型固定为 3，并合并 StrictMode 等并发请求。 */
+  async getVideoModels(): Promise<StudioGenerationModel[]> {
+    if (videoModelsRequest) return videoModelsRequest
+
+    videoModelsRequest = loadStudioModels(3, 'Video model loading failed')
+      .finally(() => {
+        videoModelsRequest = null
+      })
+    return videoModelsRequest
   },
 }

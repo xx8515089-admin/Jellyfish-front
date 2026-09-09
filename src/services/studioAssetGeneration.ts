@@ -72,6 +72,120 @@ export type StudioEpisodeAssetsGenerateStatusRequest = {
   episodeId?: string | number
 }
 
+export type StudioStoryboardVideoGenerateEstimateRequest = {
+  modelId: number
+  resolution: string
+  durationSeconds: number
+}
+
+export type StudioStoryboardVideoGenerateRequest = {
+  segmentId: string | number
+  modelId: number
+  directorPromptRunId: string | number | null
+  visualStyleId: string | number | null
+  toneStyleId: string | number | null
+  aspectRatio: string
+  resolution: string
+  durationSeconds: number
+  generateAudio: boolean
+  prompt: string
+}
+
+export type StudioStoryboardVideoGenerateEstimateResult = {
+  modelId?: number | null
+  modelName?: string
+  resolution?: string
+  durationSeconds: number
+  generateAudio?: boolean
+  referenceVideoDurationSeconds?: number
+  billingUnit?: string
+  billableQuantity?: number
+  unitCreditCost?: number
+  creditCost: number
+  estimated?: boolean
+  pricingSource?: string
+  priceValidUntil?: string | null
+}
+
+export type StudioStoryboardVideoReferenceOptionSource = 'character' | 'scene' | 'prop' | 'dubbing'
+
+export type StudioStoryboardVideoReferenceOptionsRequest = {
+  segmentId: string | number
+  source: StudioStoryboardVideoReferenceOptionSource
+}
+
+export type StudioStoryboardVideoReferenceDeleteRequest = {
+  segmentId: string | number
+  expectedRevisionNo: number
+  referenceIndex: number
+}
+
+export type StudioStoryboardVideoReferenceDeleteResult = {
+  segmentId?: string | number | null
+  revisionNo?: number | null
+}
+
+export type StudioStoryboardVideoReferenceAddItem = {
+  referenceType?: number | null
+  fileId?: string | number | null
+  assetId?: string | number | null
+  characterLookId?: string | number | null
+  sourceSegmentId?: string | number | null
+  durationSeconds?: number | null
+  audioSource?: string | null
+  voiceId?: string | number | null
+  voiceName?: string | null
+  characterName?: string | null
+  dubbingGenerationId?: string | number | null
+  displayName: string
+}
+
+export type StudioStoryboardVideoReferenceAddRequest = {
+  segmentId: string | number
+  expectedRevisionNo: number
+  references: StudioStoryboardVideoReferenceAddItem[]
+}
+
+export type StudioStoryboardVideoReferenceAddResult = StudioStoryboardVideoReferenceDeleteResult
+
+export type StudioStoryboardVideoReferenceOption = {
+  source: StudioStoryboardVideoReferenceOptionSource
+  referenceType?: number | null
+  fileId?: string | number | null
+  fileUrl?: string | null
+  displayName: string
+  assetId?: string | number | null
+  characterLookId?: string | number | null
+  sourceSegmentId?: string | number | null
+  durationSeconds?: number | null
+  audioSource?: string | null
+  voiceId?: string | number | null
+  voiceName?: string | null
+  characterName?: string | null
+  dubbingGenerationId?: string | number | null
+  characterLookName?: string | null
+  defaultLook?: boolean
+  selected: boolean
+  referenceIndex?: number | null
+  referenceSelectionRevisionNo?: number | null
+  selectable: boolean
+  disabledReason?: string | null
+  historical?: boolean
+  assetName?: string | null
+  lookName?: string | null
+}
+
+export type StudioEpisodeAssetsConfirmRequest = {
+  scriptImportId: string | number
+  episodeId: string | number
+}
+
+export type StudioEpisodeAssetsConfirmResult = {
+  currentStep?: number | null
+  runId?: string | number | null
+  editor?: StudioEpisodeStoryboardEditorResult | null
+}
+
 export type StudioEpisodeAssetsGenerateStatusItem = {
   scopeKey?: string | number | null
   scopeCode?: string
@@ -102,6 +216,229 @@ export type StudioEpisodeAssetsGenerateStatusResult = {
   shouldPoll: boolean
   batch?: unknown
   items: StudioEpisodeAssetsGenerateStatusItem[]
+}
+
+export type StudioEpisodeStoryboardEditorRequest = {
+  scriptImportId: string | number
+  episodeId: string | number
+}
+
+export type StudioEpisodeStoryboardAssetReadiness = {
+  totalCount: number
+  readyCount: number
+  generatingCount: number
+  missingCount: number
+  failedCount: number
+  unconfirmedCount: number
+}
+
+export type StudioEpisodeStoryboardRun = {
+  runId?: string | number | null
+  episodeId?: string | number | null
+  taskId?: string | number | null
+  status?: number | null
+  statusName?: string
+  progress?: number | null
+  skillStage?: string
+  shouldPoll: boolean
+  canEdit?: boolean
+  error?: string
+  createdAt?: string
+  finishedAt?: string
+}
+
+export type StudioEpisodeStoryboardShot = {
+  id?: string | number | null
+  shotIndex?: number | null
+  title?: string
+  editorDescription?: string
+  coverFileId?: string | number | null
+  coverUrl?: string | null
+}
+
+export type StudioEpisodeStoryboardAssetReference = {
+  scopeCode?: string
+  assetId?: number | null
+  assetType?: number | null
+  assetName: string
+  characterLookId?: number | null
+  characterLookName?: string | null
+  coverFileId?: string | number | null
+  coverUrl?: string | null
+}
+
+export type StudioEpisodeStoryboardPromptReference = {
+  referenceIndex?: number | null
+  referenceType?: number | null
+  referenceTypeName?: string
+  referenceToken: string
+  fileId?: string | number | null
+  fileUrl?: string | null
+  displayName: string
+}
+
+export type StudioEpisodeStoryboardDirectorPrompt = {
+  id?: string | number | null
+  taskId?: string | number | null
+  status?: number | null
+  progress?: number | null
+  textModelId?: number | null
+  videoModelId?: number | null
+  sourceChanged: boolean
+  durationSeconds?: number | null
+  generateAudio?: boolean
+  prompt: string
+  promptCharacters?: number | null
+  maxPromptCharacters?: number | null
+  references: StudioEpisodeStoryboardPromptReference[]
+  warnings: string[]
+  error?: string
+}
+
+export type StudioEpisodeStoryboardReferenceSelection = {
+  revisionNo?: number | null
+  references: StudioEpisodeStoryboardPromptReference[]
+}
+
+export type StudioEpisodeStoryboardSegment = {
+  id: string
+  segmentIndex: number
+  title: string
+  editorDescription: string
+  status?: number | null
+  statusName?: string
+  progress?: number | null
+  taskId?: string | number | null
+  shouldPoll?: boolean
+  canEdit?: boolean
+  error?: string
+  durationSeconds?: number | null
+  manuallyEdited?: boolean
+  manuallyAdded?: boolean
+  revisionNo?: number | null
+  primaryImageId?: string | number | null
+  coverFileId?: string | number | null
+  coverUrl?: string | null
+  shots: StudioEpisodeStoryboardShot[]
+  assetReferences?: StudioEpisodeStoryboardAssetReference[]
+  referenceSelection?: StudioEpisodeStoryboardReferenceSelection | null
+  directorPrompt?: StudioEpisodeStoryboardDirectorPrompt | null
+}
+
+export type StudioEpisodeStoryboardEditorResult = {
+  scriptImportId?: string | number | null
+  episodeId?: string | number | null
+  episodeIndex?: number | null
+  episodeTitle?: string
+  canEnterEditor: boolean
+  shouldPoll: boolean
+  sourceChanged: boolean
+  assetReadiness?: StudioEpisodeStoryboardAssetReadiness
+  storyboard?: StudioEpisodeStoryboardRun | null
+  segments: StudioEpisodeStoryboardSegment[]
+}
+
+export type StudioEpisodeStoryboardSegmentDetailResult = StudioEpisodeStoryboardSegment & {
+  runId?: string | number | null
+  episodeId?: string | number | null
+}
+
+export type StudioEpisodeStoryboardSegmentUpdateRequest = {
+  id: string | number
+  description: string
+}
+
+export type StudioEpisodeStoryboardSegmentInsertRequest = {
+  id: string | number
+  description: string
+}
+
+export type StudioEpisodeStoryboardSegmentDeleteRequest = {
+  id: string | number
+}
+
+export type StudioEpisodeStoryboardSegmentMergeUpRequest = {
+  id: string | number
+  previousSegmentId: string | number
+  previousRevisionNo: number
+  currentRevisionNo: number
+  description: string
+}
+
+export type StudioStoryboardVideoPromptRegenerateRequest = {
+  segmentId: string | number
+}
+
+export type StudioStoryboardVideoPromptRegenerateResult = {
+  id: string | number
+  segmentId?: string | number | null
+  taskId?: string | number | null
+  status?: number | null
+  progress?: number | null
+}
+
+export type StudioStoryboardVideoPromptDetailResult = {
+  id?: string | number | null
+  segmentId?: string | number | null
+  taskId?: string | number | null
+  textModelId?: number | null
+  videoModelId?: number | null
+  status?: number | null
+  progress?: number | null
+  segmentRevision?: number | null
+  sourceChanged: boolean
+  durationSeconds?: number | null
+  generateAudio?: boolean
+  prompt?: string | null
+  promptCharacters?: number | null
+  maxPromptCharacters?: number | null
+  references: StudioEpisodeStoryboardPromptReference[]
+  result?: unknown
+  error?: string
+  usage?: unknown
+  createdAt?: string
+  finishedAt?: string | null
+  stage?: string
+  stageName?: string
+}
+
+export type StudioStoryboardMediaType = 'image' | 'video'
+
+export type StudioStoryboardMediaHistoryItem = {
+  mediaType: StudioStoryboardMediaType
+  id: string
+  segmentId?: string | number | null
+  taskId?: string | number | null
+  versionNo?: number | null
+  modelId?: number | null
+  modelName?: string
+  prompt?: string
+  aspectRatio?: string
+  resolution?: string
+  generateAudio?: boolean
+  visualStyleId?: number | null
+  visualStyleName?: string | null
+  toneStyleId?: number | null
+  toneStyleName?: string | null
+  status?: number | null
+  progress?: number | null
+  outputFileId?: string | number | null
+  outputUrl?: string | null
+  durationSeconds?: number | null
+  primary?: boolean | null
+  createdAt?: string
+  finishedAt?: string
+  itemKey?: string
+  thumbnailUrl?: string | null
+  statusName?: string
+}
+
+export type StudioStoryboardVideoDetailResult = StudioStoryboardMediaHistoryItem & {
+  templateId?: string | number | null
+  providerTaskId?: string | null
+  error?: string
+  creditCost?: number
+  references: StudioEpisodeStoryboardPromptReference[]
 }
 
 export type StudioAssetImageOptionsUpdateRequest = {
@@ -295,6 +632,87 @@ function estimateEpisodeAssetsGenerateCredits(
   })
 }
 
+function estimateStoryboardVideoGenerateCredits(
+  requestBody: StudioStoryboardVideoGenerateEstimateRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'GET',
+    url: '/api/v1/studio/storyboards/videos/generate/estimate',
+    query: requestBody,
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function createStoryboardVideoGenerateTask(
+  requestBody: StudioStoryboardVideoGenerateRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'POST',
+    url: '/api/v1/studio/storyboards/videos/generate',
+    body: requestBody,
+    mediaType: 'application/json',
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function getStoryboardVideoDetail(
+  id: string | number,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'GET',
+    url: '/api/v1/studio/storyboards/videos/detail',
+    query: { id },
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function getStoryboardVideoReferenceOptions(
+  requestBody: StudioStoryboardVideoReferenceOptionsRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'GET',
+    url: '/api/v1/studio/storyboards/videos/references/options',
+    query: requestBody,
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function addStoryboardVideoReferences(
+  requestBody: StudioStoryboardVideoReferenceAddRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'POST',
+    url: '/api/v1/studio/storyboards/videos/references/add',
+    body: requestBody,
+    mediaType: 'application/json',
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function deleteStoryboardVideoReference(
+  requestBody: StudioStoryboardVideoReferenceDeleteRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'POST',
+    url: '/api/v1/studio/storyboards/videos/references/delete',
+    body: requestBody,
+    mediaType: 'application/json',
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
 function createEpisodeAssetsGenerateTask(
   requestBody: StudioEpisodeAssetsGenerateRequest,
 ): CancelablePromise<ApiEnvelope<unknown>> {
@@ -322,6 +740,169 @@ function getEpisodeAssetsGenerateStatus(
     query: episodeId === undefined || episodeId === null || String(episodeId).trim() === ''
       ? query
       : { ...query, episodeId },
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function confirmEpisodeAssets(
+  requestBody: StudioEpisodeAssetsConfirmRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'POST',
+    url: '/api/v1/studio/episodes/assets/confirm',
+    body: requestBody,
+    mediaType: 'application/json',
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function getEpisodeStoryboardEditor(
+  requestBody: StudioEpisodeStoryboardEditorRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'GET',
+    url: '/api/v1/studio/episodes/storyboards/editor',
+    query: requestBody,
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function getEpisodeStoryboardDetail(
+  id: string | number,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'GET',
+    url: '/api/v1/studio/episodes/storyboards/detail',
+    query: { id },
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function getEpisodeStoryboardSegmentDetail(
+  id: string | number,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'GET',
+    url: '/api/v1/studio/episodes/storyboards/segments/detail',
+    query: { id },
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function updateEpisodeStoryboardSegment(
+  requestBody: StudioEpisodeStoryboardSegmentUpdateRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'POST',
+    url: '/api/v1/studio/episodes/storyboards/segments/update',
+    body: requestBody,
+    mediaType: 'application/json',
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function insertEpisodeStoryboardSegmentUp(
+  requestBody: StudioEpisodeStoryboardSegmentInsertRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'POST',
+    url: '/api/v1/studio/episodes/storyboards/segments/insertUp',
+    body: requestBody,
+    mediaType: 'application/json',
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function insertEpisodeStoryboardSegmentDown(
+  requestBody: StudioEpisodeStoryboardSegmentInsertRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'POST',
+    url: '/api/v1/studio/episodes/storyboards/segments/insertDown',
+    body: requestBody,
+    mediaType: 'application/json',
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function deleteEpisodeStoryboardSegment(
+  requestBody: StudioEpisodeStoryboardSegmentDeleteRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'POST',
+    url: '/api/v1/studio/episodes/storyboards/segments/delete',
+    body: requestBody,
+    mediaType: 'application/json',
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function mergeEpisodeStoryboardSegmentUp(
+  requestBody: StudioEpisodeStoryboardSegmentMergeUpRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'POST',
+    url: '/api/v1/studio/episodes/storyboards/segments/mergeUp',
+    body: requestBody,
+    mediaType: 'application/json',
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function regenerateStoryboardVideoPrompt(
+  requestBody: StudioStoryboardVideoPromptRegenerateRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'POST',
+    url: '/api/v1/studio/storyboards/videos/prompts/regenerate',
+    body: requestBody,
+    mediaType: 'application/json',
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function getStoryboardVideoPromptDetail(
+  id: string | number,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'GET',
+    url: '/api/v1/studio/storyboards/videos/prompts/detail',
+    query: { id },
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function getStoryboardMediaHistory(
+  segmentId: string | number,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'GET',
+    url: '/api/v1/studio/storyboards/media/history',
+    query: { segmentId },
     errors: {
       422: 'Validation Error',
     },
@@ -724,6 +1305,30 @@ function normalizeEpisodeAssetsGenerateEstimate(data: unknown): StudioEpisodeAss
   }
 }
 
+function normalizeStoryboardVideoGenerateEstimate(data: unknown): StudioStoryboardVideoGenerateEstimateResult {
+  const record = asRecord(data)
+  return {
+    modelId: normalizeNumberOrNull(record?.modelId ?? record?.model_id),
+    modelName: normalizeHistoryValue(record?.modelName ?? record?.model_name),
+    resolution: normalizeHistoryValue(record?.resolution),
+    durationSeconds: Math.max(
+      0,
+      Math.floor(normalizeFiniteNumber(record?.durationSeconds ?? record?.duration_seconds) ?? 0),
+    ),
+    generateAudio: normalizeHistoryBoolean(record?.generateAudio ?? record?.generate_audio),
+    referenceVideoDurationSeconds: normalizeFiniteNumber(
+      record?.referenceVideoDurationSeconds ?? record?.reference_video_duration_seconds,
+    ),
+    billingUnit: normalizeHistoryValue(record?.billingUnit ?? record?.billing_unit),
+    billableQuantity: normalizeFiniteNumber(record?.billableQuantity ?? record?.billable_quantity),
+    unitCreditCost: normalizeFiniteNumber(record?.unitCreditCost ?? record?.unit_credit_cost),
+    creditCost: normalizeFiniteNumber(record?.creditCost ?? record?.credit_cost) ?? 0,
+    estimated: normalizeHistoryBoolean(record?.estimated),
+    pricingSource: normalizeHistoryValue(record?.pricingSource ?? record?.pricing_source),
+    priceValidUntil: normalizeHistoryValue(record?.priceValidUntil ?? record?.price_valid_until) ?? null,
+  }
+}
+
 function normalizeEpisodeAssetsGenerateStatus(data: unknown): StudioEpisodeAssetsGenerateStatusResult {
   const record = asRecord(data)
   const rows = Array.isArray(record?.items) ? record.items : []
@@ -763,6 +1368,563 @@ function normalizeEpisodeAssetsGenerateStatus(data: unknown): StudioEpisodeAsset
         error: normalizeHistoryValue(item.error),
       }]
     }),
+  }
+}
+
+function normalizeStoryboardAssetReadiness(data: unknown): StudioEpisodeStoryboardAssetReadiness | undefined {
+  const record = asRecord(data)
+  if (!record) return undefined
+  return {
+    totalCount: Math.max(0, Math.floor(normalizeFiniteNumber(record.totalCount ?? record.total_count) ?? 0)),
+    readyCount: Math.max(0, Math.floor(normalizeFiniteNumber(record.readyCount ?? record.ready_count) ?? 0)),
+    generatingCount: Math.max(0, Math.floor(normalizeFiniteNumber(record.generatingCount ?? record.generating_count) ?? 0)),
+    missingCount: Math.max(0, Math.floor(normalizeFiniteNumber(record.missingCount ?? record.missing_count) ?? 0)),
+    failedCount: Math.max(0, Math.floor(normalizeFiniteNumber(record.failedCount ?? record.failed_count) ?? 0)),
+    unconfirmedCount: Math.max(0, Math.floor(normalizeFiniteNumber(record.unconfirmedCount ?? record.unconfirmed_count) ?? 0)),
+  }
+}
+
+function normalizeStoryboardRun(data: unknown): StudioEpisodeStoryboardRun | null {
+  const record = asRecord(data)
+  if (!record) return null
+  return {
+    runId: normalizeHistoryValue(record.runId ?? record.run_id ?? record.id) ?? null,
+    episodeId: normalizeHistoryValue(record.episodeId ?? record.episode_id) ?? null,
+    taskId: normalizeHistoryValue(record.taskId ?? record.task_id) ?? null,
+    status: normalizeNumberOrNull(record.status),
+    statusName: normalizeHistoryValue(record.statusName ?? record.status_name),
+    progress: normalizeNumberOrNull(record.progress),
+    skillStage: normalizeHistoryValue(record.skillStage ?? record.skill_stage),
+    shouldPoll: Boolean(normalizeHistoryBoolean(record.shouldPoll ?? record.should_poll)),
+    canEdit: normalizeHistoryBoolean(record.canEdit ?? record.can_edit),
+    error: normalizeHistoryValue(record.error),
+    createdAt: normalizeHistoryValue(record.createdAt ?? record.created_at),
+    finishedAt: normalizeHistoryValue(record.finishedAt ?? record.finished_at),
+  }
+}
+
+function normalizeStoryboardShots(data: unknown): StudioEpisodeStoryboardShot[] {
+  const rows = Array.isArray(data) ? data : []
+  return rows.flatMap((value, index): StudioEpisodeStoryboardShot[] => {
+    const item = asRecord(value)
+    if (!item) return []
+    return [{
+      id: normalizeHistoryValue(item.id ?? item.shotId ?? item.shot_id) ?? `shot-${index + 1}`,
+      shotIndex: normalizeNumberOrNull(item.shotIndex ?? item.shot_index ?? item.index),
+      title: normalizeHistoryValue(item.title ?? item.name),
+      editorDescription: normalizeHistoryValue(
+        item.editorDescription
+          ?? item.editor_description
+          ?? item.description
+          ?? item.prompt,
+      ),
+      coverFileId: normalizeHistoryValue(item.coverFileId ?? item.cover_file_id ?? item.primaryImageId ?? item.primary_image_id) ?? null,
+      coverUrl: normalizeHistoryValue(item.coverUrl ?? item.cover_url ?? item.imageUrl ?? item.image_url) ?? null,
+    }]
+  })
+}
+
+function normalizeStoryboardAssetReferenceRows(data: unknown): StudioEpisodeStoryboardAssetReference[] {
+  const rows = Array.isArray(data) ? data : []
+  return rows.flatMap((value): StudioEpisodeStoryboardAssetReference[] => {
+    const item = asRecord(value)
+    if (!item) return []
+    const assetName = normalizeHistoryValue(item.assetName ?? item.asset_name ?? item.name)
+    if (!assetName) return []
+    return [{
+      scopeCode: normalizeHistoryValue(item.scopeCode ?? item.scope_code),
+      assetId: normalizeNumberOrNull(item.assetId ?? item.asset_id),
+      assetType: normalizeNumberOrNull(item.assetType ?? item.asset_type),
+      assetName,
+      characterLookId: normalizeNumberOrNull(item.characterLookId ?? item.character_look_id),
+      characterLookName: normalizeHistoryValue(item.characterLookName ?? item.character_look_name) ?? null,
+      coverFileId: normalizeHistoryValue(item.coverFileId ?? item.cover_file_id) ?? null,
+      coverUrl: normalizeHistoryValue(item.coverUrl ?? item.cover_url ?? item.imageUrl ?? item.image_url) ?? null,
+    }]
+  })
+}
+
+function normalizeStoryboardPromptReferences(data: unknown): StudioEpisodeStoryboardPromptReference[] {
+  const rows = Array.isArray(data) ? data : []
+  return rows.flatMap((value, index): StudioEpisodeStoryboardPromptReference[] => {
+    const item = asRecord(value)
+    if (!item) return []
+    const referenceToken = normalizeHistoryValue(
+      item.referenceToken
+        ?? item.reference_token
+        ?? item.token,
+    ) ?? `@图片${index + 1}`
+    const displayName = normalizeHistoryValue(
+      item.displayName
+        ?? item.display_name
+        ?? item.assetName
+        ?? item.asset_name
+        ?? item.name,
+    ) ?? referenceToken
+    return [{
+      referenceIndex: normalizeNumberOrNull(item.referenceIndex ?? item.reference_index ?? item.index),
+      referenceType: normalizeNumberOrNull(item.referenceType ?? item.reference_type ?? item.assetType ?? item.asset_type),
+      referenceTypeName: normalizeHistoryValue(item.referenceTypeName ?? item.reference_type_name),
+      referenceToken,
+      fileId: normalizeHistoryValue(item.fileId ?? item.file_id ?? item.coverFileId ?? item.cover_file_id) ?? null,
+      fileUrl: normalizeHistoryValue(
+        item.fileUrl
+          ?? item.file_url
+          ?? item.coverUrl
+          ?? item.cover_url
+          ?? item.imageUrl
+          ?? item.image_url,
+      ) ?? null,
+      displayName,
+    }]
+  })
+}
+
+function normalizeStoryboardReferenceSelection(data: unknown): StudioEpisodeStoryboardReferenceSelection | null {
+  const record = asRecord(data)
+  if (!record) return null
+  return {
+    revisionNo: normalizeNumberOrNull(record.revisionNo ?? record.revision_no),
+    references: normalizeStoryboardPromptReferences(record.references),
+  }
+}
+
+function normalizeStoryboardVideoReferenceOptionSource(
+  value: unknown,
+  fallback: StudioStoryboardVideoReferenceOptionSource,
+): StudioStoryboardVideoReferenceOptionSource {
+  const source = normalizeHistoryValue(value)
+  if (source === 'character' || source === 'scene' || source === 'prop' || source === 'dubbing') {
+    return source
+  }
+  return fallback
+}
+
+function normalizeStoryboardVideoReferenceOptions(
+  data: unknown,
+  fallbackSource: StudioStoryboardVideoReferenceOptionSource,
+): StudioStoryboardVideoReferenceOption[] {
+  const record = asRecord(data)
+  const referenceSelectionRecord = asRecord(record?.referenceSelection ?? record?.reference_selection)
+  const referenceSelection = normalizeStoryboardReferenceSelection(referenceSelectionRecord)
+  const rows = Array.isArray(data)
+    ? data
+    : Array.isArray(record?.options)
+      ? record.options as unknown[]
+      : Array.isArray(record?.references)
+        ? record.references as unknown[]
+        : Array.isArray(referenceSelectionRecord?.references)
+          ? referenceSelectionRecord.references as unknown[]
+          : extractHistoryRows(data)
+
+  return rows.flatMap((value): StudioStoryboardVideoReferenceOption[] => {
+    const item = asRecord(value)
+    if (!item) return []
+    const source = normalizeStoryboardVideoReferenceOptionSource(item.source, fallbackSource)
+    const itemReferenceSelection = normalizeStoryboardReferenceSelection(item.referenceSelection ?? item.reference_selection)
+    const displayName = normalizeHistoryValue(
+      item.displayName
+        ?? item.display_name
+        ?? item.characterName
+        ?? item.character_name
+        ?? item.assetName
+        ?? item.asset_name
+        ?? item.voiceName
+        ?? item.voice_name
+        ?? item.name,
+    )
+    if (!displayName) return []
+    return [{
+      source,
+      referenceType: normalizeNumberOrNull(item.referenceType ?? item.reference_type),
+      fileId: normalizeHistoryValue(item.fileId ?? item.file_id ?? item.coverFileId ?? item.cover_file_id) ?? null,
+      fileUrl: normalizeHistoryValue(
+        item.fileUrl
+          ?? item.file_url
+          ?? item.coverUrl
+          ?? item.cover_url
+          ?? item.imageUrl
+          ?? item.image_url,
+      ) ?? null,
+      displayName,
+      assetId: normalizeHistoryValue(item.assetId ?? item.asset_id) ?? null,
+      characterLookId: normalizeHistoryValue(item.characterLookId ?? item.character_look_id) ?? null,
+      sourceSegmentId: normalizeHistoryValue(item.sourceSegmentId ?? item.source_segment_id) ?? null,
+      durationSeconds: normalizeNumberOrNull(item.durationSeconds ?? item.duration_seconds),
+      audioSource: normalizeHistoryValue(item.audioSource ?? item.audio_source) ?? null,
+      voiceId: normalizeHistoryValue(item.voiceId ?? item.voice_id) ?? null,
+      voiceName: normalizeHistoryValue(item.voiceName ?? item.voice_name) ?? null,
+      characterName: normalizeHistoryValue(item.characterName ?? item.character_name) ?? null,
+      dubbingGenerationId: normalizeHistoryValue(item.dubbingGenerationId ?? item.dubbing_generation_id) ?? null,
+      characterLookName: normalizeHistoryValue(item.characterLookName ?? item.character_look_name) ?? null,
+      defaultLook: normalizeHistoryBoolean(item.defaultLook ?? item.default_look),
+      selected: Boolean(normalizeHistoryBoolean(item.selected)),
+      referenceIndex: normalizeNumberOrNull(item.referenceIndex ?? item.reference_index),
+      referenceSelectionRevisionNo: itemReferenceSelection?.revisionNo
+        ?? referenceSelection?.revisionNo
+        ?? normalizeNumberOrNull(item.referenceSelectionRevisionNo ?? item.reference_selection_revision_no),
+      selectable: normalizeHistoryBoolean(item.selectable) ?? true,
+      disabledReason: normalizeHistoryValue(item.disabledReason ?? item.disabled_reason) ?? null,
+      historical: normalizeHistoryBoolean(item.historical),
+      assetName: normalizeHistoryValue(item.assetName ?? item.asset_name) ?? null,
+      lookName: normalizeHistoryValue(item.lookName ?? item.look_name) ?? null,
+    }]
+  })
+}
+
+function normalizeStoryboardVideoReferenceDelete(data: unknown): StudioStoryboardVideoReferenceDeleteResult | null {
+  const record = asRecord(data)
+  if (!record) return null
+  const referenceSelection = normalizeStoryboardReferenceSelection(record.referenceSelection ?? record.reference_selection)
+  return {
+    segmentId: normalizeHistoryValue(record.segmentId ?? record.segment_id) ?? null,
+    revisionNo: referenceSelection?.revisionNo ?? null,
+  }
+}
+
+function normalizeStoryboardDirectorPrompt(data: unknown): StudioEpisodeStoryboardDirectorPrompt | null {
+  const record = asRecord(data)
+  if (!record) return null
+  return {
+    id: normalizeHistoryValue(record.id) ?? null,
+    taskId: normalizeHistoryValue(record.taskId ?? record.task_id) ?? null,
+    status: normalizeNumberOrNull(record.status),
+    progress: normalizeNumberOrNull(record.progress),
+    textModelId: normalizeNumberOrNull(record.textModelId ?? record.text_model_id),
+    videoModelId: normalizeNumberOrNull(record.videoModelId ?? record.video_model_id),
+    sourceChanged: Boolean(normalizeHistoryBoolean(record.sourceChanged ?? record.source_changed)),
+    durationSeconds: normalizeNumberOrNull(record.durationSeconds ?? record.duration_seconds),
+    generateAudio: normalizeHistoryBoolean(record.generateAudio ?? record.generate_audio),
+    prompt: normalizeHistoryValue(record.prompt) ?? '',
+    promptCharacters: normalizeNumberOrNull(record.promptCharacters ?? record.prompt_characters),
+    maxPromptCharacters: normalizeNumberOrNull(record.maxPromptCharacters ?? record.max_prompt_characters),
+    references: normalizeStoryboardPromptReferences(record.references),
+    warnings: normalizeStringList(record.warnings),
+    error: normalizeHistoryValue(record.error),
+  }
+}
+
+function normalizeStoryboardVideoPromptRegenerate(data: unknown): StudioStoryboardVideoPromptRegenerateResult {
+  const record = asRecord(data)
+  const rawId = typeof data === 'string' || typeof data === 'number'
+    ? data
+    : record?.id ?? record?.promptId ?? record?.prompt_id ?? record?.directorPromptId ?? record?.director_prompt_id
+  const id = normalizeHistoryValue(rawId)
+  if (!id) throw new Error('Storyboard video prompt regenerate returned no id')
+  return {
+    id: /^\d+$/.test(id) ? Number(id) : id,
+    segmentId: normalizeHistoryValue(record?.segmentId ?? record?.segment_id) ?? null,
+    taskId: normalizeHistoryValue(record?.taskId ?? record?.task_id) ?? null,
+    status: normalizeNumberOrNull(record?.status),
+    progress: normalizeNumberOrNull(record?.progress),
+  }
+}
+
+function normalizeStoryboardVideoPromptDetail(data: unknown): StudioStoryboardVideoPromptDetailResult {
+  const record = asRecord(data)
+  const resultRecord = asRecord(record?.result)
+  const prompt = normalizeHistoryValue(record?.prompt ?? resultRecord?.prompt ?? record?.result) ?? null
+  return {
+    id: normalizeHistoryValue(record?.id) ?? null,
+    segmentId: normalizeHistoryValue(record?.segmentId ?? record?.segment_id) ?? null,
+    taskId: normalizeHistoryValue(record?.taskId ?? record?.task_id) ?? null,
+    textModelId: normalizeNumberOrNull(record?.textModelId ?? record?.text_model_id),
+    videoModelId: normalizeNumberOrNull(record?.videoModelId ?? record?.video_model_id),
+    status: normalizeNumberOrNull(record?.status),
+    progress: normalizeNumberOrNull(record?.progress),
+    segmentRevision: normalizeNumberOrNull(record?.segmentRevision ?? record?.segment_revision),
+    sourceChanged: Boolean(normalizeHistoryBoolean(record?.sourceChanged ?? record?.source_changed)),
+    durationSeconds: normalizeNumberOrNull(record?.durationSeconds ?? record?.duration_seconds),
+    generateAudio: normalizeHistoryBoolean(record?.generateAudio ?? record?.generate_audio),
+    prompt,
+    promptCharacters: normalizeNumberOrNull(record?.promptCharacters ?? record?.prompt_characters),
+    maxPromptCharacters: normalizeNumberOrNull(record?.maxPromptCharacters ?? record?.max_prompt_characters),
+    references: normalizeStoryboardPromptReferences(record?.references),
+    result: record?.result,
+    error: normalizeHistoryValue(record?.error),
+    usage: record?.usage,
+    createdAt: normalizeHistoryValue(record?.createdAt ?? record?.created_at),
+    finishedAt: normalizeHistoryValue(record?.finishedAt ?? record?.finished_at) ?? null,
+    stage: normalizeHistoryValue(record?.stage),
+    stageName: normalizeHistoryValue(record?.stageName ?? record?.stage_name),
+  }
+}
+
+function extractStoryboardSegmentRows(data: unknown): unknown[] {
+  if (Array.isArray(data)) return data
+  const record = asRecord(data)
+  if (!record) return []
+  for (const key of ['segments', 'list', 'items', 'storyboardSegments', 'storyboard_segments']) {
+    if (Array.isArray(record[key])) return record[key] as unknown[]
+  }
+  const nestedSegment = asRecord(record.segment ?? record.storyboardSegment ?? record.storyboard_segment)
+  if (nestedSegment) {
+    return [{
+      ...nestedSegment,
+      shots: nestedSegment.shots ?? nestedSegment.lens ?? record.shots ?? record.lens,
+    }]
+  }
+  if (
+    record.id !== undefined
+    && (
+      record.segmentIndex !== undefined
+      || record.segment_index !== undefined
+      || record.editorDescription !== undefined
+      || record.editor_description !== undefined
+    )
+  ) return [record]
+  return []
+}
+
+function normalizeStoryboardSegments(data: unknown): StudioEpisodeStoryboardSegment[] {
+  return extractStoryboardSegmentRows(data).flatMap((value, index): StudioEpisodeStoryboardSegment[] => {
+    const item = asRecord(value)
+    if (!item) return []
+    const segmentIndex = Math.max(
+      1,
+      Math.floor(normalizeFiniteNumber(item.segmentIndex ?? item.segment_index ?? item.index) ?? (index + 1)),
+    )
+    const id = normalizeHistoryValue(item.id ?? item.segmentId ?? item.segment_id) ?? `segment-${segmentIndex}`
+    return [{
+      id,
+      segmentIndex,
+      title: normalizeHistoryValue(item.title ?? item.name) ?? `片段-${segmentIndex}`,
+      editorDescription: normalizeHistoryValue(
+        item.editorDescription
+          ?? item.editor_description
+          ?? item.description
+          ?? item.prompt,
+      ) ?? '',
+      status: normalizeNumberOrNull(item.status),
+      statusName: normalizeHistoryValue(item.statusName ?? item.status_name),
+      progress: normalizeNumberOrNull(item.progress),
+      taskId: normalizeHistoryValue(item.taskId ?? item.task_id) ?? null,
+      shouldPoll: normalizeHistoryBoolean(item.shouldPoll ?? item.should_poll),
+      canEdit: normalizeHistoryBoolean(item.canEdit ?? item.can_edit),
+      error: normalizeHistoryValue(item.error),
+      durationSeconds: normalizeNumberOrNull(item.durationSeconds ?? item.duration_seconds),
+      manuallyEdited: normalizeHistoryBoolean(item.manuallyEdited ?? item.manually_edited),
+      manuallyAdded: normalizeHistoryBoolean(
+        item.manuallyAdded
+          ?? item.manually_added
+          ?? item.manualAdded
+          ?? item.manual_added
+          ?? item.createdManually
+          ?? item.created_manually
+          ?? item.insertedManually
+          ?? item.inserted_manually,
+      ),
+      revisionNo: normalizeNumberOrNull(item.revisionNo ?? item.revision_no),
+      primaryImageId: normalizeHistoryValue(item.primaryImageId ?? item.primary_image_id) ?? null,
+      coverFileId: normalizeHistoryValue(item.coverFileId ?? item.cover_file_id) ?? null,
+      coverUrl: normalizeHistoryValue(item.coverUrl ?? item.cover_url ?? item.imageUrl ?? item.image_url) ?? null,
+      shots: normalizeStoryboardShots(item.shots ?? item.lens ?? item.items),
+      assetReferences: normalizeStoryboardAssetReferenceRows(item.assetReferences ?? item.asset_references),
+      referenceSelection: normalizeStoryboardReferenceSelection(item.referenceSelection ?? item.reference_selection),
+      directorPrompt: normalizeStoryboardDirectorPrompt(item.directorPrompt ?? item.director_prompt),
+    }]
+  })
+}
+
+function normalizeEpisodeStoryboardEditor(data: unknown): StudioEpisodeStoryboardEditorResult {
+  const record = asRecord(data)
+  const source = asRecord(record?.editor) ?? record
+  const storyboardRecord = asRecord(source?.storyboard ?? source?.run)
+  const segments = normalizeStoryboardSegments(source)
+  const storyboardSegments = segments.length > 0
+    ? segments
+    : normalizeStoryboardSegments(storyboardRecord?.segments ?? storyboardRecord)
+  const storyboard = normalizeStoryboardRun(source?.storyboard ?? source?.run ?? source)
+  const canEnterEditor = normalizeHistoryBoolean(source?.canEnterEditor ?? source?.can_enter_editor)
+  const shouldPoll = normalizeHistoryBoolean(source?.shouldPoll ?? source?.should_poll)
+    ?? storyboard?.shouldPoll
+    ?? false
+  return {
+    scriptImportId: normalizeHistoryValue(source?.scriptImportId ?? source?.script_import_id) ?? null,
+    episodeId: normalizeHistoryValue(source?.episodeId ?? source?.episode_id ?? source?.chapterId ?? source?.chapter_id) ?? null,
+    episodeIndex: normalizeNumberOrNull(source?.episodeIndex ?? source?.episode_index),
+    episodeTitle: normalizeHistoryValue(source?.episodeTitle ?? source?.episode_title ?? source?.title),
+    canEnterEditor: canEnterEditor ?? storyboardSegments.length > 0,
+    shouldPoll,
+    sourceChanged: Boolean(normalizeHistoryBoolean(source?.sourceChanged ?? source?.source_changed)),
+    assetReadiness: normalizeStoryboardAssetReadiness(source?.assetReadiness ?? source?.asset_readiness),
+    storyboard,
+    segments: storyboardSegments,
+  }
+}
+
+function normalizeEpisodeAssetsConfirm(data: unknown): StudioEpisodeAssetsConfirmResult {
+  const record = asRecord(data)
+  const editorRecord = asRecord(record?.editor)
+  const storyboardRecord = asRecord(
+    record?.storyboard
+      ?? record?.run
+      ?? editorRecord?.storyboard
+      ?? editorRecord?.run,
+  )
+  const runId = normalizeHistoryValue(
+    record?.runId
+      ?? record?.run_id
+      ?? storyboardRecord?.runId
+      ?? storyboardRecord?.run_id
+      ?? storyboardRecord?.id,
+  )
+  return {
+    currentStep: normalizeNumberOrNull(record?.currentStep ?? record?.current_step),
+    runId: runId ?? null,
+    editor: editorRecord ? normalizeEpisodeStoryboardEditor(editorRecord) : null,
+  }
+}
+
+function normalizeEpisodeStoryboardSegmentDetail(data: unknown): StudioEpisodeStoryboardSegmentDetailResult {
+  const record = asRecord(data)
+  const [segment] = normalizeStoryboardSegments(data)
+  const fallbackSegmentIndex = normalizeNumberOrNull(record?.segmentIndex ?? record?.segment_index) ?? 1
+  const normalizedSegment: StudioEpisodeStoryboardSegment = segment ?? {
+    id: normalizeHistoryValue(record?.id ?? record?.segmentId ?? record?.segment_id) ?? `segment-${fallbackSegmentIndex}`,
+    segmentIndex: fallbackSegmentIndex,
+    title: normalizeHistoryValue(record?.title ?? record?.name) ?? `片段-${fallbackSegmentIndex}`,
+    editorDescription: normalizeHistoryValue(record?.editorDescription ?? record?.editor_description ?? record?.description) ?? '',
+    status: normalizeNumberOrNull(record?.status),
+    statusName: normalizeHistoryValue(record?.statusName ?? record?.status_name),
+    progress: normalizeNumberOrNull(record?.progress),
+    taskId: normalizeHistoryValue(record?.taskId ?? record?.task_id) ?? null,
+    shouldPoll: normalizeHistoryBoolean(record?.shouldPoll ?? record?.should_poll),
+    canEdit: normalizeHistoryBoolean(record?.canEdit ?? record?.can_edit),
+    error: normalizeHistoryValue(record?.error),
+    durationSeconds: normalizeNumberOrNull(record?.durationSeconds ?? record?.duration_seconds),
+    manuallyEdited: normalizeHistoryBoolean(record?.manuallyEdited ?? record?.manually_edited),
+    manuallyAdded: normalizeHistoryBoolean(
+      record?.manuallyAdded
+        ?? record?.manually_added
+        ?? record?.manualAdded
+        ?? record?.manual_added
+        ?? record?.createdManually
+        ?? record?.created_manually
+        ?? record?.insertedManually
+        ?? record?.inserted_manually,
+    ),
+    revisionNo: normalizeNumberOrNull(record?.revisionNo ?? record?.revision_no),
+    primaryImageId: normalizeHistoryValue(record?.primaryImageId ?? record?.primary_image_id) ?? null,
+    coverFileId: normalizeHistoryValue(record?.coverFileId ?? record?.cover_file_id) ?? null,
+    coverUrl: normalizeHistoryValue(record?.coverUrl ?? record?.cover_url ?? record?.imageUrl ?? record?.image_url) ?? null,
+    shots: normalizeStoryboardShots(record?.shots ?? record?.lens ?? record?.items),
+    assetReferences: normalizeStoryboardAssetReferenceRows(record?.assetReferences ?? record?.asset_references),
+    referenceSelection: normalizeStoryboardReferenceSelection(record?.referenceSelection ?? record?.reference_selection),
+    directorPrompt: normalizeStoryboardDirectorPrompt(record?.directorPrompt ?? record?.director_prompt),
+  }
+  const referenceSelection = normalizeStoryboardReferenceSelection(record?.referenceSelection ?? record?.reference_selection)
+  return {
+    ...normalizedSegment,
+    referenceSelection: referenceSelection ?? normalizedSegment.referenceSelection ?? null,
+    runId: normalizeHistoryValue(record?.runId ?? record?.run_id) ?? null,
+    episodeId: normalizeHistoryValue(record?.episodeId ?? record?.episode_id) ?? null,
+  }
+}
+
+function normalizeStoryboardMediaType(mediaType: unknown, outputUrl?: string | null): StudioStoryboardMediaType {
+  const normalizedType = normalizeHistoryValue(mediaType)?.toLocaleLowerCase()
+  if (normalizedType?.includes('video')) return 'video'
+  if (normalizedType?.includes('image') || normalizedType?.includes('picture')) return 'image'
+  const normalizedUrl = outputUrl?.toLocaleLowerCase() ?? ''
+  if (/\.(mp4|webm|mov|m4v|m3u8)(?:[?#]|$)/.test(normalizedUrl)) return 'video'
+  return 'image'
+}
+
+function normalizeStoryboardMediaHistory(data: unknown): StudioStoryboardMediaHistoryItem[] {
+  const rows = Array.isArray(data)
+    ? data
+    : Array.isArray(asRecord(data)?.list)
+      ? asRecord(data)?.list as unknown[]
+      : Array.isArray(asRecord(data)?.items)
+        ? asRecord(data)?.items as unknown[]
+        : Array.isArray(asRecord(data)?.records)
+          ? asRecord(data)?.records as unknown[]
+          : []
+
+  return rows.flatMap((value, index): StudioStoryboardMediaHistoryItem[] => {
+    const item = asRecord(value)
+    if (!item) return []
+    const outputUrl = normalizeHistoryValue(
+      item.outputUrl
+        ?? item.output_url
+        ?? item.url
+        ?? item.fileUrl
+        ?? item.file_url
+        ?? item.imageUrl
+        ?? item.image_url
+        ?? item.videoUrl
+        ?? item.video_url,
+    ) ?? null
+    const id = normalizeHistoryValue(item.id)
+      ?? normalizeHistoryValue(item.itemKey ?? item.item_key)
+      ?? normalizeHistoryValue(item.outputFileId ?? item.output_file_id)
+      ?? `storyboard-media-${index + 1}`
+
+    return [{
+      mediaType: normalizeStoryboardMediaType(item.mediaType ?? item.media_type ?? item.type, outputUrl),
+      id,
+      segmentId: normalizeHistoryValue(item.segmentId ?? item.segment_id) ?? null,
+      taskId: normalizeHistoryValue(item.taskId ?? item.task_id) ?? null,
+      versionNo: normalizeNumberOrNull(item.versionNo ?? item.version_no),
+      modelId: normalizeNumberOrNull(item.modelId ?? item.model_id),
+      modelName: normalizeHistoryValue(item.modelName ?? item.model_name),
+      prompt: normalizeHistoryValue(item.prompt),
+      aspectRatio: normalizeHistoryValue(item.aspectRatio ?? item.aspect_ratio),
+      resolution: normalizeHistoryValue(item.resolution),
+      generateAudio: normalizeHistoryBoolean(item.generateAudio ?? item.generate_audio),
+      visualStyleId: normalizeNumberOrNull(item.visualStyleId ?? item.visual_style_id),
+      visualStyleName: normalizeHistoryValue(item.visualStyleName ?? item.visual_style_name) ?? null,
+      toneStyleId: normalizeNumberOrNull(item.toneStyleId ?? item.tone_style_id),
+      toneStyleName: normalizeHistoryValue(item.toneStyleName ?? item.tone_style_name) ?? null,
+      status: normalizeNumberOrNull(item.status),
+      progress: normalizeNumberOrNull(item.progress),
+      outputFileId: normalizeHistoryValue(item.outputFileId ?? item.output_file_id ?? item.fileId ?? item.file_id) ?? null,
+      outputUrl,
+      durationSeconds: normalizeNumberOrNull(item.durationSeconds ?? item.duration_seconds),
+      primary: normalizeHistoryBoolean(item.primary),
+      createdAt: normalizeHistoryValue(item.createdAt ?? item.created_at),
+      finishedAt: normalizeHistoryValue(item.finishedAt ?? item.finished_at),
+      itemKey: normalizeHistoryValue(item.itemKey ?? item.item_key),
+      thumbnailUrl: normalizeHistoryValue(item.thumbnailUrl ?? item.thumbnail_url ?? item.coverUrl ?? item.cover_url) ?? null,
+      statusName: normalizeHistoryValue(item.statusName ?? item.status_name),
+    }]
+  })
+}
+
+function normalizeStoryboardVideoDetail(data: unknown): StudioStoryboardVideoDetailResult {
+  const item = asRecord(data)
+  const [normalizedMedia] = normalizeStoryboardMediaHistory(item ? [{ ...item, mediaType: 'video' }] : [])
+  const id = normalizedMedia?.id
+    ?? normalizeHistoryValue(item?.id)
+    ?? normalizeHistoryValue(item?.itemKey ?? item?.item_key)
+    ?? 'storyboard-video'
+
+  return {
+    ...(normalizedMedia ?? {
+      mediaType: 'video' as const,
+      id,
+      segmentId: null,
+      taskId: null,
+      versionNo: null,
+      modelId: null,
+      prompt: '',
+      generateAudio: false,
+      status: null,
+      progress: null,
+      outputFileId: null,
+      outputUrl: null,
+      durationSeconds: null,
+      primary: null,
+      thumbnailUrl: null,
+    }),
+    mediaType: 'video',
+    id,
+    templateId: normalizeHistoryValue(item?.templateId ?? item?.template_id) ?? null,
+    providerTaskId: normalizeHistoryValue(item?.providerTaskId ?? item?.provider_task_id) ?? null,
+    error: normalizeHistoryValue(item?.error) ?? '',
+    creditCost: normalizeFiniteNumber(item?.creditCost ?? item?.credit_cost),
+    references: normalizeStoryboardPromptReferences(item?.references),
   }
 }
 
@@ -902,6 +2064,284 @@ export const StudioAssetGenerationApi = {
           throw Object.assign(new Error(response.message || 'Episode assets generation status loading failed'), { status: response.code })
         }
         return normalizeEpisodeAssetsGenerateStatus(response.data)
+      }),
+    }
+  },
+
+  requestEpisodeAssetsConfirm(
+    requestBody: StudioEpisodeAssetsConfirmRequest,
+  ): StudioAssetImageTaskRequest<StudioEpisodeAssetsConfirmResult> {
+    const request = confirmEpisodeAssets(requestBody)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw new Error(response.message || 'Episode assets confirmation failed')
+        }
+        return normalizeEpisodeAssetsConfirm(response.data)
+      }),
+    }
+  },
+
+  requestEpisodeStoryboardEditor(
+    requestBody: StudioEpisodeStoryboardEditorRequest,
+  ): StudioAssetImageTaskRequest<StudioEpisodeStoryboardEditorResult> {
+    const request = getEpisodeStoryboardEditor(requestBody)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw new Error(response.message || 'Episode storyboard editor loading failed')
+        }
+        return normalizeEpisodeStoryboardEditor(response.data)
+      }),
+    }
+  },
+
+  requestEpisodeStoryboardDetail(
+    id: string | number,
+  ): StudioAssetImageTaskRequest<StudioEpisodeStoryboardEditorResult> {
+    const request = getEpisodeStoryboardDetail(id)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw new Error(response.message || 'Episode storyboard detail loading failed')
+        }
+        return normalizeEpisodeStoryboardEditor(response.data)
+      }),
+    }
+  },
+
+  requestEpisodeStoryboardSegmentDetail(
+    id: string | number,
+  ): StudioAssetImageTaskRequest<StudioEpisodeStoryboardSegmentDetailResult> {
+    const request = getEpisodeStoryboardSegmentDetail(id)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw new Error(response.message || 'Episode storyboard segment detail loading failed')
+        }
+        return normalizeEpisodeStoryboardSegmentDetail(response.data)
+      }),
+    }
+  },
+
+  requestEpisodeStoryboardSegmentUpdate(
+    requestBody: StudioEpisodeStoryboardSegmentUpdateRequest,
+  ): StudioAssetImageTaskRequest<StudioEpisodeStoryboardSegmentDetailResult | null> {
+    const request = updateEpisodeStoryboardSegment(requestBody)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw new Error(response.message || 'Episode storyboard segment update failed')
+        }
+        return response.data === undefined || response.data === null
+          ? null
+          : normalizeEpisodeStoryboardSegmentDetail(response.data)
+      }),
+    }
+  },
+
+  requestEpisodeStoryboardSegmentInsertUp(
+    requestBody: StudioEpisodeStoryboardSegmentInsertRequest,
+  ): StudioAssetImageTaskRequest<StudioEpisodeStoryboardSegmentDetailResult | null> {
+    const request = insertEpisodeStoryboardSegmentUp(requestBody)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw new Error(response.message || 'Episode storyboard segment insertion failed')
+        }
+        return response.data === undefined || response.data === null
+          ? null
+          : normalizeEpisodeStoryboardSegmentDetail(response.data)
+      }),
+    }
+  },
+
+  requestEpisodeStoryboardSegmentInsertDown(
+    requestBody: StudioEpisodeStoryboardSegmentInsertRequest,
+  ): StudioAssetImageTaskRequest<StudioEpisodeStoryboardSegmentDetailResult | null> {
+    const request = insertEpisodeStoryboardSegmentDown(requestBody)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw new Error(response.message || 'Episode storyboard segment insertion failed')
+        }
+        return response.data === undefined || response.data === null
+          ? null
+          : normalizeEpisodeStoryboardSegmentDetail(response.data)
+      }),
+    }
+  },
+
+  requestEpisodeStoryboardSegmentDelete(
+    requestBody: StudioEpisodeStoryboardSegmentDeleteRequest,
+  ): StudioAssetImageTaskRequest<null> {
+    const request = deleteEpisodeStoryboardSegment(requestBody)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw new Error(response.message || 'Episode storyboard segment deletion failed')
+        }
+        return null
+      }),
+    }
+  },
+
+  requestEpisodeStoryboardSegmentMergeUp(
+    requestBody: StudioEpisodeStoryboardSegmentMergeUpRequest,
+  ): StudioAssetImageTaskRequest<StudioEpisodeStoryboardSegmentDetailResult | null> {
+    const request = mergeEpisodeStoryboardSegmentUp(requestBody)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw new Error(response.message || 'Episode storyboard segment merge failed')
+        }
+        return response.data === undefined || response.data === null
+          ? null
+          : normalizeEpisodeStoryboardSegmentDetail(response.data)
+      }),
+    }
+  },
+
+  requestStoryboardVideoPromptRegenerate(
+    requestBody: StudioStoryboardVideoPromptRegenerateRequest,
+  ): StudioAssetImageTaskRequest<StudioStoryboardVideoPromptRegenerateResult> {
+    const request = regenerateStoryboardVideoPrompt(requestBody)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw new Error(response.message || 'Storyboard video prompt regenerate failed')
+        }
+        return normalizeStoryboardVideoPromptRegenerate(response.data)
+      }),
+    }
+  },
+
+  requestStoryboardVideoPromptDetail(
+    id: string | number,
+  ): StudioAssetImageTaskRequest<StudioStoryboardVideoPromptDetailResult> {
+    const request = getStoryboardVideoPromptDetail(id)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw new Error(response.message || 'Storyboard video prompt detail loading failed')
+        }
+        return normalizeStoryboardVideoPromptDetail(response.data)
+      }),
+    }
+  },
+
+  requestStoryboardMediaHistory(
+    segmentId: string | number,
+  ): StudioAssetImageTaskRequest<StudioStoryboardMediaHistoryItem[]> {
+    const request = getStoryboardMediaHistory(segmentId)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw new Error(response.message || 'Storyboard media history loading failed')
+        }
+        return normalizeStoryboardMediaHistory(response.data)
+      }),
+    }
+  },
+
+  requestStoryboardVideoGenerateEstimate(
+    requestBody: StudioStoryboardVideoGenerateEstimateRequest,
+  ): StudioAssetImageTaskRequest<StudioStoryboardVideoGenerateEstimateResult> {
+    const request = estimateStoryboardVideoGenerateCredits(requestBody)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw new Error(response.message || 'Storyboard video generation estimate failed')
+        }
+        return normalizeStoryboardVideoGenerateEstimate(response.data)
+      }),
+    }
+  },
+
+  requestStoryboardVideoGenerate(
+    requestBody: StudioStoryboardVideoGenerateRequest,
+  ): StudioAssetImageTaskRequest<StudioStoryboardVideoDetailResult> {
+    const request = createStoryboardVideoGenerateTask(requestBody)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw new Error(response.message || 'Storyboard video generation failed')
+        }
+        return normalizeStoryboardVideoDetail(response.data)
+      }),
+    }
+  },
+
+  requestStoryboardVideoDetail(
+    id: string | number,
+  ): StudioAssetImageTaskRequest<StudioStoryboardVideoDetailResult> {
+    const request = getStoryboardVideoDetail(id)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw new Error(response.message || 'Storyboard video detail loading failed')
+        }
+        return normalizeStoryboardVideoDetail(response.data)
+      }),
+    }
+  },
+
+  requestStoryboardVideoReferenceOptions(
+    requestBody: StudioStoryboardVideoReferenceOptionsRequest,
+  ): StudioAssetImageTaskRequest<StudioStoryboardVideoReferenceOption[]> {
+    const request = getStoryboardVideoReferenceOptions(requestBody)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw new Error(response.message || 'Storyboard video reference options loading failed')
+        }
+        return normalizeStoryboardVideoReferenceOptions(response.data, requestBody.source)
+      }),
+    }
+  },
+
+  requestStoryboardVideoReferenceAdd(
+    requestBody: StudioStoryboardVideoReferenceAddRequest,
+  ): StudioAssetImageTaskRequest<StudioStoryboardVideoReferenceAddResult | null> {
+    const request = addStoryboardVideoReferences(requestBody)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw new Error(response.message || 'Storyboard video reference addition failed')
+        }
+        return normalizeStoryboardVideoReferenceDelete(response.data)
+      }),
+    }
+  },
+
+  requestStoryboardVideoReferenceDelete(
+    requestBody: StudioStoryboardVideoReferenceDeleteRequest,
+  ): StudioAssetImageTaskRequest<StudioStoryboardVideoReferenceDeleteResult | null> {
+    const request = deleteStoryboardVideoReference(requestBody)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw new Error(response.message || 'Storyboard video reference deletion failed')
+        }
+        return normalizeStoryboardVideoReferenceDelete(response.data)
       }),
     }
   },
