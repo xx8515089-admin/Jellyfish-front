@@ -13,7 +13,13 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { getStoredAuthUser } from '../../../auth'
 import { getApiErrorMessage } from '../../../services/apiErrors'
 import { StudioScriptsApi } from '../../../services/studioScripts'
-import { StudioAssetGenerationApi, type StudioAssetImageTaskRequest, type StudioEpisodeAssetsGenerateStatusResult } from '../../../services/studioAssetGeneration'
+import {
+  StudioAssetGenerationApi,
+  type StudioAssetImageTaskRequest,
+  type StudioEpisodeStoryboardEditorResult,
+  type StudioEpisodeAssetsConfirmResult,
+  type StudioEpisodeAssetsGenerateStatusResult,
+} from '../../../services/studioAssetGeneration'
 import type {
   StudioScriptAssetEpisode,
   StudioScriptAssetEpisodeListRequest,
@@ -31,7 +37,8 @@ import { useStudioStyleOptions } from './useStudioStyleOptions'
 import CustomStyleModal from './CustomStyleModal'
 import type { CustomStyleDraft } from './CustomStyleModal'
 import ProjectAssetsStep from './ProjectAssetsStep'
-import ProjectClipEditingStep from './ProjectClipEditingStep'
+import ProjectClipEditingStep, { type ClipDraft } from './ProjectClipEditingStep'
+import { resolveAssetUrl } from '../assets/utils'
 import {
   PROJECT_CREATION_DRAFT_KEYS,
   clearProjectCreationDrafts,
@@ -58,6 +65,9 @@ const RECOMMENDED_SCRIPT_LENGTH = 50
 const FALLBACK_RATIOS = ['9:16', '4:3', '16:9', '3:4', '1:1', '21:9']
 const SCRIPT_IMPORT_ACCEPT = '.txt,.md,.doc,.docx'
 const VISUAL_STYLE_NAMES_SESSION_KEY_PREFIX = 'jellyfish:studio:visual-style-names'
+const STORYBOARD_RESTORE_POINT_STORAGE_KEY_PREFIX = 'jellyfish:project-creation:v2:storyboard-restore-point'
+const STORYBOARD_RESTORE_POINT_TTL_MS = 24 * 60 * 60 * 1000
+const STORYBOARD_POLL_INTERVAL_MS = 3000
 type StyleCategoryKey = 'visual' | 'tone'
 type StylePreview = 'empty' | 'online'
 type EpisodeDraft = {
@@ -79,6 +89,8 @@ type ProjectCreateDraft = {
   importedFileType?: string
   aiModelId?: StudioScriptImportId | null
   scriptImportId: StudioScriptImportId | null
+  storyboardEpisodeId?: string | null
+  storyboardRunId?: string | number | null
   selectedStyleKeys: Partial<Record<StyleCategoryKey, string>>
   selectedStyleNames?: Partial<Record<StyleCategoryKey, string>>
   targetMarket: string
@@ -87,6 +99,12 @@ type ProjectCreateRouteState = {
   scriptImport?: StudioScriptImportListItem
   scriptImportDetail?: StudioScriptParseResult
   chapters?: StudioScriptParseChapter[]
+}
+type StoryboardRestorePointSnapshot = {
+  scriptImportId: StudioScriptImportId
+  episodeId: string
+  runId: StudioScriptImportId
+  updatedAt: number
 }
 type PendingChapterCreation = {
   scriptImportId: string
@@ -350,6 +368,233 @@ const resolveStyleSelectionKey = (
   return getDefaultDisplayedStyle(styles)?.key
 }
 
+const getStoryboardRunStatus = (result: StudioEpisodeStoryboardEditorResult) => {
+  const status = Number(result.storyboard?.status)
+  return Number.isFinite(status) ? status : null
+}
+
+const getStoryboardRunProgress = (result: StudioEpisodeStoryboardEditorResult) => {
+  const progress = Number(result.storyboard?.progress)
+  return Number.isFinite(progress) ? progress : null
+}
+
+const isStoryboardRunSucceeded = (result: StudioEpisodeStoryboardEditorResult) => {
+  const status = getStoryboardRunStatus(result)
+  if (status !== null) return status === 3
+  return result.canEnterEditor && !result.shouldPoll
+}
+
+const isStoryboardRunFailed = (result: StudioEpisodeStoryboardEditorResult) => (
+  getStoryboardRunStatus(result) === 4 || Boolean(result.storyboard?.error?.trim())
+)
+
+const shouldPollStoryboardRun = (result: StudioEpisodeStoryboardEditorResult) => {
+  const status = getStoryboardRunStatus(result)
+  if (status !== null) return status === 1 || status === 2
+  const progress = getStoryboardRunProgress(result)
+  if (progress !== null) return progress < 100
+  return result.shouldPoll
+}
+
+const toNullableWorkflowId = (value: unknown): string | number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed ? trimmed : null
+  }
+  return null
+}
+
+const toNullableEpisodeWorkflowId = (value: unknown): string | null => {
+  const normalized = toNullableWorkflowId(value)
+  return normalized === null ? null : String(normalized)
+}
+
+const asWorkflowRecord = (value: unknown): Record<string, unknown> | null => (
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+)
+
+const extractStoryboardRestorePoint = (source: unknown) => {
+  const record = asWorkflowRecord(source)
+  const editor = asWorkflowRecord(record?.editor)
+  const storyboard = asWorkflowRecord(record?.storyboard)
+    ?? asWorkflowRecord(record?.run)
+    ?? asWorkflowRecord(editor?.storyboard)
+    ?? asWorkflowRecord(editor?.run)
+
+  return {
+    episodeId: toNullableEpisodeWorkflowId(
+      record?.storyboardEpisodeId
+        ?? record?.storyboard_episode_id
+        ?? editor?.episodeId
+        ?? editor?.episode_id
+        ?? storyboard?.episodeId
+        ?? storyboard?.episode_id,
+    ),
+    runId: toNullableWorkflowId(
+      record?.storyboardRunId
+        ?? record?.storyboard_run_id
+        ?? record?.runId
+        ?? record?.run_id
+        ?? editor?.storyboardRunId
+        ?? editor?.storyboard_run_id
+        ?? storyboard?.runId
+        ?? storyboard?.run_id
+        ?? storyboard?.id,
+    ),
+  }
+}
+
+const getStoryboardRestorePointStorageKey = () => {
+  const user = getStoredAuthUser()
+  const userScope = user?.id ?? user?.username ?? 'anonymous'
+  return `${STORYBOARD_RESTORE_POINT_STORAGE_KEY_PREFIX}:${encodeURIComponent(String(userScope))}`
+}
+
+const readStoryboardRestorePointSnapshot = (
+  scriptImportId: StudioScriptImportId,
+): StoryboardRestorePointSnapshot | null => {
+  if (typeof window === 'undefined') return null
+  try {
+    const serialized = window.localStorage.getItem(getStoryboardRestorePointStorageKey())
+    if (!serialized) return null
+    const parsed = JSON.parse(serialized) as Partial<StoryboardRestorePointSnapshot>
+    const storedScriptImportId = toNullableWorkflowId(parsed.scriptImportId)
+    const storedEpisodeId = toNullableEpisodeWorkflowId(parsed.episodeId)
+    const storedRunId = toNullableWorkflowId(parsed.runId)
+    const updatedAt = Number(parsed.updatedAt)
+    if (
+      storedScriptImportId === null
+      || storedEpisodeId === null
+      || storedRunId === null
+      || !Number.isFinite(updatedAt)
+      || Date.now() - updatedAt > STORYBOARD_RESTORE_POINT_TTL_MS
+    ) {
+      window.localStorage.removeItem(getStoryboardRestorePointStorageKey())
+      return null
+    }
+    if (String(storedScriptImportId) !== String(scriptImportId)) return null
+    return {
+      scriptImportId: storedScriptImportId,
+      episodeId: storedEpisodeId,
+      runId: storedRunId,
+      updatedAt,
+    }
+  } catch {
+    return null
+  }
+}
+
+const writeStoryboardRestorePointSnapshot = (
+  scriptImportId: StudioScriptImportId,
+  episodeId: string,
+  runId: StudioScriptImportId,
+) => {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(getStoryboardRestorePointStorageKey(), JSON.stringify({
+      scriptImportId,
+      episodeId,
+      runId,
+      updatedAt: Date.now(),
+    } satisfies StoryboardRestorePointSnapshot))
+  } catch {
+    // 恢复点只是刷新兜底，写入失败不影响主流程。
+  }
+}
+
+const clearStoryboardRestorePointSnapshot = () => {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.removeItem(getStoryboardRestorePointStorageKey())
+  } catch {
+    // localStorage 不可用时无需中断流程。
+  }
+}
+
+const mergeStoryboardSegment = (
+  current: StudioEpisodeStoryboardEditorResult['segments'][number],
+  next: StudioEpisodeStoryboardEditorResult['segments'][number],
+) => ({
+  ...current,
+  ...next,
+  title: next.title.trim() ? next.title : current.title,
+  editorDescription: next.editorDescription.trim() ? next.editorDescription : current.editorDescription,
+  status: next.status ?? current.status,
+  statusName: next.statusName ?? current.statusName,
+  progress: next.progress ?? current.progress,
+  taskId: next.taskId ?? current.taskId,
+  shouldPoll: next.shouldPoll ?? current.shouldPoll,
+  canEdit: next.canEdit ?? current.canEdit,
+  error: next.error ?? current.error,
+  durationSeconds: next.durationSeconds ?? current.durationSeconds,
+  manuallyEdited: next.manuallyEdited ?? current.manuallyEdited,
+  manuallyAdded: next.manuallyAdded ?? current.manuallyAdded,
+  revisionNo: next.revisionNo ?? current.revisionNo,
+  primaryImageId: next.primaryImageId ?? current.primaryImageId,
+  coverFileId: next.coverFileId ?? current.coverFileId,
+  coverUrl: next.coverUrl ?? current.coverUrl,
+  shots: next.shots.length > 0 ? next.shots : current.shots,
+})
+
+const mergeStoryboardSegments = (
+  previous: StudioEpisodeStoryboardEditorResult['segments'],
+  next: StudioEpisodeStoryboardEditorResult['segments'],
+) => {
+  if (next.length === 0) return previous
+  const byId = new Map(previous.map((segment) => [String(segment.id), segment]))
+  next.forEach((segment) => {
+    const key = String(segment.id)
+    const current = byId.get(key)
+    byId.set(key, current ? mergeStoryboardSegment(current, segment) : segment)
+  })
+  return Array.from(byId.values()).sort((left, right) => left.segmentIndex - right.segmentIndex)
+}
+
+const mergeStoryboardEditorResult = (
+  previous: StudioEpisodeStoryboardEditorResult,
+  next: StudioEpisodeStoryboardEditorResult,
+): StudioEpisodeStoryboardEditorResult => ({
+  scriptImportId: next.scriptImportId ?? previous.scriptImportId,
+  episodeId: next.episodeId ?? previous.episodeId,
+  episodeIndex: next.episodeIndex ?? previous.episodeIndex,
+  episodeTitle: next.episodeTitle ?? previous.episodeTitle,
+  canEnterEditor: next.canEnterEditor || previous.canEnterEditor,
+  shouldPoll: next.shouldPoll,
+  sourceChanged: next.sourceChanged || previous.sourceChanged,
+  assetReadiness: next.assetReadiness ?? previous.assetReadiness,
+  storyboard: next.storyboard ?? previous.storyboard,
+  segments: mergeStoryboardSegments(previous.segments, next.segments),
+})
+
+const storyboardSegmentsToClipDrafts = (result: StudioEpisodeStoryboardEditorResult | null): ClipDraft[] => {
+  if (!result) return []
+  return result.segments.map((segment) => {
+    const description = segment.editorDescription.trim()
+      || segment.shots
+        .map((shot, index) => {
+          const shotDescription = shot.editorDescription?.trim() || shot.title?.trim()
+          return shotDescription ? `分镜${shot.shotIndex ?? index + 1}：${shotDescription}` : ''
+        })
+        .filter(Boolean)
+        .join('\n')
+    const coverSource = segment.coverUrl ?? (segment.coverFileId === null || segment.coverFileId === undefined
+      ? undefined
+      : String(segment.coverFileId))
+    return {
+      id: String(segment.id),
+      title: segment.title.trim() || `片段-${segment.segmentIndex}`,
+      description,
+      prompt: description,
+      imageUrl: resolveAssetUrl(coverSource) ?? '',
+      revisionNo: segment.revisionNo ?? null,
+      manuallyAdded: segment.manuallyAdded ?? false,
+    }
+  })
+}
+
 const ProjectCreatePage: React.FC = () => {
   const l = useBilingualText()
   const navigate = useNavigate()
@@ -370,6 +615,10 @@ const ProjectCreatePage: React.FC = () => {
   const chapterMutationRevisionRef = useRef(0)
   const assetExtractionStartedRef = useRef(false)
   const workflowNavigationRevisionRef = useRef(0)
+  const storyboardEditorRequestRef = useRef<StudioAssetImageTaskRequest<StudioEpisodeStoryboardEditorResult> | null>(null)
+  const storyboardDetailRequestsRef = useRef(new Map<string, StudioAssetImageTaskRequest<StudioEpisodeStoryboardEditorResult>>())
+  const storyboardDetailTimerRef = useRef<number | null>(null)
+  const assetConfirmRequestRef = useRef<StudioAssetImageTaskRequest<StudioEpisodeAssetsConfirmResult> | null>(null)
   const [resumePayload] = useState<ProjectCreateRouteState | null>(() => {
     const candidate = location.state as ProjectCreateRouteState | null
     return candidate?.scriptImport?.id !== null && candidate?.scriptImport?.id !== undefined
@@ -399,6 +648,28 @@ const ProjectCreatePage: React.FC = () => {
   const [restoredDraft] = useState(() =>
     readProjectCreationDraft<ProjectCreateDraft>(PROJECT_CREATION_DRAFT_KEYS.project))
   const shouldRestoreProjectDraft = !isResumingScriptImport && !resumeSnapshot
+  const resumeStoryboardRestorePoint = extractStoryboardRestorePoint(resumeSnapshot)
+  const restoredDraftScriptImportId = toNullableWorkflowId(restoredDraft?.scriptImportId)
+  const canUseRestoredWorkflowDraft = Boolean(
+    restoredDraftScriptImportId !== null
+    && resumeImportId !== null
+    && resumeImportId !== undefined
+    && String(restoredDraftScriptImportId) === String(resumeImportId),
+  )
+  const persistedStoryboardRestorePoint = resumeImportId !== null && resumeImportId !== undefined
+    ? readStoryboardRestorePointSnapshot(resumeImportId)
+    : null
+  const draftStoryboardRestorePoint = shouldRestoreProjectDraft || canUseRestoredWorkflowDraft
+    ? extractStoryboardRestorePoint(restoredDraft)
+    : { episodeId: null, runId: null }
+  const initialStoryboardRestorePoint = {
+    episodeId: draftStoryboardRestorePoint.episodeId
+      ?? persistedStoryboardRestorePoint?.episodeId
+      ?? resumeStoryboardRestorePoint.episodeId,
+    runId: draftStoryboardRestorePoint.runId
+      ?? persistedStoryboardRestorePoint?.runId
+      ?? resumeStoryboardRestorePoint.runId,
+  }
   const restoredDraftExpectedScriptLength = Math.max(0, Number(restoredDraft?.scriptLength) || 0)
   const restoredDraftExpectedEpisodeCount = Math.max(
     0,
@@ -427,13 +698,48 @@ const ProjectCreatePage: React.FC = () => {
       toCreationStepIndex(resumeImport?.currentStep),
     )
     : shouldRestoreProjectDraft && restoredEpisodes.length ? restoredStep : 0)
+  const [stepsExpanded, setStepsExpanded] = useState(false)
   const [assetImageSubmissionPending, setAssetImageSubmissionPending] = useState(false)
   const [assetCompletionCheckPending, setAssetCompletionCheckPending] = useState(false)
+  const [assetConfirmPending, setAssetConfirmPending] = useState(false)
+  const [assetStepScope, setAssetStepScope] = useState<string | null>(null)
+  const [storyboardEpisodeId, setStoryboardEpisodeId] = useState<string | null>(
+    initialStoryboardRestorePoint.episodeId,
+  )
+  const [storyboardRunId, setStoryboardRunId] = useState<string | number | null>(
+    initialStoryboardRestorePoint.runId,
+  )
+  const [storyboardEditor, setStoryboardEditor] = useState<StudioEpisodeStoryboardEditorResult | null>(null)
+  const [storyboardEditorLoading, setStoryboardEditorLoading] = useState(false)
+  const [storyboardEditorError, setStoryboardEditorError] = useState<unknown>()
+  const [storyboardEditorRetryToken, setStoryboardEditorRetryToken] = useState(0)
   const assetCompletionRequestRef = useRef<StudioAssetImageTaskRequest<StudioEpisodeAssetsGenerateStatusResult> | null>(null)
+  const cancelStoryboardDetailPolling = useCallback(() => {
+    if (storyboardDetailTimerRef.current !== null) {
+      window.clearTimeout(storyboardDetailTimerRef.current)
+      storyboardDetailTimerRef.current = null
+    }
+    storyboardDetailRequestsRef.current.forEach((request) => request.cancel())
+    storyboardDetailRequestsRef.current.clear()
+  }, [])
+  const clearStoryboardRestorePoint = useCallback(() => {
+    clearStoryboardRestorePointSnapshot()
+    storyboardEditorRequestRef.current?.cancel()
+    storyboardEditorRequestRef.current = null
+    cancelStoryboardDetailPolling()
+    setStoryboardEpisodeId(null)
+    setStoryboardRunId(null)
+    setStoryboardEditor(null)
+    setStoryboardEditorError(undefined)
+  }, [cancelStoryboardDetailPolling])
   const navigateToWorkflowStep = useCallback((step: number) => {
     workflowNavigationRevisionRef.current += 1
+    setStepsExpanded(false)
     setCurrentStep(step)
   }, [])
+  useEffect(() => {
+    if (currentStep !== 3 && stepsExpanded) setStepsExpanded(false)
+  }, [currentStep, stepsExpanded])
   const [scriptImportId, setScriptImportId] = useState<StudioScriptImportId | null>(
     resumeSnapshot?.id ?? resumeImportId ?? (shouldRestoreProjectDraft ? restoredDraft?.scriptImportId : null) ?? null,
   )
@@ -588,6 +894,8 @@ const ProjectCreatePage: React.FC = () => {
     importedFileType,
     aiModelId,
     scriptImportId,
+    storyboardEpisodeId,
+    storyboardRunId,
     selectedStyleKeys,
     selectedStyleNames,
     targetMarket,
@@ -602,6 +910,8 @@ const ProjectCreatePage: React.FC = () => {
     ratio,
     script,
     scriptImportId,
+    storyboardEpisodeId,
+    storyboardRunId,
     selectedStyleKeys,
     selectedStyleNames,
     styleCategory,
@@ -622,6 +932,8 @@ const ProjectCreatePage: React.FC = () => {
     importedFileType: projectDraft.importedFileType,
     aiModelId: projectDraft.aiModelId,
     scriptImportId: projectDraft.scriptImportId,
+    storyboardEpisodeId: projectDraft.storyboardEpisodeId,
+    storyboardRunId: projectDraft.storyboardRunId,
     selectedStyleKeys: projectDraft.selectedStyleKeys,
     selectedStyleNames: projectDraft.selectedStyleNames,
     targetMarket: projectDraft.targetMarket,
@@ -639,6 +951,26 @@ const ProjectCreatePage: React.FC = () => {
     compactProjectDraft,
     handleFullDraftWriteSettled,
   )
+
+  useEffect(() => {
+    if (
+      currentStep !== 3
+      || scriptImportId === null
+      || storyboardEpisodeId === null
+      || storyboardRunId === null
+      || storyboardRunId === undefined
+      || String(storyboardRunId).trim() === ''
+    ) return
+
+    writeStoryboardRestorePointSnapshot(scriptImportId, storyboardEpisodeId, storyboardRunId)
+    flushProjectDraft()
+  }, [
+    currentStep,
+    flushProjectDraft,
+    scriptImportId,
+    storyboardEpisodeId,
+    storyboardRunId,
+  ])
 
   useEffect(() => {
     if (!shouldRestoreProjectDraft) {
@@ -734,6 +1066,7 @@ const ProjectCreatePage: React.FC = () => {
           }
           : {}
         const nextSelectedStyleNames = normalizeDraftStyleNames(fullDraft.selectedStyleNames)
+        const nextStoryboardRestorePoint = extractStoryboardRestorePoint(fullDraft)
         const hasBasicInfo = Boolean(
           nextName.trim()
           || nextScript.trim()
@@ -759,6 +1092,8 @@ const ProjectCreatePage: React.FC = () => {
         setImportedFileType(nextImportedFileType)
         setSelectedStyleKeys(nextSelectedStyleKeys)
         setSelectedStyleNames(nextSelectedStyleNames)
+        setStoryboardEpisodeId(nextStoryboardRestorePoint.episodeId)
+        setStoryboardRunId(nextStoryboardRestorePoint.runId)
         basicInfoEditRevisionRef.current = hasBasicInfo ? 1 : 0
         confirmedBasicInfoRef.current = null
         basicInfoTouchedRef.current = hasBasicInfo
@@ -836,6 +1171,13 @@ const ProjectCreatePage: React.FC = () => {
       name: item.value.trim(),
       coverUrl: item.coverUrl,
     })), [displayedStylesByCategory.visual])
+  const assetToneStyleOptions = useMemo(() => displayedStylesByCategory.tone
+    .filter((item) => Boolean(item.value.trim()))
+    .map((item) => ({
+      id: item.id,
+      name: item.value.trim(),
+      coverUrl: item.coverUrl,
+    })), [displayedStylesByCategory.tone])
   const visualStyleNames = loadedVisualStyleNames.length
     ? loadedVisualStyleNames
     : cachedVisualStyleNames
@@ -963,6 +1305,13 @@ const ProjectCreatePage: React.FC = () => {
             }
             : {}),
         }))
+        const restoredStoryboardPoint = extractStoryboardRestorePoint(detail)
+        if (restoredStoryboardPoint.episodeId !== null) {
+          setStoryboardEpisodeId(restoredStoryboardPoint.episodeId)
+        }
+        if (restoredStoryboardPoint.runId !== null) {
+          setStoryboardRunId(restoredStoryboardPoint.runId)
+        }
         resetBasicInfoTouched()
         if (restoredCreationStep !== 1 && restoredCreationStep !== 3) {
           setRestoringImport(false)
@@ -1155,14 +1504,201 @@ const ProjectCreatePage: React.FC = () => {
       rawText: sourceEpisode?.rawText ?? '',
     }
   }), [assetEpisodes, episodes, l])
+  const selectedAssetEpisodeId = assetStepScope && assetStepScope !== 'overview'
+    ? assetStepScope
+    : assetStepEpisodes[0]?.id ?? null
+  const storyboardTargetEpisodeId = storyboardEpisodeId
+    ?? selectedAssetEpisodeId
+    ?? activeEpisode?.id
+    ?? null
+  const clipEditingEpisodes = useMemo<EpisodeDraft[]>(() => {
+    if (!storyboardTargetEpisodeId) return []
+    const sourceEpisode = assetStepEpisodes.find((episode) => String(episode.id) === String(storyboardTargetEpisodeId))
+      ?? episodes.find((episode) => String(episode.id) === String(storyboardTargetEpisodeId))
+      ?? activeEpisode
+    const storyboardEpisodeTitle = storyboardEditor?.episodeTitle?.trim()
+    const storyboardEpisodeIndex = storyboardEditor?.episodeIndex
+    return [{
+      id: String(storyboardTargetEpisodeId),
+      title: storyboardEpisodeTitle
+        || sourceEpisode?.title
+        || (storyboardEpisodeIndex
+          ? l(`第${storyboardEpisodeIndex}集`, `Episode ${storyboardEpisodeIndex}`)
+          : l('第1集', 'Episode 1')),
+      rawText: sourceEpisode?.rawText ?? activeEpisode?.rawText ?? '',
+    }]
+  }, [
+    activeEpisode,
+    assetStepEpisodes,
+    episodes,
+    l,
+    storyboardEditor?.episodeIndex,
+    storyboardEditor?.episodeTitle,
+    storyboardTargetEpisodeId,
+  ])
+  const storyboardClips = useMemo(() => storyboardSegmentsToClipDrafts(storyboardEditor), [storyboardEditor])
 
   useEffect(() => {
     setAssetCompletionCheckPending(false)
+    setAssetConfirmPending(false)
     return () => {
       assetCompletionRequestRef.current?.cancel()
       assetCompletionRequestRef.current = null
+      assetConfirmRequestRef.current?.cancel()
+      assetConfirmRequestRef.current = null
     }
   }, [currentStep, scriptImportId])
+
+  useEffect(() => {
+    if (currentStep !== 2) return
+    setAssetStepScope((current) => {
+      if (current === 'overview') return current
+      if (current && assetStepEpisodes.some((episode) => episode.id === current)) return current
+      return assetStepEpisodes[0]?.id ?? null
+    })
+  }, [assetStepEpisodes, currentStep])
+
+  useEffect(() => {
+    storyboardEditorRequestRef.current?.cancel()
+    storyboardEditorRequestRef.current = null
+    cancelStoryboardDetailPolling()
+
+    if (currentStep !== 3 || scriptImportId === null || storyboardTargetEpisodeId === null) {
+      setStoryboardEditorLoading(false)
+      setStoryboardEditorError(undefined)
+      if (currentStep !== 3) setStoryboardEditor(null)
+      return undefined
+    }
+
+    let active = true
+    setStoryboardEditor(null)
+    setStoryboardEditorError(undefined)
+    setStoryboardEditorLoading(true)
+
+    const loadStoryboardEditor = () => {
+      if (!active) return
+      const request = StudioAssetGenerationApi.requestEpisodeStoryboardEditor({
+        scriptImportId,
+        episodeId: storyboardTargetEpisodeId,
+      })
+      storyboardEditorRequestRef.current = request
+      void request.promise
+        .then((result) => {
+          if (!active || storyboardEditorRequestRef.current !== request) return
+          setStoryboardEditor(result)
+          setStoryboardEditorLoading(false)
+        })
+        .catch((error) => {
+          if (!active || storyboardEditorRequestRef.current !== request) return
+          setStoryboardEditorError(error)
+          setStoryboardEditorLoading(false)
+        })
+        .finally(() => {
+          if (storyboardEditorRequestRef.current === request) storyboardEditorRequestRef.current = null
+        })
+    }
+
+    if (storyboardRunId === null || storyboardRunId === undefined || String(storyboardRunId).trim() === '') {
+      const request = StudioAssetGenerationApi.requestEpisodeStoryboardEditor({
+        scriptImportId,
+        episodeId: storyboardTargetEpisodeId,
+      })
+      storyboardEditorRequestRef.current = request
+      void request.promise
+        .then((result) => {
+          if (!active || storyboardEditorRequestRef.current !== request) return
+          const restoredRunId = toNullableWorkflowId(result.storyboard?.runId)
+          const restoredEpisodeId = toNullableEpisodeWorkflowId(result.episodeId ?? storyboardTargetEpisodeId)
+          if (restoredRunId !== null) {
+            setStoryboardEpisodeId(restoredEpisodeId)
+            setStoryboardRunId(restoredRunId)
+            setStoryboardEditor(result)
+            return
+          }
+          if (result.segments.length > 0) {
+            setStoryboardEpisodeId(restoredEpisodeId)
+            setStoryboardEditor(result)
+            setStoryboardEditorLoading(false)
+            return
+          }
+          setStoryboardEditorError(new Error(l('缺少分镜任务ID，请返回上一步重新确认资产', 'Missing storyboard run id; return to the previous step and confirm assets again.')))
+          setStoryboardEditorLoading(false)
+        })
+        .catch((error) => {
+          if (!active || storyboardEditorRequestRef.current !== request) return
+          setStoryboardEditorError(error)
+          setStoryboardEditorLoading(false)
+        })
+        .finally(() => {
+          if (storyboardEditorRequestRef.current === request) storyboardEditorRequestRef.current = null
+        })
+
+      return () => {
+        active = false
+        if (storyboardEditorRequestRef.current === request) storyboardEditorRequestRef.current = null
+        request.cancel()
+      }
+    }
+
+    const pollStoryboardRunDetail = () => {
+      if (!active) return
+      if (storyboardDetailTimerRef.current !== null) {
+        window.clearTimeout(storyboardDetailTimerRef.current)
+        storyboardDetailTimerRef.current = null
+      }
+      const requestKey = `run:${String(storyboardRunId)}`
+      const request = StudioAssetGenerationApi.requestEpisodeStoryboardDetail(storyboardRunId)
+      storyboardDetailRequestsRef.current.set(requestKey, request)
+      void request.promise
+        .then((detail) => {
+          if (!active || storyboardDetailRequestsRef.current.get(requestKey) !== request) return
+          setStoryboardEditor((current) => current ? mergeStoryboardEditorResult(current, detail) : detail)
+          if (isStoryboardRunFailed(detail)) {
+            setStoryboardEditorError(new Error(detail.storyboard?.error?.trim() || detail.storyboard?.statusName || l('分镜生成失败，请重试', 'Storyboard generation failed; retry')))
+            setStoryboardEditorLoading(false)
+            return
+          }
+          if (isStoryboardRunSucceeded(detail)) {
+            loadStoryboardEditor()
+            return
+          }
+          if (shouldPollStoryboardRun(detail)) {
+            storyboardDetailTimerRef.current = window.setTimeout(() => {
+              pollStoryboardRunDetail()
+            }, STORYBOARD_POLL_INTERVAL_MS)
+            return
+          }
+          loadStoryboardEditor()
+        })
+        .catch((error) => {
+          if (!active || storyboardDetailRequestsRef.current.get(requestKey) !== request) return
+          setStoryboardEditorError(error)
+          setStoryboardEditorLoading(false)
+        })
+        .finally(() => {
+          if (storyboardDetailRequestsRef.current.get(requestKey) === request) {
+            storyboardDetailRequestsRef.current.delete(requestKey)
+          }
+        })
+    }
+
+    pollStoryboardRunDetail()
+
+    return () => {
+      active = false
+      storyboardEditorRequestRef.current?.cancel()
+      storyboardEditorRequestRef.current = null
+      cancelStoryboardDetailPolling()
+    }
+  }, [
+    cancelStoryboardDetailPolling,
+    currentStep,
+    l,
+    scriptImportId,
+    storyboardEditorRetryToken,
+    storyboardRunId,
+    storyboardTargetEpisodeId,
+  ])
 
   const getRatioShape = (value: string) => {
     const [rawWidth, rawHeight] = value.split(':').map(Number)
@@ -1197,6 +1733,7 @@ const ProjectCreatePage: React.FC = () => {
       setScript(parsedText.slice(0, MAX_SCRIPT_LENGTH))
       setScriptImportId(parsed.id ?? null)
       setAiModelId(getScriptAiModelId(parsed))
+      clearStoryboardRestorePoint()
       setSelectedStyleNames((current) => ({
         ...current,
         ...getScriptStyleNameSnapshot(parsed),
@@ -1339,6 +1876,7 @@ const ProjectCreatePage: React.FC = () => {
 
     basicInfoSubmissionRef.current = true
     setSubmitting(true)
+    clearStoryboardRestorePoint()
     let requestStage: 'confirm' | 'chapters' = 'confirm'
     try {
       const submissionEditRevision = basicInfoEditRevisionRef.current
@@ -1469,6 +2007,7 @@ const ProjectCreatePage: React.FC = () => {
       ))
       return null
     }
+    clearStoryboardRestorePointSnapshot()
     return releaseDraftWriteHold
   }
 
@@ -1511,6 +2050,7 @@ const ProjectCreatePage: React.FC = () => {
 
     basicInfoSubmissionRef.current = true
     setSubmitting(true)
+    clearStoryboardRestorePoint()
     try {
       const requestBody = buildBasicInfoSaveRequest()
       const saved = await StudioScriptsApi.saveBasicInfo(requestBody)
@@ -1721,6 +2261,7 @@ const ProjectCreatePage: React.FC = () => {
       chapterMutationRevisionRef.current += 1
       assetExtractionStartedRef.current = false
       assetEstimateRequestRevisionRef.current += 1
+      clearStoryboardRestorePoint()
       StudioScriptsApi.invalidateAssetExtractEstimate(scriptImportId)
       setAssetExtractEstimate(null)
       setAssetExtractEstimateLoading(false)
@@ -1777,6 +2318,7 @@ const ProjectCreatePage: React.FC = () => {
     const extractionChapterRevision = chapterMutationRevisionRef.current
     assetSubmissionRef.current = true
     setSubmitting(true)
+    clearStoryboardRestorePoint()
     try {
       setAssetEpisodes(null)
       setAssetEpisodesError(undefined)
@@ -1936,6 +2478,7 @@ const ProjectCreatePage: React.FC = () => {
       && assetStepReady
       && !assetImageSubmissionPending
       && !assetCompletionCheckPending
+      && !assetConfirmPending
     : !restoringLocalDraft
       && !localDraftRestoreFailed
       && !restoringBasicInfo
@@ -1949,6 +2492,9 @@ const ProjectCreatePage: React.FC = () => {
             && episodes.every((episode) => episode.title.trim() && episode.rawText.trim())
           : currentStep === 3
             ? styleSelectionReady
+              && !storyboardEditorLoading
+              && !storyboardEditorError
+              && storyboardClips.length > 0
             : true)
 
   const handleNext = async () => {
@@ -1966,11 +2512,25 @@ const ProjectCreatePage: React.FC = () => {
       return
     }
     if (currentStep === 2) {
-      if (scriptImportId === null || assetCompletionRequestRef.current) return
+      if (scriptImportId === null || assetCompletionRequestRef.current || assetConfirmRequestRef.current) return
+      const targetEpisodeId = selectedAssetEpisodeId
+      if (!targetEpisodeId) {
+        message.warning(l('请先选择要进入片段编辑的剧集', 'Choose an episode before entering clip editing.'))
+        return
+      }
+      setStoryboardEpisodeId(String(targetEpisodeId))
+      setStoryboardRunId(null)
+      setStoryboardEditor(null)
+      setStoryboardEditorError(undefined)
+
       // Confirm once on demand: users need not visit overview after completing episodes.
-      const request = StudioAssetGenerationApi.requestEpisodeAssetsGenerateStatus({ scriptImportId })
+      const request = StudioAssetGenerationApi.requestEpisodeAssetsGenerateStatus({
+        scriptImportId,
+        episodeId: targetEpisodeId,
+      })
       assetCompletionRequestRef.current = request
       setAssetCompletionCheckPending(true)
+      let confirmRequest: StudioAssetImageTaskRequest<StudioEpisodeAssetsConfirmResult> | null = null
       try {
         const status = await request.promise
         if (assetCompletionRequestRef.current !== request) return
@@ -1981,15 +2541,42 @@ const ProjectCreatePage: React.FC = () => {
           ))
           return
         }
+        confirmRequest = StudioAssetGenerationApi.requestEpisodeAssetsConfirm({
+          scriptImportId,
+          episodeId: targetEpisodeId,
+        })
+        assetConfirmRequestRef.current = confirmRequest
+        setAssetConfirmPending(true)
+        const confirmed = await confirmRequest.promise
+        if (assetConfirmRequestRef.current !== confirmRequest) return
+        assetConfirmRequestRef.current = null
+        const confirmedRunId = confirmed.runId ?? confirmed.editor?.storyboard?.runId
+        if (confirmedRunId === null || confirmedRunId === undefined || String(confirmedRunId).trim() === '') {
+          throw new Error(l('资产确认成功，但未返回分镜任务ID', 'Assets were confirmed but no storyboard run id was returned.'))
+        }
+        setStoryboardEpisodeId(String(targetEpisodeId))
+        setStoryboardRunId(confirmedRunId)
+        setStoryboardEditor(null)
+        setStoryboardEditorError(undefined)
+        setStoryboardEditorRetryToken((current) => current + 1)
         navigateToWorkflowStep(3)
       } catch (error) {
         if (assetCompletionRequestRef.current !== request) return
-        message.error(getApiErrorMessage(error, l('资产完成状态查询失败，请重试', 'Unable to verify asset completion; retry')))
+        message.error(getApiErrorMessage(
+          error,
+          confirmRequest
+            ? l('资产确认失败，请重试', 'Asset confirmation failed; retry')
+            : l('资产完成状态查询失败，请重试', 'Unable to verify asset completion; retry'),
+        ))
       } finally {
         if (assetCompletionRequestRef.current === request) {
           assetCompletionRequestRef.current = null
           setAssetCompletionCheckPending(false)
         }
+        if (confirmRequest && assetConfirmRequestRef.current === confirmRequest) {
+          assetConfirmRequestRef.current = null
+        }
+        setAssetConfirmPending(false)
       }
       return
     }
@@ -2000,8 +2587,14 @@ const ProjectCreatePage: React.FC = () => {
     setAssetEpisodes(null)
     setAssetEpisodesError(undefined)
     setAssetEpisodesRetryToken((current) => current + 1)
+    clearStoryboardRestorePoint()
     navigateToWorkflowStep(2)
   }
+
+  const handleAssetScopeChange = useCallback((scope: string) => {
+    setAssetStepScope(scope)
+    clearStoryboardRestorePoint()
+  }, [clearStoryboardRestorePoint])
 
   const workflowDataUnavailable = currentStep === 2
     ? (
@@ -2015,6 +2608,12 @@ const ProjectCreatePage: React.FC = () => {
       || restoringBasicInfo
       || basicInfoRestoreFailed
       || (currentStep === 3 && !styleSelectionReady)
+      || (currentStep === 3 && (
+        storyboardEditorLoading
+        || Boolean(storyboardEditorError)
+        || storyboardEditor === null
+        || storyboardClips.length === 0
+      ))
       || ((currentStep === 1 || currentStep === 3) && (
         restoringImport
         || episodes.length === 0
@@ -2127,8 +2726,53 @@ const ProjectCreatePage: React.FC = () => {
       return (
         <div className="project-create-page__restore-state is-empty" role="alert">
           <span>{l('原风格已不可用，请重新选择', 'A saved style is no longer available.')}</span>
-          <Button onClick={() => setCurrentStep(0)}>
+          <Button onClick={() => {
+            clearStoryboardRestorePoint()
+            navigateToWorkflowStep(0)
+          }}>
             {l('返回基本信息', 'Return to Basics')}
+          </Button>
+        </div>
+      )
+    }
+    if (currentStep === 3 && storyboardEditorError) {
+      return (
+        <div className="project-create-page__restore-state is-empty" role="alert">
+          <span>{getApiErrorMessage(
+            storyboardEditorError,
+            l('片段编辑数据加载失败，请重试', 'Failed to load clip editing data; retry'),
+          )}</span>
+          <Button onClick={() => {
+            setStoryboardEditorError(undefined)
+            setStoryboardEditorRetryToken((current) => current + 1)
+          }}>
+            {l('重试加载片段', 'Retry clips')}
+          </Button>
+        </div>
+      )
+    }
+    if (currentStep === 3 && (storyboardEditorLoading || storyboardEditor === null)) {
+      const storyboardProgress = storyboardEditor ? getStoryboardRunProgress(storyboardEditor) : null
+      const storyboardStatus = storyboardEditor?.storyboard?.statusName?.trim()
+      return (
+        <div className="project-create-page__restore-state" role="status">
+          <Spin />
+          <span>
+            {storyboardEditor
+              ? `${storyboardStatus || l('正在生成分镜', 'Generating storyboards')}${
+                  storyboardProgress === null ? '' : ` ${Math.max(0, Math.min(100, Math.round(storyboardProgress)))}%`
+                }`
+              : l('正在加载片段编辑数据...', 'Loading clip editing data...')}
+          </span>
+        </div>
+      )
+    }
+    if (currentStep === 3 && storyboardClips.length === 0) {
+      return (
+        <div className="project-create-page__restore-state is-empty">
+          <span>{l('暂无片段编辑数据', 'No clip editing data')}</span>
+          <Button onClick={() => setStoryboardEditorRetryToken((current) => current + 1)}>
+            {l('重试加载片段', 'Retry clips')}
           </Button>
         </div>
       )
@@ -2164,7 +2808,9 @@ const ProjectCreatePage: React.FC = () => {
               || submitting
               || creatingEpisode
               || parsingEpisodeFile
-              || assetImageSubmissionPending}
+              || assetImageSubmissionPending
+              || assetCompletionCheckPending
+              || assetConfirmPending}
             onClick={() => {
               if (localDraftRestoreFailed) {
                 confirmDiscardFailedLocalDraft()
@@ -2177,7 +2823,10 @@ const ProjectCreatePage: React.FC = () => {
               void leaveProjectCreation()
             }}
           />
-          <ol className={`project-create-page__steps${currentStep === 3 ? ' is-final-step' : ''}`} aria-label={l('创建步骤', 'Creation steps')}>
+          <ol
+            className={`project-create-page__steps${currentStep === 3 ? ' is-final-step' : ''}${currentStep === 3 && stepsExpanded ? ' is-expanded' : ''}`}
+            aria-label={l('创建步骤', 'Creation steps')}
+          >
             {steps.map((step, index) => (
               <li
                 key={step}
@@ -2188,13 +2837,24 @@ const ProjectCreatePage: React.FC = () => {
                   className="project-create-page__step-button"
                   disabled={restoringLocalDraft
                     || assetImageSubmissionPending
-                    || !((currentStep === 2 && index === 1) || (currentStep === 3 && index === 2))}
+                    || assetCompletionCheckPending
+                    || assetConfirmPending
+                    || !((currentStep === 2 && index === 1) || (currentStep === 3 && (index === 2 || index === currentStep)))}
+                  aria-expanded={currentStep === 3 && index === currentStep ? stepsExpanded : undefined}
                   title={currentStep === 2 && index === 1
                     ? l('返回剧本分集', 'Back to episodes')
                     : currentStep === 3 && index === 2
                       ? l('返回资产确认', 'Back to assets')
-                      : undefined}
+                      : currentStep === 3 && index === currentStep
+                        ? stepsExpanded
+                          ? l('收起步骤', 'Collapse steps')
+                          : l('展开步骤', 'Show steps')
+                        : undefined}
                   onClick={() => {
+                    if (currentStep === 3 && index === currentStep) {
+                      setStepsExpanded((current) => !current)
+                      return
+                    }
                     if (currentStep === 3) {
                       handleReturnToAssets()
                       return
@@ -2230,7 +2890,7 @@ const ProjectCreatePage: React.FC = () => {
             icon={<ArrowRightOutlined />}
             iconPosition="end"
             disabled={!canProceed || submitting || parsingScript || creatingEpisode || assetEstimatePending}
-            loading={submitting || assetEstimatePending || (currentStep === 2 && (assetEpisodesLoading || assetCompletionCheckPending))}
+            loading={submitting || assetEstimatePending || (currentStep === 2 && (assetEpisodesLoading || assetCompletionCheckPending || assetConfirmPending))}
             title={currentStep === 1
               ? assetEstimateErrorMessage
                 || (assetExtractEstimate
@@ -2551,13 +3211,21 @@ const ProjectCreatePage: React.FC = () => {
           visualStyleNames={visualStyleNames}
           visualStyleOptions={assetVisualStyleOptions}
           onImageSubmissionStateChange={setAssetImageSubmissionPending}
+          onScopeChange={handleAssetScopeChange}
         />
       ) : (
         <ProjectClipEditingStep
-          episodes={episodes}
+          episodes={clipEditingEpisodes}
+          initialClips={storyboardClips}
           ratio={ratio}
           styleName={visualStyleName}
           toneStyleName={toneStyleName}
+          visualStyleOptions={assetVisualStyleOptions}
+          toneStyleOptions={assetToneStyleOptions}
+          onStoryboardEditorRefresh={() => {
+            setStoryboardEditorError(undefined)
+            setStoryboardEditorRetryToken((current) => current + 1)
+          }}
         />
       )}
 

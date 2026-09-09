@@ -241,6 +241,7 @@ type ProjectAssetsStepProps = {
   visualStyleOptions?: AssetVisualStyleOption[]
   onImageSubmissionStateChange?: (submitting: boolean) => void
   onGenerationCompletionStateChange?: (completed: boolean) => void
+  onScopeChange?: (scope: AssetScope) => void
 }
 
 type PersonalAsset = {
@@ -662,6 +663,7 @@ export default function ProjectAssetsStep({
   visualStyleOptions = [],
   onImageSubmissionStateChange,
   onGenerationCompletionStateChange,
+  onScopeChange,
 }: ProjectAssetsStepProps) {
   const l = useBilingualText()
   const imageInputRef = useRef<HTMLInputElement>(null)
@@ -924,6 +926,10 @@ export default function ProjectAssetsStep({
   const latestAssetDraftRef = useRef(assetDraft)
   latestAssetDraftRef.current = assetDraft
   const componentMountedRef = useRef(true)
+
+  useEffect(() => {
+    onScopeChange?.(scope)
+  }, [onScopeChange, scope])
 
   useEffect(() => {
     componentMountedRef.current = true

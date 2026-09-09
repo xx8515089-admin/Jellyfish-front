@@ -736,18 +736,24 @@ code {
 .project-clip-editor__skill-list button,
 .project-clip-editor__video-resolution-options,
 .project-clip-editor__video-duration-control output {
-  background: var(--jf-panel) !important;
+  background: var(--jf-panel-2) !important;
   border-color: var(--jf-border) !important;
   color: var(--jf-text-soft) !important;
 }
 
 .project-clip-editor__skill-list button.is-selected,
-.project-clip-editor__prompt-tools .project-clip-editor__skill-trigger.is-active,
-.project-clip-editor__video-resolution-options button.is-selected {
+.project-clip-editor__prompt-tools .project-clip-editor__skill-trigger.is-active {
   background: var(--jf-selected) !important;
   border-color: var(--jf-accent-border) !important;
   color: var(--jf-text) !important;
   box-shadow: none !important;
+}
+
+.project-clip-editor__video-resolution-options button.is-selected {
+  background: #3a3a40 !important;
+  border-color: #5a5d63 !important;
+  color: #ffffff !important;
+  box-shadow: inset 0 0 0 1px #5a5d63 !important;
 }
 
 .project-clip-editor__video-resolution-options button {
@@ -755,14 +761,264 @@ code {
 }
 
 .project-clip-editor__video-resolution-options button:hover {
-  background: var(--jf-selected) !important;
+  background: #2f2f34 !important;
   color: var(--jf-text-soft) !important;
 }
 
 .project-clip-editor__video-duration-slider {
-  --project-slider-fill: var(--jf-accent);
+  --project-slider-fill: #f4f4f5;
+  --project-slider-fill-start: #242428;
   --project-slider-rail: var(--jf-panel-3);
+  background: linear-gradient(
+    90deg,
+    var(--project-slider-fill-start) 0,
+    var(--project-slider-fill) var(--video-duration-progress),
+    var(--project-slider-rail) var(--video-duration-progress),
+    var(--project-slider-rail) 100%
+  ) !important;
   box-shadow: inset 0 0 0 1px var(--jf-border) !important;
+}
+
+.project-clip-editor__voice-panel {
+  color: var(--jf-text-soft) !important;
+  scrollbar-color: var(--jf-border) transparent !important;
+}
+
+.project-clip-editor__voice-panel::-webkit-scrollbar-thumb {
+  background: var(--jf-border) !important;
+}
+
+.project-clip-editor__voice-notice {
+  background: rgba(51, 215, 196, 0.1) !important;
+  border-color: rgba(51, 215, 196, 0.2) !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.project-clip-editor__voice-notice > .anticon,
+.project-clip-editor__voice-expression-toolbar button:hover,
+.project-clip-editor__voice-expression-toolbar button.is-active,
+.project-clip-editor__voice-expression-toolbar button.is-active .anticon {
+  color: #62e6d9 !important;
+}
+
+.project-clip-editor__voice-notice strong {
+  color: var(--jf-text) !important;
+}
+
+.project-clip-editor__voice-notice span,
+.project-clip-editor__voice-accordion-trigger small,
+.project-clip-editor__voice-binding-list button,
+.project-clip-editor__voice-line-card header button,
+.project-clip-editor__voice-copy-label button,
+.project-clip-editor__voice-option-label > span,
+.project-clip-editor__voice-copy-editor small,
+.project-clip-editor__voice-rich-input:empty::before,
+.project-clip-editor__voice-emotion-trigger > span .anticon,
+.project-clip-editor__voice-emotion-trigger > .anticon {
+  color: var(--jf-muted) !important;
+}
+
+.project-clip-editor__voice-notice button {
+  color: var(--jf-muted) !important;
+}
+
+.project-clip-editor__voice-notice button:hover,
+.project-clip-editor__voice-line-card header button:hover,
+.project-clip-editor__voice-copy-label button:hover {
+  background: var(--jf-selected) !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.project-clip-editor__voice-accordion,
+.project-clip-editor__voice-line-card,
+.project-clip-editor__voice-emotion {
+  background: var(--jf-panel-2) !important;
+  border-color: var(--jf-border) !important;
+  box-shadow: none !important;
+}
+
+.project-clip-editor__voice-accordion-trigger,
+.project-clip-editor__voice-emotion-trigger {
+  color: var(--jf-text-soft) !important;
+}
+
+.project-clip-editor__voice-accordion-trigger:hover {
+  background: var(--jf-selected) !important;
+}
+
+.project-clip-editor__voice-accordion-trigger[aria-expanded='true'] > .anticon,
+.project-clip-editor__voice-binding-list button:hover > .anticon {
+  color: var(--jf-text-soft) !important;
+}
+
+.project-clip-editor__voice-binding-list button,
+.project-clip-editor__voice-copy-editor .ant-input,
+.project-clip-editor__voice-rich-input,
+.project-clip-editor__voice-emotion-options button,
+.project-clip-editor__voice-custom-pause input {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-text-soft) !important;
+  box-shadow: none !important;
+}
+
+.project-clip-editor__voice-binding-list button:hover,
+.project-clip-editor__voice-copy-editor .ant-input:hover,
+.project-clip-editor__voice-rich-input:hover,
+.project-clip-editor__voice-emotion-options button:hover,
+.project-clip-editor__voice-custom-pause input:hover {
+  background: var(--jf-panel-3) !important;
+  border-color: var(--jf-accent-border) !important;
+  color: var(--jf-text) !important;
+  box-shadow: none !important;
+}
+
+.project-clip-editor__voice-copy-editor .ant-input:focus,
+.project-clip-editor__voice-rich-input:focus,
+.project-clip-editor__voice-custom-pause input:focus {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-accent-border) !important;
+  box-shadow: 0 0 0 2px var(--jf-accent-soft) !important;
+}
+
+.project-clip-editor__voice-binding-list button strong,
+.project-clip-editor__voice-basics label,
+.project-clip-editor__voice-lines-title strong,
+.project-clip-editor__voice-line-card > header > strong,
+.project-clip-editor__voice-line-card > label,
+.project-clip-editor__voice-line-card > .project-clip-editor__voice-copy-field,
+.project-clip-editor__voice-option-label strong,
+.project-clip-editor__voice-line-settings > label {
+  color: var(--jf-text-soft) !important;
+}
+
+.project-clip-editor__voice-slider-control {
+  --project-slider-fill: #f4f4f5;
+  --project-slider-fill-start: #242428;
+  --project-slider-rail: var(--jf-panel-3);
+}
+
+.project-clip-editor__voice-slider-control .ant-slider {
+  background: var(--jf-panel-3) !important;
+  box-shadow: inset 0 0 0 1px var(--jf-border) !important;
+}
+
+.project-clip-editor__voice-slider-control .ant-slider-rail {
+  background: var(--jf-panel-3) !important;
+}
+
+.project-clip-editor__voice-slider-control .ant-slider-track,
+.project-clip-editor__voice-slider-control .ant-slider:hover .ant-slider-track {
+  background: linear-gradient(90deg, var(--project-slider-fill-start) 0%, var(--project-slider-fill) 100%) !important;
+}
+
+.project-clip-editor__voice-slider-control output,
+.project-clip-editor__voice-lines-title span,
+.project-clip-editor__voice-option-label em {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-muted) !important;
+}
+
+.project-clip-editor__voice-line-card header button.is-active,
+.project-clip-editor__voice-copy-label button.is-playing,
+.project-clip-editor__voice-emotion-options button.is-selected {
+  background: rgba(51, 215, 196, 0.14) !important;
+  border-color: rgba(51, 215, 196, 0.24) !important;
+  color: #62e6d9 !important;
+}
+
+.project-clip-editor__voice-line-card header button:last-child:hover {
+  background: rgba(217, 45, 32, 0.14) !important;
+  color: #ff8d84 !important;
+}
+
+.project-clip-editor__voice-line-card header button:disabled,
+.project-clip-editor__voice-line-card header button:disabled:hover {
+  background: transparent !important;
+  color: var(--jf-subtle) !important;
+}
+
+.project-clip-editor__voice-line-card .studio-select.studio-select.ant-select-single .ant-select-selector {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-text-soft) !important;
+  box-shadow: none !important;
+}
+
+.project-clip-editor__voice-line-card .studio-select.ant-select-open .ant-select-selector,
+.project-clip-editor__voice-line-card .studio-select.ant-select-focused .ant-select-selector,
+.project-clip-editor__voice-line-card .studio-select.studio-select.ant-select-single:not(.ant-select-disabled):hover .ant-select-selector {
+  background: var(--jf-panel-3) !important;
+  border-color: var(--jf-accent-border) !important;
+  box-shadow: 0 0 0 2px var(--jf-accent-soft) !important;
+}
+
+.project-clip-editor__voice-line-card .studio-select .ant-select-selection-item,
+.project-clip-editor__voice-line-card .studio-select .ant-select-selection-placeholder,
+.project-clip-editor__voice-line-card .studio-select .ant-select-arrow {
+  color: var(--jf-text-soft) !important;
+}
+
+.project-clip-editor__voice-option-label i,
+.project-clip-editor__voice-expression,
+.project-clip-editor__voice-emotion-options,
+.project-clip-editor__voice-line-settings {
+  border-color: var(--jf-border-soft) !important;
+}
+
+.project-clip-editor__voice-inline-token.is-pause {
+  background: rgba(34, 197, 94, 0.13) !important;
+  border-color: rgba(34, 197, 94, 0.24) !important;
+  color: #86efac !important;
+}
+
+.project-clip-editor__voice-inline-token.is-interjection {
+  background: rgba(96, 165, 250, 0.13) !important;
+  border-color: rgba(96, 165, 250, 0.24) !important;
+  color: #93c5fd !important;
+}
+
+.project-clip-editor__voice-token-grid button,
+.project-clip-editor__add-voice-line {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-text-soft) !important;
+}
+
+.project-clip-editor__voice-token-grid button:hover,
+.project-clip-editor__add-voice-line:hover {
+  background: var(--jf-panel-3) !important;
+  border-color: var(--jf-accent-border) !important;
+  color: var(--jf-text) !important;
+}
+
+.project-clip-editor__voice-token-grid > button.is-active {
+  background: rgba(51, 215, 196, 0.14) !important;
+  border-color: rgba(51, 215, 196, 0.24) !important;
+  color: #62e6d9 !important;
+}
+
+.project-clip-editor__voice-token-grid .project-clip-editor__voice-custom-pause-confirm {
+  background: var(--jf-accent) !important;
+  border-color: var(--jf-accent) !important;
+  color: #111111 !important;
+}
+
+.project-clip-editor__voice-token-grid .project-clip-editor__voice-custom-pause-confirm:hover {
+  background: var(--jf-accent-strong) !important;
+  border-color: var(--jf-accent-strong) !important;
+  color: #111111 !important;
+}
+
+.project-clip-editor__voice-token-grid .project-clip-editor__voice-custom-pause-confirm:disabled {
+  background: var(--jf-panel-3) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-subtle) !important;
+}
+
+.project-clip-editor__voice-line-settings {
+  background: var(--jf-panel) !important;
 }
 
 /* 项目创建页是 MainLayout 之外的全屏路由，因此需要单独设置暗色表面样式。 */
@@ -1386,8 +1642,7 @@ code {
 .asset-generation-workspace [class*="__card"].is-selected,
 .asset-generation-workspace [class*="__look-main"].is-selected,
 .project-clip-editor [class*="__reference"].is-selected,
-.project-clip-editor [class*="__mode-tabs"] button.is-selected,
-.project-clip-editor [class*="__video-resolution-options"] button.is-selected {
+.project-clip-editor [class*="__mode-tabs"] button.is-selected {
   background-color: var(--jf-selected) !important;
   border-color: var(--jf-accent-border) !important;
   color: var(--jf-text) !important;
@@ -2141,7 +2396,6 @@ code {
 }
 
 .project-clip-editor__batch-footer > button,
-.project-clip-editor-modal__actions .ant-btn-primary,
 .project-assets-space-import__selected-check {
   background: var(--jf-accent) !important;
   border-color: var(--jf-accent) !important;
@@ -2149,10 +2403,85 @@ code {
   box-shadow: none !important;
 }
 
-.project-clip-editor__batch-footer > button:hover,
-.project-clip-editor-modal__actions .ant-btn-primary:hover {
+.project-clip-editor__batch-footer > button:hover {
   background: var(--jf-accent-strong) !important;
   border-color: var(--jf-accent-strong) !important;
+  color: #111111 !important;
+}
+
+.project-clip-editor-modal .ant-modal-content {
+  border: 1px solid var(--jf-border) !important;
+  background: var(--jf-panel) !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.42) !important;
+}
+
+.project-clip-editor-modal .ant-modal-header {
+  background: var(--jf-panel) !important;
+  border-color: var(--jf-border-soft) !important;
+}
+
+.project-clip-editor-modal .ant-modal-title {
+  color: var(--jf-text) !important;
+}
+
+.project-clip-editor-modal .ant-modal-close {
+  color: var(--jf-muted) !important;
+}
+
+.project-clip-editor-modal .ant-modal-close:hover {
+  background: var(--jf-selected) !important;
+  color: var(--jf-text) !important;
+}
+
+.project-clip-editor-modal__field label {
+  color: var(--jf-text-soft) !important;
+}
+
+.project-clip-editor-modal__field .ant-input,
+.project-clip-editor-modal__field .ant-input-disabled {
+  background: var(--jf-panel-2) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-text) !important;
+  box-shadow: none !important;
+}
+
+.project-clip-editor-modal__field .ant-input-disabled {
+  color: var(--jf-muted) !important;
+  -webkit-text-fill-color: var(--jf-muted) !important;
+}
+
+.project-clip-editor-modal__field .ant-input:hover,
+.project-clip-editor-modal__field .ant-input:focus {
+  border-color: var(--jf-accent-border) !important;
+  box-shadow: 0 0 0 2px var(--jf-accent-soft) !important;
+}
+
+.project-clip-editor-modal__count {
+  color: var(--jf-muted) !important;
+}
+
+.project-clip-editor-modal__actions .ant-btn {
+  background: var(--jf-panel-2) !important;
+  border-color: var(--jf-border) !important;
+  color: var(--jf-text-soft) !important;
+  box-shadow: none !important;
+}
+
+.project-clip-editor-modal__actions .ant-btn:hover {
+  background: var(--jf-panel-3) !important;
+  border-color: var(--jf-accent-border) !important;
+  color: var(--jf-text) !important;
+}
+
+.project-clip-editor-modal__actions .ant-btn-primary {
+  background: #e5e7eb !important;
+  border-color: #e5e7eb !important;
+  color: #111111 !important;
+}
+
+.project-clip-editor-modal__actions .ant-btn-primary:hover {
+  background: #f4f4f5 !important;
+  border-color: #f4f4f5 !important;
   color: #111111 !important;
 }
 

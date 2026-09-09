@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type ReactNode,
 } from 'react'
 import { Button, Input, Modal, Popover, Slider, Tooltip, message } from 'antd'
 import {
@@ -28,15 +29,35 @@ import {
   PlusOutlined,
   PlusCircleOutlined,
   QuestionCircleFilled,
+  ReloadOutlined,
+  SearchOutlined,
   SettingOutlined,
   StarFilled,
+  StopOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons'
 import { useBilingualText } from '../../../i18n/useBilingualText'
+import { getApiErrorMessage } from '../../../services/apiErrors'
+import {
+  StudioAssetGenerationApi,
+  type StudioAssetImageTaskRequest,
+  type StudioEpisodeStoryboardSegmentDetailResult,
+  type StudioStoryboardMediaHistoryItem,
+  type StudioStoryboardVideoDetailResult,
+  type StudioStoryboardVideoPromptDetailResult,
+  type StudioStoryboardVideoPromptRegenerateResult,
+  type StudioStoryboardVideoGenerateEstimateResult,
+  type StudioStoryboardVideoReferenceAddItem,
+  type StudioStoryboardVideoReferenceAddResult,
+  type StudioStoryboardVideoReferenceDeleteResult,
+  type StudioStoryboardVideoReferenceOption,
+  type StudioStoryboardVideoReferenceOptionSource,
+} from '../../../services/studioAssetGeneration'
+import { StudioModelsApi, type StudioGenerationModel } from '../../../services/studioModels'
 import ImageViewer from './ImageViewer'
-import { PROJECT_STYLE_OPTIONS_BY_VISUAL } from './ProjectVisualStyleAndStyleFields'
 import StudioSelect from './StudioSelect'
 import VoiceLibraryModal from './VoiceLibraryModal'
+import { resolveAssetUrl } from '../assets/utils'
 import {
   PROJECT_CREATION_DRAFT_KEYS,
   buildEpisodeSourceSignature,
@@ -56,28 +77,108 @@ type ProjectClipEditingStepProps = {
   ratio: string
   styleName: string
   toneStyleName?: string
+  initialClips?: ClipDraft[]
+  visualStyleOptions?: Array<{
+    id?: string | number | null
+    name: string
+    coverUrl?: string
+  }>
+  toneStyleOptions?: Array<{
+    id?: string | number | null
+    name: string
+    coverUrl?: string
+  }>
+  onStoryboardEditorRefresh?: () => void
 }
 
 type GenerationMode = 'video' | 'image' | 'voice'
 type ClipEditorMode = 'edit' | 'insert-above' | 'insert-below'
-type PromptMentionKind = 'character' | 'scene'
+type PromptMentionKind = 'character' | 'scene' | 'prop'
 
 type PromptMentionAsset = {
   id: string
   name: string
-  imageUrl: string
+  imageUrl?: string
   kind: PromptMentionKind
+  token?: string
+  referenceIndex?: number | null
+  referenceSelectionRevisionNo?: number | null
+  aliases?: string[]
+}
+
+type VoiceReferenceItem = {
+  id: string
+  character: string
+  voice: string
+  imageUrl?: string
+  configured: boolean
+  referenceIndex?: number | null
+  referenceSelectionRevisionNo?: number | null
+}
+
+type ReferenceOptionAsset = PromptMentionAsset & {
+  selected: boolean
+  selectable: boolean
+  disabledReason?: string | null
+  source: StudioStoryboardVideoReferenceOptionSource
+  assetName?: string | null
+  lookName?: string | null
+  characterName?: string | null
+  voiceName?: string | null
+  referenceIndex?: number | null
+}
+
+type ReferenceOptionsState = {
+  loading: boolean
+  segmentId?: string
+  items?: StudioStoryboardVideoReferenceOption[]
+  error?: unknown
+}
+
+type SegmentDetailState = {
+  loading: boolean
+  data?: StudioEpisodeStoryboardSegmentDetailResult
+  error?: unknown
+}
+
+type SegmentMediaHistoryState = {
+  loading: boolean
+  items?: StudioStoryboardMediaHistoryItem[]
+  error?: unknown
+}
+
+type PromptRegenerationState = {
+  loading: boolean
+  promptId?: string | number
+  progress?: number | null
+  stageName?: string
+  error?: unknown
+}
+
+type VideoGenerationState = {
+  loading: boolean
+  id?: string | number
+  progress?: number | null
+  statusName?: string
+  error?: unknown
 }
 
 const VIDEO_DURATION_MIN = 4
 const VIDEO_DURATION_MAX = 30
+const DEFAULT_VIDEO_DURATION = 10
+const DEFAULT_VIDEO_RESOLUTION = '720p'
+const FALLBACK_VIDEO_RESOLUTIONS = ['480p', '720p']
+const PROMPT_REGENERATION_POLL_INTERVAL_MS = 3000
+const VIDEO_GENERATION_POLL_INTERVAL_MS = 3000
 
-type ClipDraft = {
+export type ClipDraft = {
   id: string
   title: string
   description: string
   prompt: string
   imageUrl: string
+  revisionNo?: number | null
+  manuallyAdded?: boolean
 }
 
 type VoiceLineDraft = {
@@ -104,7 +205,7 @@ type ClipEditingDraft = {
   model: string
   resolution: string
   videoModel: string
-  videoResolution: '480P' | '720P'
+  videoResolution: string
   videoDuration: number
   selectedRatio: string
   selectedTone: string
@@ -120,22 +221,27 @@ const isGenerationMode = (value: unknown): value is GenerationMode => (
   value === 'video' || value === 'image' || value === 'voice'
 )
 
-const isVideoResolution = (value: unknown): value is '480P' | '720P' => (
-  value === '480P' || value === '720P'
+const toStoryboardSegmentRequestId = (clipId: string): string | number => (
+  /^\d+$/.test(clipId) ? Number(clipId) : clipId
 )
 
 const INITIAL_VOICE_LINES: VoiceLineDraft[] = [
   { id: 'voice-line-1', character: '楚青', voice: '温润男声', text: '拼个桌，不介意吧？', volume: 1, speed: 1, expressionPanel: 'interjection', customPauseExpanded: false, customPauseSeconds: '', emotion: '害怕', emotionExpanded: true },
-  { id: 'voice-line-2', character: '姜萱', voice: '元气甜妹', text: '', volume: 1, speed: 1, expressionPanel: null, customPauseExpanded: false, customPauseSeconds: '', emotion: '自动', emotionExpanded: false },
+  { id: 'voice-line-2', character: '姜萤', voice: '元气甜妹', text: '', volume: 1, speed: 1, expressionPanel: null, customPauseExpanded: false, customPauseSeconds: '', emotion: '自动', emotionExpanded: false },
   { id: 'voice-line-3', character: '旁白', voice: '解说小美', text: '1', volume: 1, speed: 1, expressionPanel: null, customPauseExpanded: false, customPauseSeconds: '', emotion: '自动', emotionExpanded: false },
 ]
 
 const VOICE_BINDINGS = [
   { character: '旁白', voice: '解说小美', adjustable: false },
-  { character: '姜萱', voice: '元气甜妹', adjustable: false },
+  { character: '姜萤', voice: '元气甜妹', adjustable: false },
   { character: '食客群体', voice: '油腻大叔', adjustable: false },
   { character: '楚青', voice: '温润男声', adjustable: true },
 ]
+
+const normalizeVoiceReferenceCharacter = (value: string) => {
+  const name = value.trim()
+  return name === '姜萱' ? '姜萤' : name
+}
 
 const VOICE_PAUSE_OPTIONS = [
   { label: '0.25s', token: '<#0.25#>' },
@@ -166,15 +272,294 @@ const PREVIEW_IMAGES = [
 const NO_STYLE_VALUE = '__no_style__'
 const NO_TONE_VALUE = '__no_tone__'
 const formatVoiceRate = (value: number) => `${Number.isInteger(value) ? value : value.toFixed(1)}x`
+const formatCreditCost = (value: number | undefined) => {
+  if (value === undefined) return '--'
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/\.?0+$/, '')
+}
+
+const normalizeVideoResolutionValue = (value: unknown) => {
+  const text = String(value ?? '').trim()
+  if (!text) return ''
+  const normalized = text.toLocaleLowerCase()
+  return /^\d+p$/.test(normalized) ? normalized : text
+}
+
+const formatVideoResolutionLabel = (value: string) => normalizeVideoResolutionValue(value).toLocaleUpperCase()
+
+const normalizeVideoModelLookupKey = (value: unknown) => String(value ?? '')
+  .trim()
+  .toLocaleLowerCase()
+  .replace(/[^a-z0-9]+/g, '')
+
+const isStoryboardVideoPromptFinished = (detail: StudioStoryboardVideoPromptDetailResult) => {
+  const prompt = detail.prompt?.trim()
+  if (prompt) return true
+  const statusText = `${detail.stage ?? ''} ${detail.stageName ?? ''}`.toLocaleLowerCase()
+  return Number(detail.status) === 3
+    || Number(detail.progress) >= 100
+    || /成功|完成|success|succeed|complete|completed|generated/.test(statusText)
+}
+
+const isStoryboardVideoPromptFailed = (detail: StudioStoryboardVideoPromptDetailResult) => {
+  const statusText = `${detail.stage ?? ''} ${detail.stageName ?? ''}`.toLocaleLowerCase()
+  return Boolean(detail.error?.trim())
+    || Number(detail.status) > 3
+    || /失败|取消|failed|cancel|error/.test(statusText)
+}
+
+const getRatioValue = (value: string) => {
+  const [rawWidth, rawHeight] = value.split(':').map(Number)
+  return Number.isFinite(rawWidth) && rawWidth > 0 && Number.isFinite(rawHeight) && rawHeight > 0
+    ? rawWidth / rawHeight
+    : 16 / 9
+}
+
+const getStoryboardMediaOutputUrl = (item?: StudioStoryboardMediaHistoryItem | null) => {
+  if (!item) return ''
+  return resolveAssetUrl(item.outputUrl ?? (item.outputFileId === null || item.outputFileId === undefined
+    ? undefined
+    : String(item.outputFileId))) ?? ''
+}
+
+const getStoryboardMediaThumbnailUrl = (item?: StudioStoryboardMediaHistoryItem | null) => {
+  if (!item) return ''
+  const thumbnailUrl = resolveAssetUrl(item.thumbnailUrl ?? undefined)
+  if (thumbnailUrl) return thumbnailUrl
+  return item.mediaType === 'image' ? getStoryboardMediaOutputUrl(item) : ''
+}
+
+const getStoryboardMediaRatio = (item: StudioStoryboardMediaHistoryItem | undefined, fallbackRatio: string) => (
+  getRatioValue(item?.aspectRatio || fallbackRatio)
+)
+
+const getGenerationStyleId = (
+  options: Array<{ id?: string | number | null, name: string }>,
+  value: string,
+  emptyValue: string,
+) => {
+  if (!value || value === emptyValue) return null
+  const option = options.find((item) => item.name.trim() === value)
+  return option?.id ?? null
+}
+
+const isStoryboardVideoGenerationFinished = (detail: StudioStoryboardVideoDetailResult) => {
+  const statusText = `${detail.statusName ?? ''}`.toLocaleLowerCase()
+  return Boolean(getStoryboardMediaOutputUrl(detail))
+    || Number(detail.status) === 3
+    || Number(detail.progress) >= 100
+    || /成功|完成|success|succeed|complete|completed/.test(statusText)
+}
+
+const isStoryboardVideoGenerationFailed = (detail: StudioStoryboardVideoDetailResult) => {
+  const statusText = `${detail.statusName ?? ''}`.toLocaleLowerCase()
+  return Boolean(detail.error?.trim())
+    || Number(detail.status) === 4
+    || /失败|取消|failed|cancel|error/.test(statusText)
+}
+
+const ClipCoverPlaceholder = ({
+  variant = 'thumb',
+  label,
+  hint,
+}: {
+  variant?: 'thumb' | 'preview' | 'history'
+  label?: ReactNode
+  hint?: ReactNode
+}) => (
+  <span className={`project-clip-editor__cover-placeholder is-${variant}`} aria-hidden={label ? undefined : true}>
+    <span className="project-clip-editor__cover-placeholder-icon" />
+    {label && (
+      <>
+        <strong>{label}</strong>
+        {hint && <small>{hint}</small>}
+      </>
+    )}
+  </span>
+)
+
+const getStoryboardReferenceKind = (referenceType?: number | null): PromptMentionKind => {
+  if (referenceType === 1) return 'character'
+  if (referenceType === 2) return 'scene'
+  return 'prop'
+}
+
+const getStoryboardReferenceImageUrl = (fileUrl?: string | null, fileId?: string | number | null) => (
+  resolveAssetUrl(fileUrl ?? (fileId === null || fileId === undefined ? undefined : String(fileId)))
+)
+
+const parsePromptReferenceIndex = (token?: string | null) => {
+  const match = token?.trim().match(/^@?图片(\d+)$/)
+  if (!match) return null
+  const value = Number(match[1])
+  return Number.isInteger(value) && value > 0 ? value : null
+}
+
+const storyboardSegmentDetailToMentionAssets = (
+  detail?: StudioEpisodeStoryboardSegmentDetailResult,
+): PromptMentionAsset[] => {
+  const references = detail?.referenceSelection?.references.length
+    ? detail.referenceSelection.references
+    : detail?.directorPrompt?.references ?? []
+  const promptReferenceAssets = references.flatMap((reference, index): PromptMentionAsset[] => {
+    const token = reference.referenceToken.trim()
+    const name = reference.displayName.trim()
+    if (!token || !name) return []
+    return [{
+      id: `storyboard-reference:${detail?.id}:${token}`,
+      name,
+      token,
+      referenceIndex: reference.referenceIndex ?? parsePromptReferenceIndex(token) ?? index + 1,
+      referenceSelectionRevisionNo: detail?.referenceSelection?.revisionNo ?? null,
+      imageUrl: getStoryboardReferenceImageUrl(reference.fileUrl, reference.fileId),
+      kind: getStoryboardReferenceKind(reference.referenceType),
+      aliases: [name],
+    }]
+  })
+  if (promptReferenceAssets.length > 0) return promptReferenceAssets
+
+  return (detail?.assetReferences ?? []).flatMap((reference, index): PromptMentionAsset[] => {
+    const name = reference.assetName.trim()
+    if (!name) return []
+    return [{
+      id: `storyboard-asset-reference:${detail?.id}:${reference.scopeCode ?? reference.assetId ?? index}`,
+      name,
+      token: `@图片${index + 1}`,
+      referenceIndex: index + 1,
+      referenceSelectionRevisionNo: detail?.referenceSelection?.revisionNo ?? null,
+      imageUrl: getStoryboardReferenceImageUrl(reference.coverUrl, reference.coverFileId),
+      kind: getStoryboardReferenceKind(reference.assetType),
+      aliases: [name, reference.scopeCode ?? ''].filter(Boolean),
+    }]
+  })
+}
 
 const PROMPT_MENTION_SELECTOR = '[data-prompt-mention-id]'
 const PROMPT_EDITOR_BLOCK_TAGS = new Set(['DIV', 'P', 'LI'])
+
+const stripPromptMentionPrefix = (value: string) => value.trim().replace(/^@+/, '')
+
+const getPromptMentionPrimaryText = (asset: PromptMentionAsset) => (
+  stripPromptMentionPrefix(asset.token ?? asset.name)
+)
+
+const getPromptMentionTexts = (asset: PromptMentionAsset) => {
+  const texts = [
+    getPromptMentionPrimaryText(asset),
+    asset.name,
+    ...(asset.aliases ?? []),
+  ]
+    .map(stripPromptMentionPrefix)
+    .filter(Boolean)
+  return [...new Set(texts)]
+}
+
+const getReferenceOptionAssetId = (
+  option: StudioStoryboardVideoReferenceOption,
+  index: number,
+) => [
+  'storyboard-reference-option',
+  option.source,
+  option.assetId ?? option.characterName ?? option.assetName ?? option.displayName,
+  option.characterLookId ?? option.voiceId ?? option.dubbingGenerationId ?? option.fileId ?? option.referenceIndex ?? index,
+]
+  .map((value) => String(value ?? '').trim())
+  .filter(Boolean)
+  .join(':')
+
+const getReferenceOptionName = (option: StudioStoryboardVideoReferenceOption) => (
+  option.characterName
+    ?? option.assetName
+    ?? option.displayName
+    ?? option.voiceName
+    ?? ''
+).trim()
+
+const getReferenceOptionLookName = (option: StudioStoryboardVideoReferenceOption) => (
+  option.lookName
+    ?? option.characterLookName
+    ?? (option.defaultLook ? '主图' : null)
+    ?? ''
+).trim()
+
+const getReferenceOptionImageUrl = (option: StudioStoryboardVideoReferenceOption) => (
+  resolveAssetUrl(option.fileUrl ?? (option.fileId === null || option.fileId === undefined ? undefined : String(option.fileId)))
+)
+
+const getReferenceOptionKind = (
+  source: StudioStoryboardVideoReferenceOptionSource,
+): PromptMentionKind => {
+  if (source === 'scene') return 'scene'
+  if (source === 'prop') return 'prop'
+  return 'character'
+}
+
+const referenceOptionToAsset = (
+  option: StudioStoryboardVideoReferenceOption,
+  index: number,
+): ReferenceOptionAsset => {
+  const name = getReferenceOptionName(option) || option.displayName
+  const lookName = getReferenceOptionLookName(option)
+  const aliases = [
+    option.displayName,
+    option.assetName ?? undefined,
+    option.characterName ?? undefined,
+    option.voiceName ?? undefined,
+    lookName,
+  ].filter((value): value is string => Boolean(value?.trim()))
+  return {
+    id: getReferenceOptionAssetId(option, index),
+    name,
+    imageUrl: getReferenceOptionImageUrl(option),
+    kind: getReferenceOptionKind(option.source),
+    token: option.referenceIndex ? `@图片${option.referenceIndex}` : undefined,
+    aliases,
+    selected: option.selected,
+    selectable: option.selectable,
+    disabledReason: option.disabledReason,
+    source: option.source,
+    assetName: option.assetName,
+    lookName,
+    characterName: option.characterName,
+    voiceName: option.voiceName,
+    referenceIndex: option.referenceIndex,
+    referenceSelectionRevisionNo: option.referenceSelectionRevisionNo,
+  }
+}
+
+const referenceOptionToVoiceItem = (
+  option: StudioStoryboardVideoReferenceOption,
+  index: number,
+): VoiceReferenceItem => {
+  const character = normalizeVoiceReferenceCharacter(
+    option.characterName
+      ?? option.assetName
+      ?? option.displayName
+      ?? '',
+  )
+  const voice = (
+    option.voiceName
+      ?? option.disabledReason
+      ?? (option.selectable ? option.displayName : '尚未配置音色')
+      ?? ''
+  ).trim()
+  return {
+    id: getReferenceOptionAssetId(option, index),
+    character,
+    voice,
+    imageUrl: getReferenceOptionImageUrl(option),
+    configured: option.selectable,
+    referenceIndex: option.referenceIndex,
+    referenceSelectionRevisionNo: option.referenceSelectionRevisionNo,
+  }
+}
 
 const readPromptEditorNode = (node: Node): string => {
   if (node.nodeType === Node.TEXT_NODE) return node.textContent?.replace(/\u200b/g, '') ?? ''
   if (!(node instanceof HTMLElement)) return ''
   if (node.tagName === 'BR') return '\n'
-  if (node.matches(PROMPT_MENTION_SELECTOR)) return `@${node.dataset.promptMentionName ?? ''}`
+  if (node.matches(PROMPT_MENTION_SELECTOR)) {
+    return `@${node.dataset.promptMentionValue ?? node.dataset.promptMentionName ?? ''}`
+  }
 
   let value = ''
   Array.from(node.childNodes).forEach((child, index, siblings) => {
@@ -190,21 +575,25 @@ const readPromptEditorValue = (editor: HTMLDivElement) => (
   readPromptEditorNode(editor).replace(/\r\n?/g, '\n')
 )
 
-const createPromptMentionElement = (asset: PromptMentionAsset) => {
+const createPromptMentionElement = (asset: PromptMentionAsset, mentionText?: string) => {
   const mention = document.createElement('span')
   mention.className = 'project-clip-editor__prompt-mention'
   mention.contentEditable = 'false'
   mention.dataset.promptMentionId = asset.id
   mention.dataset.promptMentionName = asset.name
+  mention.dataset.promptMentionValue = stripPromptMentionPrefix(mentionText ?? asset.token ?? asset.name)
 
-  const image = document.createElement('img')
-  image.src = asset.imageUrl
-  image.alt = ''
-  image.draggable = false
+  if (asset.imageUrl) {
+    const image = document.createElement('img')
+    image.src = asset.imageUrl
+    image.alt = ''
+    image.draggable = false
+    mention.append(image)
+  }
 
   const label = document.createElement('strong')
   label.textContent = asset.name
-  mention.append(image, label)
+  mention.append(label)
   return mention
 }
 
@@ -216,10 +605,15 @@ const renderPromptEditorValue = (
   assets: PromptMentionAsset[],
 ) => {
   editor.replaceChildren()
-  const assetsByName = new Map(assets.map((asset) => [asset.name, asset]))
-  const names = assets.map((asset) => asset.name).sort((a, b) => b.length - a.length)
-  const mentionPattern = names.length > 0
-    ? new RegExp(`@(${names.map(escapePromptMentionPattern).join('|')})`, 'g')
+  const mentionAssets = new Map<string, PromptMentionAsset>()
+  assets.forEach((asset) => {
+    getPromptMentionTexts(asset).forEach((text) => {
+      if (!mentionAssets.has(text)) mentionAssets.set(text, asset)
+    })
+  })
+  const mentionTexts = [...mentionAssets.keys()].sort((a, b) => b.length - a.length)
+  const mentionPattern = mentionTexts.length > 0
+    ? new RegExp(`@(${mentionTexts.map(escapePromptMentionPattern).join('|')})`, 'g')
     : null
 
   if (!mentionPattern) {
@@ -232,10 +626,10 @@ const renderPromptEditorValue = (
   let match = mentionPattern.exec(value)
   while (match) {
     const offset = match.index
-    const name = match[1]
+    const mentionText = match[1]
     if (offset > cursor) editor.append(document.createTextNode(value.slice(cursor, offset)))
-    const asset = assetsByName.get(name)
-    editor.append(asset ? createPromptMentionElement(asset) : document.createTextNode(match[0]))
+    const asset = mentionAssets.get(mentionText)
+    editor.append(asset ? createPromptMentionElement(asset, mentionText) : document.createTextNode(match[0]))
     cursor = offset + match[0].length
     match = mentionPattern.exec(value)
   }
@@ -321,6 +715,7 @@ type PromptMentionEditorProps = {
   placeholder: string
   characterGroupLabel: string
   sceneGroupLabel: string
+  propGroupLabel: string
   menuTitle: string
   emptyLabel: string
   onChange: (value: string) => void
@@ -333,6 +728,7 @@ function PromptMentionEditor({
   placeholder,
   characterGroupLabel,
   sceneGroupLabel,
+  propGroupLabel,
   menuTitle,
   emptyLabel,
   onChange,
@@ -343,19 +739,29 @@ function PromptMentionEditor({
   const [query, setQuery] = useState('')
   const [highlightedIndex, setHighlightedIndex] = useState(0)
   const [menuPosition, setMenuPosition] = useState({ left: 12, top: 44 })
+  const mentionAssetSignature = useMemo(() => assets.map((asset) => [
+    asset.id,
+    asset.token ?? '',
+    asset.name,
+    ...(asset.aliases ?? []),
+  ].join('\u001f')).join('\u001e'), [assets])
 
   const matchingAssets = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase()
     return normalizedQuery
-      ? assets.filter((asset) => asset.name.toLocaleLowerCase().includes(normalizedQuery))
+      ? assets.filter((asset) => getPromptMentionTexts(asset)
+        .some((text) => text.toLocaleLowerCase().includes(normalizedQuery)))
       : assets
   }, [assets, query])
 
   useEffect(() => {
     const editor = editorRef.current
     if (!editor) return
-    if (editor.dataset.value !== value) renderPromptEditorValue(editor, value, assets)
-  }, [assets, value])
+    if (editor.dataset.value !== value || editor.dataset.promptMentionSignature !== mentionAssetSignature) {
+      renderPromptEditorValue(editor, value, assets)
+      editor.dataset.promptMentionSignature = mentionAssetSignature
+    }
+  }, [assets, mentionAssetSignature, value])
 
   const closeMenu = () => {
     setMenuOpen(false)
@@ -460,7 +866,7 @@ function PromptMentionEditor({
                 insertMention(asset)
               }}
             >
-              <img src={asset.imageUrl} alt="" />
+              {asset.imageUrl ? <img src={asset.imageUrl} alt="" /> : <PictureOutlined />}
               <span>{asset.name}</span>
               {highlighted && <CheckOutlined />}
             </button>
@@ -567,6 +973,7 @@ function PromptMentionEditor({
             <>
               {renderAssetGroup('character', characterGroupLabel)}
               {renderAssetGroup('scene', sceneGroupLabel)}
+              {renderAssetGroup('prop', propGroupLabel)}
             </>
           ) : (
             <div className="project-clip-editor__mention-empty">{emptyLabel}</div>
@@ -931,24 +1338,42 @@ export default function ProjectClipEditingStep({
   ratio,
   styleName,
   toneStyleName = '',
+  initialClips: remoteInitialClips,
+  visualStyleOptions = [],
+  toneStyleOptions = [],
+  onStoryboardEditorRefresh,
 }: ProjectClipEditingStepProps) {
   const l = useBilingualText()
-  const promptMentionAssets = useMemo<PromptMentionAsset[]>(() => [
+  const fallbackPromptMentionAssets = useMemo<PromptMentionAsset[]>(() => [
     { id: 'character-jiang-xuan', name: l('姜萱', 'Jiang Xuan'), imageUrl: PREVIEW_IMAGES[1], kind: 'character' },
     { id: 'character-diners', name: l('食客群体', 'Diners'), imageUrl: PREVIEW_IMAGES[0], kind: 'character' },
     { id: 'character-chu-qing', name: l('楚青', 'Chu Qing'), imageUrl: PREVIEW_IMAGES[1], kind: 'character' },
     { id: 'scene-street-stall', name: l('街边店铺', 'Street stall'), imageUrl: PREVIEW_IMAGES[2], kind: 'scene' },
     { id: 'scene-night', name: l('夜景氛围', 'Night ambience'), imageUrl: PREVIEW_IMAGES[3], kind: 'scene' },
   ], [l])
-  const initialClips = useMemo(() => splitIntoClips(episodes), [episodes])
-  const sourceSignature = useMemo(() => buildEpisodeSourceSignature(episodes), [episodes])
+  const initialClips = useMemo(
+    () => (remoteInitialClips && remoteInitialClips.length > 0
+      ? remoteInitialClips
+      : splitIntoClips(episodes)),
+    [episodes, remoteInitialClips],
+  )
+  const hasRemoteInitialClips = Boolean(remoteInitialClips && remoteInitialClips.length > 0)
+  const sourceSignature = useMemo(() => {
+    if (!hasRemoteInitialClips) return buildEpisodeSourceSignature(episodes)
+    return `storyboard:${initialClips.map((clip) => `${clip.id}:${clip.title}:${clip.description}`).join('|')}`
+  }, [episodes, hasRemoteInitialClips, initialClips])
   const [restoredDraft] = useState(() =>
     readProjectCreationDraft<ClipEditingDraft>(PROJECT_CREATION_DRAFT_KEYS.clips))
   const canRestoreDraft = restoredDraft?.sourceSignature === sourceSignature
   const restoredClips = canRestoreDraft
     && Array.isArray(restoredDraft.clips)
     && restoredDraft.clips.length > 0
-    ? restoredDraft.clips
+    ? restoredDraft.clips.map((clip) => ({
+      ...clip,
+      revisionNo: clip.revisionNo
+        ?? initialClips.find((initialClip) => initialClip.id === clip.id)?.revisionNo
+        ?? null,
+    }))
     : initialClips
   const restoredActiveClipId = canRestoreDraft
     && restoredClips.some((clip) => clip.id === restoredDraft.activeClipId)
@@ -957,26 +1382,38 @@ export default function ProjectClipEditingStep({
   const [clips, setClips] = useState(restoredClips)
   const [activeClipId, setActiveClipId] = useState(restoredActiveClipId)
   const [mode, setMode] = useState<GenerationMode>(
-    canRestoreDraft && isGenerationMode(restoredDraft.mode) ? restoredDraft.mode : 'image',
+    canRestoreDraft && isGenerationMode(restoredDraft.mode) ? restoredDraft.mode : hasRemoteInitialClips ? 'video' : 'image',
   )
   const [promptByClip, setPromptByClip] = useState<Record<string, string>>(
     canRestoreDraft ? restoredDraft.promptByClip : {},
   )
   const [model, setModel] = useState(canRestoreDraft ? restoredDraft.model : 'gpt-image-2')
   const [resolution, setResolution] = useState(canRestoreDraft ? restoredDraft.resolution : '2k')
-  const [videoModel, setVideoModel] = useState(canRestoreDraft ? restoredDraft.videoModel : 'seedance-2.5')
-  const [videoResolution, setVideoResolution] = useState<'480P' | '720P'>(
-    canRestoreDraft && isVideoResolution(restoredDraft.videoResolution)
-      ? restoredDraft.videoResolution
-      : '720P',
-  )
-  const [videoDuration, setVideoDuration] = useState(() => (
+  const [videoModel, setVideoModel] = useState(canRestoreDraft ? restoredDraft.videoModel : '')
+  const [videoResolution, setVideoResolution] = useState(
     canRestoreDraft
-      ? Math.min(VIDEO_DURATION_MAX, Math.max(VIDEO_DURATION_MIN, restoredDraft.videoDuration))
-      : 11
-  ))
+      ? normalizeVideoResolutionValue(restoredDraft.videoResolution) || DEFAULT_VIDEO_RESOLUTION
+      : DEFAULT_VIDEO_RESOLUTION,
+  )
+  const [videoDuration, setVideoDuration] = useState(DEFAULT_VIDEO_DURATION)
   const [videoSpecOpen, setVideoSpecOpen] = useState(false)
   const [videoVoiceTipVisible, setVideoVoiceTipVisible] = useState(true)
+  const [referenceAddMenuOpen, setReferenceAddMenuOpen] = useState(false)
+  const [characterReferenceModalOpen, setCharacterReferenceModalOpen] = useState(false)
+  const [characterReferenceQuery, setCharacterReferenceQuery] = useState('')
+  const [selectedCharacterReferenceIds, setSelectedCharacterReferenceIds] = useState<string[]>([])
+  const [sceneReferenceModalOpen, setSceneReferenceModalOpen] = useState(false)
+  const [sceneReferenceQuery, setSceneReferenceQuery] = useState('')
+  const [selectedSceneReferenceIds, setSelectedSceneReferenceIds] = useState<string[]>([])
+  const [propReferenceModalOpen, setPropReferenceModalOpen] = useState(false)
+  const [propReferenceQuery, setPropReferenceQuery] = useState('')
+  const [selectedPropReferenceIds, setSelectedPropReferenceIds] = useState<string[]>([])
+  const [voiceReferenceModalOpen, setVoiceReferenceModalOpen] = useState(false)
+  const [selectedVoiceReferenceIds, setSelectedVoiceReferenceIds] = useState<string[]>([])
+  const [referenceOptionsBySource, setReferenceOptionsBySource] = useState<
+    Partial<Record<StudioStoryboardVideoReferenceOptionSource, ReferenceOptionsState>>
+  >({})
+  const [deletingReferenceKeys, setDeletingReferenceKeys] = useState<string[]>([])
   const [selectedRatio, setSelectedRatio] = useState(
     canRestoreDraft ? restoredDraft.selectedRatio : ratio || '9:16',
   )
@@ -986,54 +1423,97 @@ export default function ProjectClipEditingStep({
   const [selectedStyle, setSelectedStyle] = useState(
     canRestoreDraft ? restoredDraft.selectedStyle : styleName || NO_STYLE_VALUE,
   )
-  const styleOptions = useMemo(() => {
-    const configuredOptions = Object.values(PROJECT_STYLE_OPTIONS_BY_VISUAL).flat()
-    const options = [
-      { value: NO_STYLE_VALUE, label: l('无风格', 'No style') },
-      ...configuredOptions,
-    ]
+  const createStyleSelectOptions = (
+    sourceOptions: Array<{ id?: string | number | null, name: string, coverUrl?: string }>,
+    emptyValue: string,
+    emptyLabel: string,
+    currentValues: string[],
+  ): Array<{ value: string, trigger: string, label: ReactNode }> => {
+    const options = new Map<string, { value: string, trigger: string, coverUrl?: string, isNone?: boolean }>()
 
-    for (const value of [styleName, selectedStyle]) {
-      if (value && value !== NO_STYLE_VALUE && !options.some((option) => option.value === value)) {
-        options.splice(1, 0, { value, label: value })
+    options.set(emptyValue, {
+      value: emptyValue,
+      trigger: emptyLabel,
+      isNone: true,
+    })
+    sourceOptions.forEach((option) => {
+      const name = option.name.trim()
+      if (!name) return
+      const existing = options.get(name)
+      options.set(name, {
+        value: name,
+        trigger: existing?.trigger ?? name,
+        coverUrl: option.coverUrl ?? existing?.coverUrl,
+        isNone: existing?.isNone,
+      })
+    })
+
+    for (const value of currentValues) {
+      if (value && value !== emptyValue && !options.has(value)) {
+        options.set(value, { value, trigger: value })
       }
     }
 
-    return options
-  }, [l, selectedStyle, styleName])
-  const toneOptions = useMemo(() => {
-    const options = [
-      { value: NO_TONE_VALUE, label: l('选择影调', 'Select tone') },
-      { value: 'suspense', label: l('悬疑电影', 'Suspense film') },
-      { value: 'documentary', label: l('纪实主义', 'Documentary') },
-      { value: 'cyberpunk', label: l('赛博朋克', 'Cyberpunk') },
-    ]
-
-    for (const value of [toneStyleName, selectedTone]) {
-      if (value && value !== NO_TONE_VALUE && !options.some((option) => option.value === value)) {
-        options.splice(1, 0, { value, label: value })
-      }
-    }
-
-    return options
-  }, [l, selectedTone, toneStyleName])
+    return [...options.values()].map((option) => ({
+      value: option.value,
+      trigger: option.trigger,
+      label: (
+        <span className="asset-generation-workspace__style-option">
+          <span className="asset-generation-workspace__style-option-thumb">
+            {option.coverUrl ? (
+              <img src={option.coverUrl} alt="" aria-hidden="true" loading="lazy" decoding="async" />
+            ) : option.isNone ? <StopOutlined /> : <PictureOutlined />}
+          </span>
+          <span className="asset-generation-workspace__style-option-name" title={option.trigger}>
+            {option.trigger}
+          </span>
+        </span>
+      ),
+    }))
+  }
+  const styleOptions = useMemo<Array<{ value: string, trigger: string, label: ReactNode }>>(() => {
+    return createStyleSelectOptions(
+      visualStyleOptions,
+      NO_STYLE_VALUE,
+      l('无风格', 'No style'),
+      [styleName, selectedStyle],
+    )
+  }, [l, selectedStyle, styleName, visualStyleOptions])
+  const toneOptions = useMemo<Array<{ value: string, trigger: string, label: ReactNode }>>(() => {
+    return createStyleSelectOptions(
+      toneStyleOptions,
+      NO_TONE_VALUE,
+      l('无风格', 'No style'),
+      [toneStyleName, selectedTone],
+    )
+  }, [l, selectedTone, toneStyleName, toneStyleOptions])
   const [storyboardSkillEnabled, setStoryboardSkillEnabled] = useState(
     canRestoreDraft ? restoredDraft.storyboardSkillEnabled : false,
   )
   const [editingClipId, setEditingClipId] = useState<string | null>(null)
   const [insertingAt, setInsertingAt] = useState<number | null>(null)
   const [clipEditorMode, setClipEditorMode] = useState<ClipEditorMode>('edit')
+  const [expandedDescriptionClipId, setExpandedDescriptionClipId] = useState<string | null>(null)
   const [editingDescription, setEditingDescription] = useState('')
   const [imageViewerOpen, setImageViewerOpen] = useState(false)
   const [historyIndexByClip, setHistoryIndexByClip] = useState<Record<string, number>>(
     canRestoreDraft ? restoredDraft.historyIndexByClip : {},
   )
-  const [previewImageRatio, setPreviewImageRatio] = useState(1)
+  const [previewImageRatio, setPreviewImageRatio] = useState(() => getRatioValue(ratio || '9:16'))
   const [voiceInfoVisible, setVoiceInfoVisible] = useState(true)
   const [voiceConfigExpanded, setVoiceConfigExpanded] = useState(true)
   const [voiceBasicsExpanded, setVoiceBasicsExpanded] = useState(true)
   const [voiceVolume, setVoiceVolume] = useState(canRestoreDraft ? restoredDraft.voiceVolume : 1)
   const [voiceSpeed, setVoiceSpeed] = useState(canRestoreDraft ? restoredDraft.voiceSpeed : 1)
+  const [videoModels, setVideoModels] = useState<StudioGenerationModel[]>([])
+  const [videoModelsLoading, setVideoModelsLoading] = useState(true)
+  const [videoModelsError, setVideoModelsError] = useState<unknown>()
+  const [videoModelsRetryToken, setVideoModelsRetryToken] = useState(0)
+  const [videoGenerateEstimate, setVideoGenerateEstimate] = useState<StudioStoryboardVideoGenerateEstimateResult>()
+  const [videoGenerateEstimateLoading, setVideoGenerateEstimateLoading] = useState(false)
+  const [videoGenerateEstimateError, setVideoGenerateEstimateError] = useState<unknown>()
+  const [promptRegenerationByClipId, setPromptRegenerationByClipId] = useState<Record<string, PromptRegenerationState>>({})
+  const [videoGenerationByClipId, setVideoGenerationByClipId] = useState<Record<string, VideoGenerationState>>({})
   const initialVoiceLines = (
     canRestoreDraft && Array.isArray(restoredDraft.voiceLines)
       ? restoredDraft.voiceLines
@@ -1051,6 +1531,44 @@ export default function ProjectClipEditingStep({
   const ratioPropRef = useRef(ratio)
   const styleNamePropRef = useRef(styleName)
   const toneStyleNamePropRef = useRef(toneStyleName)
+  const segmentDetailRequestRef = useRef<StudioAssetImageTaskRequest<StudioEpisodeStoryboardSegmentDetailResult> | null>(null)
+  const segmentUpdateRequestRef = useRef<StudioAssetImageTaskRequest<StudioEpisodeStoryboardSegmentDetailResult | null> | null>(null)
+  const segmentInsertRequestRef = useRef<StudioAssetImageTaskRequest<StudioEpisodeStoryboardSegmentDetailResult | null> | null>(null)
+  const segmentMergeRequestRef = useRef<StudioAssetImageTaskRequest<StudioEpisodeStoryboardSegmentDetailResult | null> | null>(null)
+  const segmentDeleteRequestRefs = useRef(new Map<string, StudioAssetImageTaskRequest<null>>())
+  const mediaHistoryRequestRef = useRef<StudioAssetImageTaskRequest<StudioStoryboardMediaHistoryItem[]> | null>(null)
+  const videoGenerateEstimateRequestRef = useRef<StudioAssetImageTaskRequest<StudioStoryboardVideoGenerateEstimateResult> | null>(null)
+  const videoGenerateRequestRef = useRef<StudioAssetImageTaskRequest<StudioStoryboardVideoDetailResult> | null>(null)
+  const videoDetailRequestRef = useRef<StudioAssetImageTaskRequest<StudioStoryboardVideoDetailResult> | null>(null)
+  const videoGenerationTimerRef = useRef<number | null>(null)
+  const videoGenerationRunRef = useRef(0)
+  const promptRegenerateRequestRef = useRef<StudioAssetImageTaskRequest<StudioStoryboardVideoPromptRegenerateResult> | null>(null)
+  const promptRegenerateDetailRequestRef = useRef<StudioAssetImageTaskRequest<StudioStoryboardVideoPromptDetailResult> | null>(null)
+  const promptRegenerateTimerRef = useRef<number | null>(null)
+  const promptRegenerateRunRef = useRef(0)
+  const referenceOptionsRequestRef = useRef<StudioAssetImageTaskRequest<StudioStoryboardVideoReferenceOption[]> | null>(null)
+  const referenceAddRequestRef = useRef<StudioAssetImageTaskRequest<StudioStoryboardVideoReferenceAddResult | null> | null>(null)
+  const referenceDeleteRequestRefs = useRef(new Map<string, StudioAssetImageTaskRequest<StudioStoryboardVideoReferenceDeleteResult | null>>())
+  const referenceOptionsRunRef = useRef(0)
+  const segmentDetailLoadedKeysRef = useRef(new Set<string>())
+  const mediaHistoryLoadedKeysRef = useRef(new Set<string>())
+  const manuallyEditedPromptClipIdsRef = useRef(new Set<string>())
+  const manuallyAddedClipIdsRef = useRef(new Set<string>(
+    restoredClips.filter((clip) => clip.manuallyAdded || clip.id.startsWith('clip-')).map((clip) => clip.id),
+  ))
+  const pendingActiveClipIdAfterRemoteRefreshRef = useRef<string | null>(null)
+  const [segmentDetailsByClipId, setSegmentDetailsByClipId] = useState<Record<string, SegmentDetailState>>({})
+  const [segmentDetailRefreshToken, setSegmentDetailRefreshToken] = useState(0)
+  const [mediaHistoryByClipId, setMediaHistoryByClipId] = useState<Record<string, SegmentMediaHistoryState>>({})
+  const [mediaHistoryRefreshToken, setMediaHistoryRefreshToken] = useState(0)
+  const [clipEditorSaving, setClipEditorSaving] = useState(false)
+  const [mergingClipIds, setMergingClipIds] = useState<string[]>([])
+  const [deletingClipIds, setDeletingClipIds] = useState<string[]>([])
+  const [referenceAddingSource, setReferenceAddingSource] = useState<StudioStoryboardVideoReferenceOptionSource | null>(null)
+  const segmentDetailsByClipIdRef = useRef(segmentDetailsByClipId)
+  segmentDetailsByClipIdRef.current = segmentDetailsByClipId
+  const mediaHistoryByClipIdRef = useRef(mediaHistoryByClipId)
+  mediaHistoryByClipIdRef.current = mediaHistoryByClipId
   const persistableVoiceLines = useMemo(() => voiceLines.map((line) => ({
     ...line,
     expressionPanel: null,
@@ -1079,15 +1597,469 @@ export default function ProjectClipEditingStep({
     voiceLines: persistableVoiceLines,
   })
   const activeClip = clips.find((clip) => clip.id === activeClipId) ?? clips[0]
+  const activeSegmentDetailState = activeClip ? segmentDetailsByClipId[activeClip.id] : undefined
+  const activeSegmentDetail = activeSegmentDetailState?.data
+  const activeMediaHistoryState = activeClip ? mediaHistoryByClipId[activeClip.id] : undefined
+  const activePromptRegenerationState = activeClip ? promptRegenerationByClipId[activeClip.id] : undefined
+  const activeVideoGenerationState = activeClip ? videoGenerationByClipId[activeClip.id] : undefined
+  const promptMentionAssets = useMemo(() => {
+    const storyboardAssets = storyboardSegmentDetailToMentionAssets(activeSegmentDetail)
+    return hasRemoteInitialClips ? storyboardAssets : storyboardAssets.length > 0 ? storyboardAssets : fallbackPromptMentionAssets
+  }, [activeSegmentDetail, fallbackPromptMentionAssets, hasRemoteInitialClips])
+  const activeReferenceOptionsSegmentKey = activeClip && hasRemoteInitialClips && !activeClip.id.startsWith('clip-')
+    ? String(toStoryboardSegmentRequestId(activeClip.id))
+    : ''
+  const characterReferenceOptionsState = referenceOptionsBySource.character?.segmentId === activeReferenceOptionsSegmentKey
+    ? referenceOptionsBySource.character
+    : undefined
+  const sceneReferenceOptionsState = referenceOptionsBySource.scene?.segmentId === activeReferenceOptionsSegmentKey
+    ? referenceOptionsBySource.scene
+    : undefined
+  const propReferenceOptionsState = referenceOptionsBySource.prop?.segmentId === activeReferenceOptionsSegmentKey
+    ? referenceOptionsBySource.prop
+    : undefined
+  const dubbingReferenceOptionsState = referenceOptionsBySource.dubbing?.segmentId === activeReferenceOptionsSegmentKey
+    ? referenceOptionsBySource.dubbing
+    : undefined
+  const characterReferenceAssets = useMemo(() => (
+    (characterReferenceOptionsState?.items ?? []).map(referenceOptionToAsset)
+  ), [characterReferenceOptionsState?.items])
+  const sceneReferenceAssets = useMemo(() => (
+    (sceneReferenceOptionsState?.items ?? []).map(referenceOptionToAsset)
+  ), [sceneReferenceOptionsState?.items])
+  const propReferenceAssets = useMemo(() => (
+    (propReferenceOptionsState?.items ?? []).map(referenceOptionToAsset)
+  ), [propReferenceOptionsState?.items])
   const prompt = activeClip ? (promptByClip[activeClip.id] ?? activeClip.prompt) : ''
-  const activeClipIndex = clips.indexOf(activeClip)
-  const activeHistoryImages = [
-    activeClip.imageUrl,
-    PREVIEW_IMAGES[(activeClipIndex + 1) % PREVIEW_IMAGES.length],
-  ]
-  const activeHistoryIndex = historyIndexByClip[activeClip.id] ?? 0
-  const activeImageUrl = activeHistoryImages[activeHistoryIndex] ?? activeClip.imageUrl
-  const selectedStyleLabel = styleOptions.find((option) => option.value === selectedStyle)?.label ?? selectedStyle
+  const activeHistoryItems = (activeMediaHistoryState?.items ?? [])
+    .filter((item) => item.mediaType === 'video' && getStoryboardMediaOutputUrl(item))
+  const storedHistoryIndex = activeClip ? historyIndexByClip[activeClip.id] ?? 0 : 0
+  const activeHistoryIndex = Math.min(Math.max(storedHistoryIndex, 0), Math.max(0, activeHistoryItems.length - 1))
+  const activeHistoryItem = activeHistoryItems[activeHistoryIndex]
+  const activeMediaUrl = getStoryboardMediaOutputUrl(activeHistoryItem)
+  const activeMediaThumbnailUrl = getStoryboardMediaThumbnailUrl(activeHistoryItem)
+  const hasActiveVideo = activeHistoryItem?.mediaType === 'video' && Boolean(activeMediaUrl)
+  const hasActiveImage = activeHistoryItem?.mediaType !== 'video' && Boolean(activeMediaUrl)
+  const activeImageUrl = hasActiveImage ? activeMediaUrl : ''
+  const activeVideoUrl = hasActiveVideo ? activeMediaUrl : ''
+  const activePreviewRatio = hasActiveImage && !activeHistoryItem?.aspectRatio
+    ? previewImageRatio
+    : getStoryboardMediaRatio(activeHistoryItem, selectedRatio)
+  const selectedStyleLabel = styleOptions.find((option) => option.value === selectedStyle)?.trigger ?? selectedStyle
+  const selectedVisualStyleIdForGeneration = useMemo(() => (
+    getGenerationStyleId(visualStyleOptions, selectedStyle, NO_STYLE_VALUE)
+  ), [selectedStyle, visualStyleOptions])
+  const selectedToneStyleIdForGeneration = useMemo(() => (
+    getGenerationStyleId(toneStyleOptions, selectedTone, NO_TONE_VALUE)
+  ), [selectedTone, toneStyleOptions])
+  const videoModelOptions = useMemo(() => videoModels.map((item) => ({
+    value: String(item.id),
+    label: item.name,
+  })), [videoModels])
+  const selectedVideoModelById = useMemo(() => videoModels.find(
+    (item) => String(item.id) === videoModel,
+  ), [videoModel, videoModels])
+  const selectedVideoModel = selectedVideoModelById ?? videoModels.find((item) => {
+    const currentKey = normalizeVideoModelLookupKey(videoModel)
+    if (!currentKey) return false
+    return normalizeVideoModelLookupKey(item.modelCode).includes(currentKey)
+      || normalizeVideoModelLookupKey(item.name).includes(currentKey)
+  })
+  const characterReferenceLimit = Math.max(
+    1,
+    Math.floor(Number(selectedVideoModel?.videoCapabilities?.maxReferenceImages) || 30),
+  )
+  const selectedCharacterReferenceAssets = useMemo(() => {
+    const assetById = new Map(characterReferenceAssets.map((asset) => [asset.id, asset]))
+    return selectedCharacterReferenceIds
+      .map((id) => assetById.get(id))
+      .filter((asset): asset is ReferenceOptionAsset => Boolean(asset))
+  }, [characterReferenceAssets, selectedCharacterReferenceIds])
+  const filteredCharacterReferenceAssets = useMemo(() => {
+    const query = characterReferenceQuery.trim().toLocaleLowerCase()
+    if (!query) return characterReferenceAssets
+    return characterReferenceAssets.filter((asset) => getPromptMentionTexts(asset)
+      .some((text) => text.toLocaleLowerCase().includes(query)))
+  }, [characterReferenceAssets, characterReferenceQuery])
+  const characterReferenceGroups = useMemo(() => {
+    const groups = new Map<string, ReferenceOptionAsset[]>()
+    filteredCharacterReferenceAssets.forEach((asset) => {
+      const groupName = (asset.characterName ?? asset.assetName ?? asset.name).trim() || l('未命名角色', 'Unnamed character')
+      groups.set(groupName, [...(groups.get(groupName) ?? []), asset])
+    })
+    return [...groups.entries()].map(([name, assets]) => ({ name, assets }))
+  }, [filteredCharacterReferenceAssets, l])
+  const sceneReferenceLimit = 1
+  const selectedSceneReferenceAssets = useMemo(() => {
+    const assetById = new Map(sceneReferenceAssets.map((asset) => [asset.id, asset]))
+    return selectedSceneReferenceIds
+      .map((id) => assetById.get(id))
+      .filter((asset): asset is ReferenceOptionAsset => Boolean(asset))
+  }, [sceneReferenceAssets, selectedSceneReferenceIds])
+  const filteredSceneReferenceAssets = useMemo(() => {
+    const query = sceneReferenceQuery.trim().toLocaleLowerCase()
+    if (!query) return sceneReferenceAssets
+    return sceneReferenceAssets.filter((asset) => getPromptMentionTexts(asset)
+      .some((text) => text.toLocaleLowerCase().includes(query)))
+  }, [sceneReferenceAssets, sceneReferenceQuery])
+  const sceneReferenceGroups = useMemo(() => {
+    const groups = new Map<string, ReferenceOptionAsset[]>()
+    filteredSceneReferenceAssets.forEach((asset) => {
+      const groupName = asset.name.trim() || l('未命名场景', 'Unnamed scene')
+      groups.set(groupName, [...(groups.get(groupName) ?? []), asset])
+    })
+    return [...groups.entries()].map(([name, assets]) => ({ name, assets }))
+  }, [filteredSceneReferenceAssets, l])
+  const propReferenceLimit = characterReferenceLimit
+  const selectedPropReferenceAssets = useMemo(() => {
+    const assetById = new Map(propReferenceAssets.map((asset) => [asset.id, asset]))
+    return selectedPropReferenceIds
+      .map((id) => assetById.get(id))
+      .filter((asset): asset is ReferenceOptionAsset => Boolean(asset))
+  }, [propReferenceAssets, selectedPropReferenceIds])
+  const filteredPropReferenceAssets = useMemo(() => {
+    const query = propReferenceQuery.trim().toLocaleLowerCase()
+    if (!query) return propReferenceAssets
+    return propReferenceAssets.filter((asset) => getPromptMentionTexts(asset)
+      .some((text) => text.toLocaleLowerCase().includes(query)))
+  }, [propReferenceAssets, propReferenceQuery])
+  const propReferenceGroups = useMemo(() => {
+    const groups = new Map<string, ReferenceOptionAsset[]>()
+    filteredPropReferenceAssets.forEach((asset) => {
+      const groupName = asset.name.trim() || l('未命名道具', 'Unnamed prop')
+      groups.set(groupName, [...(groups.get(groupName) ?? []), asset])
+    })
+    return [...groups.entries()].map(([name, assets]) => ({ name, assets }))
+  }, [filteredPropReferenceAssets, l])
+  const voiceReferenceLimit = 10
+  const voiceReferenceItems = useMemo<VoiceReferenceItem[]>(() => {
+    return (dubbingReferenceOptionsState?.items ?? []).map(referenceOptionToVoiceItem)
+  }, [dubbingReferenceOptionsState?.items])
+  const selectedVoiceReferenceItems = useMemo(() => {
+    const itemById = new Map(voiceReferenceItems.map((item) => [item.id, item]))
+    return selectedVoiceReferenceIds
+      .map((id) => itemById.get(id))
+      .filter((item): item is VoiceReferenceItem => Boolean(item))
+  }, [selectedVoiceReferenceIds, voiceReferenceItems])
+  const videoResolutionOptions = useMemo(() => {
+    const capabilityResolutions = selectedVideoModel?.videoCapabilities?.resolutions ?? []
+    const values = capabilityResolutions
+      .map(normalizeVideoResolutionValue)
+      .filter(Boolean)
+    return [...new Set(values.length > 0 ? values : FALLBACK_VIDEO_RESOLUTIONS)]
+  }, [selectedVideoModel])
+  const rawVideoDurationMin = Number(selectedVideoModel?.videoCapabilities?.minDurationSeconds)
+  const rawVideoDurationMax = Number(selectedVideoModel?.videoCapabilities?.maxDurationSeconds)
+  const videoDurationMin = Number.isFinite(rawVideoDurationMin) && rawVideoDurationMin > 0
+    ? Math.floor(rawVideoDurationMin)
+    : VIDEO_DURATION_MIN
+  const videoDurationMax = Math.max(
+    videoDurationMin,
+    Number.isFinite(rawVideoDurationMax) && rawVideoDurationMax > 0
+      ? Math.floor(rawVideoDurationMax)
+      : VIDEO_DURATION_MAX,
+  )
+  const videoDurationProgress = videoDurationMax > videoDurationMin
+    ? ((videoDuration - videoDurationMin) / (videoDurationMax - videoDurationMin)) * 100
+    : 100
+  const videoGenerateCreditCostText = videoGenerateEstimateLoading && !videoGenerateEstimate
+    ? '…'
+    : formatCreditCost(videoGenerateEstimate?.creditCost)
+  const activeVideoGenerationProgressText = activeVideoGenerationState?.progress === undefined
+    || activeVideoGenerationState?.progress === null
+    ? ''
+    : ` ${Math.max(0, Math.min(100, Math.round(activeVideoGenerationState.progress)))}%`
+  const activeVideoGenerationStatusText = activeVideoGenerationState?.statusName
+    || l('正在生成视频', 'Generating video')
+  const isActiveVideoGenerating = Boolean(activeVideoGenerationState?.loading)
+  const selectedVideoModelLabel = selectedVideoModel?.name || l('视频模型', 'Video model')
+  const getReferenceOptionLimit = (source: StudioStoryboardVideoReferenceOptionSource) => {
+    if (source === 'scene') return sceneReferenceLimit
+    if (source === 'prop') return propReferenceLimit
+    if (source === 'dubbing') return voiceReferenceLimit
+    return characterReferenceLimit
+  }
+
+  const getReferenceOptionsStateBySource = (source: StudioStoryboardVideoReferenceOptionSource) => {
+    if (source === 'scene') return sceneReferenceOptionsState
+    if (source === 'prop') return propReferenceOptionsState
+    if (source === 'dubbing') return dubbingReferenceOptionsState
+    return characterReferenceOptionsState
+  }
+
+  const getSelectedReferenceIdsBySource = (source: StudioStoryboardVideoReferenceOptionSource) => {
+    if (source === 'scene') return selectedSceneReferenceIds
+    if (source === 'prop') return selectedPropReferenceIds
+    if (source === 'dubbing') return selectedVoiceReferenceIds
+    return selectedCharacterReferenceIds
+  }
+
+  const closeReferenceModalBySource = (source: StudioStoryboardVideoReferenceOptionSource) => {
+    if (source === 'scene') setSceneReferenceModalOpen(false)
+    else if (source === 'prop') setPropReferenceModalOpen(false)
+    else if (source === 'dubbing') setVoiceReferenceModalOpen(false)
+    else setCharacterReferenceModalOpen(false)
+  }
+
+  const getReferenceOptionSelectionId = (
+    source: StudioStoryboardVideoReferenceOptionSource,
+    option: StudioStoryboardVideoReferenceOption,
+    index: number,
+  ) => (
+    source === 'dubbing'
+      ? referenceOptionToVoiceItem(option, index).id
+      : referenceOptionToAsset(option, index).id
+  )
+
+  const getFallbackReferenceType = (source: StudioStoryboardVideoReferenceOptionSource) => {
+    if (source === 'character') return 1
+    if (source === 'scene') return 2
+    if (source === 'prop') return 3
+    return undefined
+  }
+
+  const getReferenceSelectionRevisionNo = (
+    source: StudioStoryboardVideoReferenceOptionSource,
+    options: StudioStoryboardVideoReferenceOption[],
+  ) => {
+    const revisionNo = Math.floor(Number(
+      options.find((option) => option.referenceSelectionRevisionNo !== null && option.referenceSelectionRevisionNo !== undefined)
+        ?.referenceSelectionRevisionNo
+        ?? getReferenceOptionsStateBySource(source)?.items?.find((option) => (
+          option.referenceSelectionRevisionNo !== null && option.referenceSelectionRevisionNo !== undefined
+        ))?.referenceSelectionRevisionNo
+        ?? activeSegmentDetail?.referenceSelection?.revisionNo,
+    ))
+    return Number.isInteger(revisionNo) && revisionNo >= 0 ? revisionNo : null
+  }
+
+  const referenceOptionToAddItem = (
+    option: StudioStoryboardVideoReferenceOption,
+  ): StudioStoryboardVideoReferenceAddItem | null => {
+    const displayName = getReferenceOptionName(option) || option.displayName.trim()
+    if (!displayName) return null
+    return {
+      referenceType: option.referenceType ?? getFallbackReferenceType(option.source),
+      fileId: option.fileId ?? undefined,
+      assetId: option.assetId ?? undefined,
+      characterLookId: option.characterLookId ?? undefined,
+      sourceSegmentId: option.sourceSegmentId ?? undefined,
+      durationSeconds: option.durationSeconds ?? undefined,
+      audioSource: option.audioSource ?? undefined,
+      voiceId: option.voiceId ?? undefined,
+      voiceName: option.voiceName ?? undefined,
+      characterName: option.characterName ?? undefined,
+      dubbingGenerationId: option.dubbingGenerationId ?? undefined,
+      displayName,
+    }
+  }
+
+  const syncSelectedReferenceOptions = (
+    source: StudioStoryboardVideoReferenceOptionSource,
+    options: StudioStoryboardVideoReferenceOption[],
+  ) => {
+    const limit = getReferenceOptionLimit(source)
+    const selectedIds = options
+      .map((option, index) => ({
+        id: source === 'dubbing'
+          ? referenceOptionToVoiceItem(option, index).id
+          : referenceOptionToAsset(option, index).id,
+        selected: option.selected,
+      }))
+      .filter((item) => item.selected)
+      .map((item) => item.id)
+      .slice(0, limit)
+
+    if (source === 'character') setSelectedCharacterReferenceIds(selectedIds)
+    else if (source === 'scene') setSelectedSceneReferenceIds(selectedIds)
+    else if (source === 'prop') setSelectedPropReferenceIds(selectedIds)
+    else setSelectedVoiceReferenceIds(selectedIds)
+  }
+  const loadReferenceOptionsForSource = (source: StudioStoryboardVideoReferenceOptionSource) => {
+    if (!activeClip || !hasRemoteInitialClips || activeClip.id.startsWith('clip-')) return false
+
+    const segmentId = toStoryboardSegmentRequestId(activeClip.id)
+    const segmentKey = String(segmentId)
+    referenceOptionsRunRef.current += 1
+    const run = referenceOptionsRunRef.current
+    referenceOptionsRequestRef.current?.cancel()
+    const request = StudioAssetGenerationApi.requestStoryboardVideoReferenceOptions({ segmentId, source })
+    referenceOptionsRequestRef.current = request
+
+    setReferenceOptionsBySource((current) => ({
+      ...current,
+      [source]: {
+        segmentId: segmentKey,
+        loading: true,
+        items: undefined,
+        error: undefined,
+      },
+    }))
+
+    void request.promise
+      .then((options) => {
+        if (referenceOptionsRunRef.current !== run || referenceOptionsRequestRef.current !== request) return
+        setReferenceOptionsBySource((current) => ({
+          ...current,
+          [source]: {
+            segmentId: segmentKey,
+            loading: false,
+            items: options,
+          },
+        }))
+        syncSelectedReferenceOptions(source, options)
+      })
+      .catch((error) => {
+        if (referenceOptionsRunRef.current !== run || referenceOptionsRequestRef.current !== request) return
+        setReferenceOptionsBySource((current) => ({
+          ...current,
+          [source]: {
+            segmentId: segmentKey,
+            loading: false,
+            items: [],
+            error,
+          },
+        }))
+        message.error(getApiErrorMessage(error, l('参考选项加载失败，请重试', 'Failed to load reference options; retry')))
+      })
+      .finally(() => {
+        if (referenceOptionsRequestRef.current === request) referenceOptionsRequestRef.current = null
+      })
+
+    return true
+  }
+  const openCharacterReferenceModal = () => {
+    setReferenceAddMenuOpen(false)
+    setCharacterReferenceQuery('')
+    if (!loadReferenceOptionsForSource('character')) setSelectedCharacterReferenceIds([])
+    setCharacterReferenceModalOpen(true)
+  }
+  const toggleCharacterReferenceAsset = (asset: PromptMentionAsset) => {
+    if (selectedCharacterReferenceIds.includes(asset.id)) {
+      deleteReferenceOptionAsset(asset as ReferenceOptionAsset)
+      return
+    }
+    if ('selectable' in asset && !asset.selectable && !selectedCharacterReferenceIds.includes(asset.id)) return
+    setSelectedCharacterReferenceIds((current) => {
+      if (current.length >= characterReferenceLimit) {
+        message.warning(l(`最多只能选择 ${characterReferenceLimit} 个参考素材`, `Up to ${characterReferenceLimit} references`))
+        return current
+      }
+      return [...current, asset.id]
+    })
+  }
+  const confirmCharacterReferenceSelection = () => {
+    addSelectedReferencesForSource('character')
+  }
+  const openSceneReferenceModal = () => {
+    setReferenceAddMenuOpen(false)
+    setSceneReferenceQuery('')
+    if (!loadReferenceOptionsForSource('scene')) setSelectedSceneReferenceIds([])
+    setSceneReferenceModalOpen(true)
+  }
+  const toggleSceneReferenceAsset = (asset: PromptMentionAsset) => {
+    if (selectedSceneReferenceIds.includes(asset.id)) {
+      deleteReferenceOptionAsset(asset as ReferenceOptionAsset)
+      return
+    }
+    if ('selectable' in asset && !asset.selectable && !selectedSceneReferenceIds.includes(asset.id)) return
+    setSelectedSceneReferenceIds([asset.id])
+  }
+  const confirmSceneReferenceSelection = () => {
+    addSelectedReferencesForSource('scene')
+  }
+  const openPropReferenceModal = () => {
+    setReferenceAddMenuOpen(false)
+    setPropReferenceQuery('')
+    if (!loadReferenceOptionsForSource('prop')) setSelectedPropReferenceIds([])
+    setPropReferenceModalOpen(true)
+  }
+  const togglePropReferenceAsset = (asset: PromptMentionAsset) => {
+    if (selectedPropReferenceIds.includes(asset.id)) {
+      deleteReferenceOptionAsset(asset as ReferenceOptionAsset)
+      return
+    }
+    if ('selectable' in asset && !asset.selectable && !selectedPropReferenceIds.includes(asset.id)) return
+    setSelectedPropReferenceIds((current) => {
+      if (current.length >= propReferenceLimit) {
+        message.warning(l(`最多只能选择 ${propReferenceLimit} 个参考素材`, `Up to ${propReferenceLimit} references`))
+        return current
+      }
+      return [...current, asset.id]
+    })
+  }
+  const confirmPropReferenceSelection = () => {
+    addSelectedReferencesForSource('prop')
+  }
+  const openVoiceReferenceModal = () => {
+    setReferenceAddMenuOpen(false)
+    if (!loadReferenceOptionsForSource('dubbing')) setSelectedVoiceReferenceIds([])
+    setVoiceReferenceModalOpen(true)
+  }
+  const toggleVoiceReferenceItem = (item: VoiceReferenceItem) => {
+    if (!item.configured) return
+    if (selectedVoiceReferenceIds.includes(item.id)) {
+      deleteVoiceReferenceItem(item)
+      return
+    }
+    setSelectedVoiceReferenceIds((current) => {
+      if (current.length >= voiceReferenceLimit) {
+        message.warning(l(`最多只能选择 ${voiceReferenceLimit} 个出镜音色`, `Up to ${voiceReferenceLimit} voices`))
+        return current
+      }
+      return [...current, item.id]
+    })
+  }
+  const confirmVoiceReferenceSelection = () => {
+    addSelectedReferencesForSource('dubbing')
+  }
+  const referenceAddMenu = (
+    <div className="project-clip-editor__reference-add-menu" role="menu">
+      {[
+        {
+          key: 'characters',
+          label: l('从角色添加', 'Add from characters'),
+          onClick: openCharacterReferenceModal,
+        },
+        {
+          key: 'scenes',
+          label: l('从场景添加', 'Add from scenes'),
+          onClick: openSceneReferenceModal,
+        },
+        {
+          key: 'props',
+          label: l('从道具添加', 'Add from props'),
+          onClick: openPropReferenceModal,
+        },
+        {
+          key: 'voice',
+          label: l('从配音添加', 'Add from voice'),
+          onClick: openVoiceReferenceModal,
+        },
+      ].map((item) => (
+        <button
+          key={item.key}
+          type="button"
+          role="menuitem"
+          onClick={item.onClick}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  )
+  const videoGenerationButtonText = isActiveVideoGenerating
+    ? `${activeVideoGenerationStatusText}${activeVideoGenerationProgressText}`
+    : `${l('生视频', 'Generate video')} · ${videoGenerateCreditCostText}`
+  const generationButtonDisabled = !prompt.trim()
+    || (mode === 'video' && (
+      !activeClip
+      || !hasRemoteInitialClips
+      || activeClip.id.startsWith('clip-')
+      || !selectedVideoModel
+      || !normalizeVideoResolutionValue(videoResolution)
+      || isActiveVideoGenerating
+    ))
   const voiceRoleOptions = VOICE_BINDINGS.map(({ character, voice, adjustable }) => ({
     value: `${character}|${voice}`,
     label: (
@@ -1101,14 +2073,461 @@ export default function ProjectClipEditingStep({
   useEffect(() => {
     if (sourceSignatureRef.current === sourceSignature) return
     sourceSignatureRef.current = sourceSignature
-    setClips(initialClips)
-    setActiveClipId(initialClips[0]?.id ?? '')
+    const pendingActiveClipId = pendingActiveClipIdAfterRemoteRefreshRef.current
+    const preservedManualClipIds = pendingActiveClipId ? manuallyAddedClipIdsRef.current : new Set<string>()
+    const nextInitialClips = initialClips.map((clip) => ({
+      ...clip,
+      manuallyAdded: clip.manuallyAdded || clip.id.startsWith('clip-') || preservedManualClipIds.has(clip.id),
+    }))
+    manuallyAddedClipIdsRef.current = new Set(
+      nextInitialClips
+        .filter((clip) => clip.manuallyAdded || clip.id.startsWith('clip-'))
+        .map((clip) => clip.id),
+    )
+    setClips(nextInitialClips)
+    setActiveClipId((currentActiveClipId) => {
+      pendingActiveClipIdAfterRemoteRefreshRef.current = null
+      const preferredActiveClipId = pendingActiveClipId ?? currentActiveClipId
+      return nextInitialClips.some((clip) => clip.id === preferredActiveClipId)
+        ? preferredActiveClipId
+        : nextInitialClips[0]?.id ?? ''
+    })
     setPromptByClip({})
     setEditingClipId(null)
     setInsertingAt(null)
     setClipEditorMode('edit')
+    setExpandedDescriptionClipId(null)
     setHistoryIndexByClip({})
-  }, [initialClips, sourceSignature])
+    setSegmentDetailsByClipId({})
+    setSegmentDetailRefreshToken(0)
+    setMediaHistoryByClipId({})
+    setMediaHistoryRefreshToken(0)
+    setPromptRegenerationByClipId({})
+    setVideoGenerationByClipId({})
+    setReferenceAddMenuOpen(false)
+    setCharacterReferenceModalOpen(false)
+    setCharacterReferenceQuery('')
+    setSelectedCharacterReferenceIds([])
+    setSceneReferenceModalOpen(false)
+    setSceneReferenceQuery('')
+    setSelectedSceneReferenceIds([])
+    setPropReferenceModalOpen(false)
+    setPropReferenceQuery('')
+    setSelectedPropReferenceIds([])
+    setVoiceReferenceModalOpen(false)
+    setSelectedVoiceReferenceIds([])
+    setReferenceOptionsBySource({})
+    setDeletingReferenceKeys([])
+    setMergingClipIds([])
+    setDeletingClipIds([])
+    setReferenceAddingSource(null)
+    setClipEditorSaving(false)
+    setVideoDuration(DEFAULT_VIDEO_DURATION)
+    setVideoGenerateEstimate(undefined)
+    setVideoGenerateEstimateError(undefined)
+    segmentDetailLoadedKeysRef.current.clear()
+    mediaHistoryLoadedKeysRef.current.clear()
+    manuallyEditedPromptClipIdsRef.current.clear()
+    segmentDetailRequestRef.current?.cancel()
+    segmentDetailRequestRef.current = null
+    segmentUpdateRequestRef.current?.cancel()
+    segmentUpdateRequestRef.current = null
+    segmentInsertRequestRef.current?.cancel()
+    segmentInsertRequestRef.current = null
+    segmentMergeRequestRef.current?.cancel()
+    segmentMergeRequestRef.current = null
+    segmentDeleteRequestRefs.current.forEach((request) => request.cancel())
+    segmentDeleteRequestRefs.current.clear()
+    mediaHistoryRequestRef.current?.cancel()
+    mediaHistoryRequestRef.current = null
+    videoGenerateEstimateRequestRef.current?.cancel()
+    videoGenerateEstimateRequestRef.current = null
+    videoGenerateRequestRef.current?.cancel()
+    videoGenerateRequestRef.current = null
+    videoDetailRequestRef.current?.cancel()
+    videoDetailRequestRef.current = null
+    if (videoGenerationTimerRef.current !== null) {
+      window.clearTimeout(videoGenerationTimerRef.current)
+      videoGenerationTimerRef.current = null
+    }
+    videoGenerationRunRef.current += 1
+    promptRegenerateRequestRef.current?.cancel()
+    promptRegenerateRequestRef.current = null
+    promptRegenerateDetailRequestRef.current?.cancel()
+    promptRegenerateDetailRequestRef.current = null
+    if (promptRegenerateTimerRef.current !== null) {
+      window.clearTimeout(promptRegenerateTimerRef.current)
+      promptRegenerateTimerRef.current = null
+    }
+    promptRegenerateRunRef.current += 1
+    referenceOptionsRequestRef.current?.cancel()
+    referenceOptionsRequestRef.current = null
+    referenceOptionsRunRef.current += 1
+    referenceAddRequestRef.current?.cancel()
+    referenceAddRequestRef.current = null
+    referenceDeleteRequestRefs.current.forEach((request) => request.cancel())
+    referenceDeleteRequestRefs.current.clear()
+    if (hasRemoteInitialClips) setMode('video')
+  }, [hasRemoteInitialClips, initialClips, sourceSignature])
+
+  useEffect(() => () => {
+    segmentDetailRequestRef.current?.cancel()
+    segmentDetailRequestRef.current = null
+    segmentUpdateRequestRef.current?.cancel()
+    segmentUpdateRequestRef.current = null
+    segmentInsertRequestRef.current?.cancel()
+    segmentInsertRequestRef.current = null
+    segmentMergeRequestRef.current?.cancel()
+    segmentMergeRequestRef.current = null
+    segmentDeleteRequestRefs.current.forEach((request) => request.cancel())
+    segmentDeleteRequestRefs.current.clear()
+    mediaHistoryRequestRef.current?.cancel()
+    mediaHistoryRequestRef.current = null
+    videoGenerateEstimateRequestRef.current?.cancel()
+    videoGenerateEstimateRequestRef.current = null
+    videoGenerateRequestRef.current?.cancel()
+    videoGenerateRequestRef.current = null
+    videoDetailRequestRef.current?.cancel()
+    videoDetailRequestRef.current = null
+    if (videoGenerationTimerRef.current !== null) {
+      window.clearTimeout(videoGenerationTimerRef.current)
+      videoGenerationTimerRef.current = null
+    }
+    videoGenerationRunRef.current += 1
+    promptRegenerateRequestRef.current?.cancel()
+    promptRegenerateRequestRef.current = null
+    promptRegenerateDetailRequestRef.current?.cancel()
+    promptRegenerateDetailRequestRef.current = null
+    if (promptRegenerateTimerRef.current !== null) {
+      window.clearTimeout(promptRegenerateTimerRef.current)
+      promptRegenerateTimerRef.current = null
+    }
+    promptRegenerateRunRef.current += 1
+    referenceOptionsRequestRef.current?.cancel()
+    referenceOptionsRequestRef.current = null
+    referenceOptionsRunRef.current += 1
+    referenceAddRequestRef.current?.cancel()
+    referenceAddRequestRef.current = null
+    referenceDeleteRequestRefs.current.forEach((request) => request.cancel())
+    referenceDeleteRequestRefs.current.clear()
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    setVideoModelsLoading(true)
+    setVideoModelsError(undefined)
+    void StudioModelsApi.getVideoModels()
+      .then((models) => {
+        if (!active) return
+        if (!models.length) {
+          throw new Error(l('暂无可用的视频生成模型', 'No video generation models are available'))
+        }
+        setVideoModels(models)
+      })
+      .catch((error) => {
+        if (!active) return
+        setVideoModelsError(error)
+        message.error(getApiErrorMessage(error, l('视频生成模型加载失败', 'Failed to load video generation models')))
+      })
+      .finally(() => {
+        if (active) setVideoModelsLoading(false)
+      })
+    return () => { active = false }
+  }, [l, videoModelsRetryToken])
+
+  useEffect(() => {
+    if (videoModelsLoading || videoModelsError || !videoModels.length || selectedVideoModelById) return
+    const defaultModel = selectedVideoModel ?? videoModels.find((item) => item.defaultModel) ?? videoModels[0]
+    setVideoModel(String(defaultModel.id))
+  }, [
+    selectedVideoModel,
+    selectedVideoModelById,
+    videoModels,
+    videoModelsError,
+    videoModelsLoading,
+  ])
+
+  useEffect(() => {
+    if (!selectedVideoModel || videoResolutionOptions.length === 0) return
+    const normalizedResolution = normalizeVideoResolutionValue(videoResolution)
+    if (videoResolutionOptions.includes(normalizedResolution)) {
+      if (normalizedResolution !== videoResolution) setVideoResolution(normalizedResolution)
+      return
+    }
+    const nextResolution = videoResolutionOptions.includes(DEFAULT_VIDEO_RESOLUTION)
+      ? DEFAULT_VIDEO_RESOLUTION
+      : videoResolutionOptions[0]
+    setVideoResolution(nextResolution)
+  }, [selectedVideoModel, videoResolution, videoResolutionOptions])
+
+  useEffect(() => {
+    if (!selectedVideoModel) return
+    const nextDuration = Math.min(videoDurationMax, Math.max(videoDurationMin, videoDuration))
+    if (nextDuration !== videoDuration) setVideoDuration(nextDuration)
+  }, [selectedVideoModel, videoDuration, videoDurationMax, videoDurationMin])
+
+  useEffect(() => {
+    setSelectedCharacterReferenceIds((current) => {
+      if (current.length === 0) return current
+      const availableIds = new Set(characterReferenceAssets.map((asset) => asset.id))
+      const nextIds = current.filter((id) => availableIds.has(id)).slice(0, characterReferenceLimit)
+      if (nextIds.length === current.length && nextIds.every((id, index) => id === current[index])) {
+        return current
+      }
+      return nextIds
+    })
+  }, [characterReferenceAssets, characterReferenceLimit])
+
+  useEffect(() => {
+    setSelectedSceneReferenceIds((current) => {
+      if (current.length === 0) return current
+      const availableIds = new Set(sceneReferenceAssets.map((asset) => asset.id))
+      const nextIds = current.filter((id) => availableIds.has(id)).slice(0, sceneReferenceLimit)
+      if (nextIds.length === current.length && nextIds.every((id, index) => id === current[index])) {
+        return current
+      }
+      return nextIds
+    })
+  }, [sceneReferenceAssets, sceneReferenceLimit])
+
+  useEffect(() => {
+    setSelectedPropReferenceIds((current) => {
+      if (current.length === 0) return current
+      const availableIds = new Set(propReferenceAssets.map((asset) => asset.id))
+      const nextIds = current.filter((id) => availableIds.has(id)).slice(0, propReferenceLimit)
+      if (nextIds.length === current.length && nextIds.every((id, index) => id === current[index])) {
+        return current
+      }
+      return nextIds
+    })
+  }, [propReferenceAssets, propReferenceLimit])
+
+  useEffect(() => {
+    setSelectedVoiceReferenceIds((current) => {
+      if (current.length === 0) return current
+      const availableIds = new Set(voiceReferenceItems
+        .filter((item) => item.configured)
+        .map((item) => item.id))
+      const nextIds = current.filter((id) => availableIds.has(id)).slice(0, voiceReferenceLimit)
+      if (nextIds.length === current.length && nextIds.every((id, index) => id === current[index])) {
+        return current
+      }
+      return nextIds
+    })
+  }, [voiceReferenceItems, voiceReferenceLimit])
+
+  useEffect(() => {
+    videoGenerateEstimateRequestRef.current?.cancel()
+    videoGenerateEstimateRequestRef.current = null
+
+    const modelId = Number(selectedVideoModel?.id)
+    const resolutionValue = normalizeVideoResolutionValue(videoResolution)
+    const durationSeconds = Math.round(videoDuration)
+    if (
+      mode !== 'video'
+      || !Number.isInteger(modelId)
+      || modelId <= 0
+      || !resolutionValue
+      || !Number.isInteger(durationSeconds)
+      || durationSeconds <= 0
+    ) {
+      setVideoGenerateEstimate(undefined)
+      setVideoGenerateEstimateLoading(false)
+      setVideoGenerateEstimateError(undefined)
+      return undefined
+    }
+
+    let active = true
+    const request = StudioAssetGenerationApi.requestStoryboardVideoGenerateEstimate({
+      modelId,
+      resolution: resolutionValue,
+      durationSeconds,
+    })
+    videoGenerateEstimateRequestRef.current = request
+    setVideoGenerateEstimate(undefined)
+    setVideoGenerateEstimateLoading(true)
+    setVideoGenerateEstimateError(undefined)
+
+    void request.promise
+      .then((estimate) => {
+        if (!active || videoGenerateEstimateRequestRef.current !== request) return
+        setVideoGenerateEstimate(estimate)
+      })
+      .catch((error) => {
+        if (!active || videoGenerateEstimateRequestRef.current !== request) return
+        setVideoGenerateEstimate(undefined)
+        setVideoGenerateEstimateError(error)
+      })
+      .finally(() => {
+        if (!active || videoGenerateEstimateRequestRef.current !== request) return
+        setVideoGenerateEstimateLoading(false)
+        videoGenerateEstimateRequestRef.current = null
+      })
+
+    return () => {
+      active = false
+      request.cancel()
+      if (videoGenerateEstimateRequestRef.current === request) {
+        videoGenerateEstimateRequestRef.current = null
+      }
+    }
+  }, [mode, selectedVideoModel?.id, videoDuration, videoResolution])
+
+  useEffect(() => {
+    segmentDetailRequestRef.current?.cancel()
+    segmentDetailRequestRef.current = null
+
+    if (!hasRemoteInitialClips || !activeClip?.id || activeClip.id.startsWith('clip-')) return undefined
+
+    const clipId = activeClip.id
+    const loadedKey = `${clipId}:${segmentDetailRefreshToken}`
+    if (segmentDetailLoadedKeysRef.current.has(loadedKey) && segmentDetailsByClipIdRef.current[clipId]?.data) {
+      return undefined
+    }
+
+    let active = true
+    const request = StudioAssetGenerationApi.requestEpisodeStoryboardSegmentDetail(clipId)
+    segmentDetailRequestRef.current = request
+    setSegmentDetailsByClipId((current) => ({
+      ...current,
+      [clipId]: {
+        ...current[clipId],
+        loading: true,
+        error: undefined,
+      },
+    }))
+
+    void request.promise
+      .then((detail) => {
+        if (!active || segmentDetailRequestRef.current !== request) return
+        segmentDetailLoadedKeysRef.current.add(loadedKey)
+        setSegmentDetailsByClipId((current) => ({
+          ...current,
+          [clipId]: {
+            loading: false,
+            data: detail,
+          },
+        }))
+        const directorPrompt = detail.directorPrompt?.prompt.trim()
+        if (directorPrompt) {
+          setPromptByClip((current) => manuallyEditedPromptClipIdsRef.current.has(clipId) || current[clipId] === directorPrompt
+            ? current
+            : { ...current, [clipId]: directorPrompt })
+        }
+        const coverSource = detail.coverUrl ?? (detail.coverFileId === null || detail.coverFileId === undefined
+          ? undefined
+          : String(detail.coverFileId))
+        const nextImageUrl = resolveAssetUrl(coverSource)
+        if (detail.manuallyAdded) manuallyAddedClipIdsRef.current.add(clipId)
+        setClips((current) => current.map((clip) => {
+          if (clip.id !== clipId) return clip
+          return {
+            ...clip,
+            title: detail.title.trim() || clip.title,
+            description: detail.editorDescription.trim() || clip.description,
+            prompt: directorPrompt || clip.prompt,
+            imageUrl: nextImageUrl ?? clip.imageUrl,
+            revisionNo: detail.revisionNo ?? clip.revisionNo ?? null,
+            manuallyAdded: detail.manuallyAdded ?? clip.manuallyAdded,
+          }
+        }))
+      })
+      .catch((error) => {
+        if (!active || segmentDetailRequestRef.current !== request) return
+        setSegmentDetailsByClipId((current) => ({
+          ...current,
+          [clipId]: {
+            ...current[clipId],
+            loading: false,
+            error,
+          },
+        }))
+        message.error(getApiErrorMessage(error, l('片段详情加载失败，请重试', 'Failed to load segment detail; retry')))
+      })
+      .finally(() => {
+        if (segmentDetailRequestRef.current === request) segmentDetailRequestRef.current = null
+      })
+
+    return () => {
+      active = false
+      request.cancel()
+      if (segmentDetailRequestRef.current === request) segmentDetailRequestRef.current = null
+    }
+  }, [activeClip?.id, hasRemoteInitialClips, l, segmentDetailRefreshToken])
+
+  useEffect(() => {
+    mediaHistoryRequestRef.current?.cancel()
+    mediaHistoryRequestRef.current = null
+
+    if (!hasRemoteInitialClips || !activeClip?.id || activeClip.id.startsWith('clip-')) return undefined
+
+    const clipId = activeClip.id
+    const loadedKey = `${clipId}:${mediaHistoryRefreshToken}`
+    if (mediaHistoryLoadedKeysRef.current.has(loadedKey) && mediaHistoryByClipIdRef.current[clipId]?.items) {
+      return undefined
+    }
+
+    let active = true
+    const request = StudioAssetGenerationApi.requestStoryboardMediaHistory(toStoryboardSegmentRequestId(clipId))
+    mediaHistoryRequestRef.current = request
+    setMediaHistoryByClipId((current) => ({
+      ...current,
+      [clipId]: {
+        ...current[clipId],
+        loading: true,
+        error: undefined,
+      },
+    }))
+
+    void request.promise
+      .then((items) => {
+        if (!active || mediaHistoryRequestRef.current !== request) return
+        const videoItems = items.filter((item) => item.mediaType === 'video' && getStoryboardMediaOutputUrl(item))
+        mediaHistoryLoadedKeysRef.current.add(loadedKey)
+        setMediaHistoryByClipId((current) => ({
+          ...current,
+          [clipId]: {
+            loading: false,
+            items: videoItems,
+          },
+        }))
+        setHistoryIndexByClip((current) => {
+          const currentIndex = current[clipId] ?? 0
+          if (currentIndex >= 0 && currentIndex < Math.max(1, videoItems.length)) return current
+          return { ...current, [clipId]: 0 }
+        })
+      })
+      .catch((error) => {
+        if (!active || mediaHistoryRequestRef.current !== request) return
+        setMediaHistoryByClipId((current) => ({
+          ...current,
+          [clipId]: {
+            ...current[clipId],
+            loading: false,
+            error,
+          },
+        }))
+        message.error(getApiErrorMessage(error, l('片段历史记录加载失败，请重试', 'Failed to load segment history; retry')))
+      })
+      .finally(() => {
+        if (mediaHistoryRequestRef.current === request) mediaHistoryRequestRef.current = null
+      })
+
+    return () => {
+      active = false
+      request.cancel()
+      if (mediaHistoryRequestRef.current === request) mediaHistoryRequestRef.current = null
+    }
+  }, [activeClip?.id, hasRemoteInitialClips, l, mediaHistoryRefreshToken])
+
+  useEffect(() => {
+    if (!hasRemoteInitialClips || !activeClip) return
+    const directorPrompt = activeSegmentDetail?.directorPrompt?.prompt.trim()
+    if (!directorPrompt || manuallyEditedPromptClipIdsRef.current.has(activeClip.id)) return
+    setPromptByClip((current) => current[activeClip.id] === directorPrompt
+      ? current
+      : { ...current, [activeClip.id]: directorPrompt })
+  }, [activeClip, activeSegmentDetail?.directorPrompt?.prompt, hasRemoteInitialClips])
 
   useEffect(() => {
     if (ratioPropRef.current === ratio) return
@@ -1141,10 +2560,708 @@ export default function ProjectClipEditingStep({
 
   const updatePrompt = (value: string) => {
     if (!activeClip) return
+    manuallyEditedPromptClipIdsRef.current.add(activeClip.id)
     setPromptByClip((current) => ({ ...current, [activeClip.id]: value }))
   }
 
+  const getReferenceDeleteKey = (segmentId: string | number, referenceIndex: number) => (
+    `${String(segmentId)}:${referenceIndex}`
+  )
+
+  const isReferenceDeleting = (referenceIndex?: number | null) => {
+    if (!activeClip || referenceIndex === null || referenceIndex === undefined) return false
+    return deletingReferenceKeys.includes(getReferenceDeleteKey(toStoryboardSegmentRequestId(activeClip.id), referenceIndex))
+  }
+
+  const removeSelectedReferenceByIndex = (referenceIndex: number) => {
+    setSelectedCharacterReferenceIds((current) => current.filter((id) => (
+      characterReferenceAssets.find((asset) => asset.id === id)?.referenceIndex !== referenceIndex
+    )))
+    setSelectedSceneReferenceIds((current) => current.filter((id) => (
+      sceneReferenceAssets.find((asset) => asset.id === id)?.referenceIndex !== referenceIndex
+    )))
+    setSelectedPropReferenceIds((current) => current.filter((id) => (
+      propReferenceAssets.find((asset) => asset.id === id)?.referenceIndex !== referenceIndex
+    )))
+    setSelectedVoiceReferenceIds((current) => current.filter((id) => (
+      voiceReferenceItems.find((item) => item.id === id)?.referenceIndex !== referenceIndex
+    )))
+  }
+
+  const getOpenReferenceOptionSource = (): StudioStoryboardVideoReferenceOptionSource | null => {
+    if (characterReferenceModalOpen) return 'character'
+    if (sceneReferenceModalOpen) return 'scene'
+    if (propReferenceModalOpen) return 'prop'
+    if (voiceReferenceModalOpen) return 'dubbing'
+    return null
+  }
+
+  const addSelectedReferencesForSource = (source: StudioStoryboardVideoReferenceOptionSource) => {
+    if (referenceAddRequestRef.current || referenceAddingSource) return
+    if (!activeClip || !hasRemoteInitialClips || activeClip.id.startsWith('clip-')) {
+      closeReferenceModalBySource(source)
+      message.warning(l('当前片段暂无可添加的接口引用', 'No server reference can be added for this clip'))
+      return
+    }
+
+    const state = getReferenceOptionsStateBySource(source)
+    const options = state?.items ?? []
+    const selectedIds = new Set(getSelectedReferenceIdsBySource(source))
+    const selectedOptionEntries = options
+      .map((option, index) => ({
+        option,
+        optionId: getReferenceOptionSelectionId(source, option, index),
+      }))
+      .filter(({ option, optionId }) => selectedIds.has(optionId) && !option.selected)
+
+    if (selectedOptionEntries.length === 0) {
+      closeReferenceModalBySource(source)
+      message.success(l('参考素材已更新', 'References updated'))
+      return
+    }
+
+    const references = selectedOptionEntries
+      .map(({ option }) => referenceOptionToAddItem(option))
+      .filter((item): item is StudioStoryboardVideoReferenceAddItem => Boolean(item))
+
+    if (references.length === 0) {
+      message.warning(l('缺少参考素材参数，无法添加', 'Missing reference parameters; cannot add'))
+      return
+    }
+
+    const expectedRevisionNo = getReferenceSelectionRevisionNo(source, options)
+    if (expectedRevisionNo === null) {
+      setSegmentDetailRefreshToken((current) => current + 1)
+      loadReferenceOptionsForSource(source)
+      message.warning(l('参考素材版本号还没加载完成，请稍后再试', 'Reference revision is still loading; try again shortly'))
+      return
+    }
+
+    const segmentId = toStoryboardSegmentRequestId(activeClip.id)
+    const segmentKey = String(segmentId)
+    const addedOptionIds = new Set(selectedOptionEntries.map(({ optionId }) => optionId))
+    const request = StudioAssetGenerationApi.requestStoryboardVideoReferenceAdd({
+      segmentId,
+      expectedRevisionNo,
+      references,
+    })
+    referenceAddRequestRef.current = request
+    setReferenceAddingSource(source)
+
+    void request.promise
+      .then((result) => {
+        if (referenceAddRequestRef.current !== request) return
+        if (result?.revisionNo !== null && result?.revisionNo !== undefined) {
+          const nextRevisionNo = result.revisionNo
+          setSegmentDetailsByClipId((current) => {
+            const currentState = current[activeClip.id]
+            if (!currentState?.data) return current
+            return {
+              ...current,
+              [activeClip.id]: {
+                ...currentState,
+                data: {
+                  ...currentState.data,
+                  referenceSelection: {
+                    ...(currentState.data.referenceSelection ?? { references: [] }),
+                    revisionNo: nextRevisionNo,
+                  },
+                },
+              },
+            }
+          })
+          setReferenceOptionsBySource((current) => {
+            let changed = false
+            const next = { ...current }
+            ;(['character', 'scene', 'prop', 'dubbing'] as const).forEach((optionSource) => {
+              const optionState = current[optionSource]
+              if (!optionState?.items || optionState.segmentId !== segmentKey) return
+              changed = true
+              next[optionSource] = {
+                ...optionState,
+                items: optionState.items.map((item, index) => ({
+                  ...item,
+                  selected: item.selected || addedOptionIds.has(getReferenceOptionSelectionId(optionSource, item, index)),
+                  referenceSelectionRevisionNo: nextRevisionNo,
+                })),
+              }
+            })
+            return changed ? next : current
+          })
+        }
+        setSegmentDetailRefreshToken((current) => current + 1)
+        loadReferenceOptionsForSource(source)
+        closeReferenceModalBySource(source)
+        message.success(l('已添加参考素材', 'Reference added'))
+      })
+      .catch((error) => {
+        if (referenceAddRequestRef.current !== request) return
+        setSegmentDetailRefreshToken((current) => current + 1)
+        loadReferenceOptionsForSource(source)
+        message.error(getApiErrorMessage(error, l('参考素材添加失败，请重试', 'Failed to add reference; retry')))
+      })
+      .finally(() => {
+        if (referenceAddRequestRef.current !== request) return
+        referenceAddRequestRef.current = null
+        setReferenceAddingSource(null)
+      })
+  }
+
+  const deleteStoryboardReference = (
+    referenceIndex?: number | null,
+    source?: StudioStoryboardVideoReferenceOptionSource,
+    referenceSelectionRevisionNo?: number | null,
+  ) => {
+    if (!activeClip || !hasRemoteInitialClips || activeClip.id.startsWith('clip-')) {
+      message.warning(l('当前片段暂无可删除的接口引用', 'No server reference can be removed for this clip'))
+      return
+    }
+    if (referenceIndex === null || referenceIndex === undefined || referenceIndex <= 0) {
+      message.warning(l('缺少引用序号，无法删除', 'Missing reference index; cannot remove'))
+      return
+    }
+    const expectedRevisionNo = Math.floor(Number(
+      referenceSelectionRevisionNo ?? activeSegmentDetail?.referenceSelection?.revisionNo,
+    ))
+    if (!Number.isInteger(expectedRevisionNo) || expectedRevisionNo < 0) {
+      setSegmentDetailRefreshToken((current) => current + 1)
+      message.warning(l('参考素材版本号还没加载完成，请稍后再试', 'Reference revision is still loading; try again shortly'))
+      return
+    }
+
+    const segmentId = toStoryboardSegmentRequestId(activeClip.id)
+    const segmentKey = String(segmentId)
+    const deleteKey = getReferenceDeleteKey(segmentId, referenceIndex)
+    if (referenceDeleteRequestRefs.current.has(deleteKey)) return
+
+    const request = StudioAssetGenerationApi.requestStoryboardVideoReferenceDelete({
+      segmentId,
+      expectedRevisionNo,
+      referenceIndex,
+    })
+    referenceDeleteRequestRefs.current.set(deleteKey, request)
+    setDeletingReferenceKeys((current) => (current.includes(deleteKey) ? current : [...current, deleteKey]))
+
+    void request.promise
+      .then((result) => {
+        if (referenceDeleteRequestRefs.current.get(deleteKey) !== request) return
+        removeSelectedReferenceByIndex(referenceIndex)
+        if (result?.revisionNo) {
+          const nextRevisionNo = result.revisionNo
+          setSegmentDetailsByClipId((current) => {
+            const currentState = current[activeClip.id]
+            if (!currentState?.data) return current
+            return {
+              ...current,
+              [activeClip.id]: {
+                ...currentState,
+                data: {
+                  ...currentState.data,
+                  referenceSelection: {
+                    ...(currentState.data.referenceSelection ?? { references: [] }),
+                    revisionNo: nextRevisionNo,
+                  },
+                },
+              },
+            }
+          })
+          setReferenceOptionsBySource((current) => {
+            let changed = false
+            const next = { ...current }
+            ;(['character', 'scene', 'prop', 'dubbing'] as const).forEach((optionSource) => {
+              const state = current[optionSource]
+              if (!state?.items || state.segmentId !== segmentKey) return
+              changed = true
+              next[optionSource] = {
+                ...state,
+                items: state.items.map((item) => ({
+                  ...item,
+                  selected: item.referenceIndex === referenceIndex ? false : item.selected,
+                  referenceSelectionRevisionNo: nextRevisionNo,
+                })),
+              }
+            })
+            return changed ? next : current
+          })
+        }
+        setSegmentDetailRefreshToken((current) => current + 1)
+        const refreshSource = source ?? getOpenReferenceOptionSource()
+        if (refreshSource) loadReferenceOptionsForSource(refreshSource)
+        message.success(l('已删除参考素材', 'Reference removed'))
+      })
+      .catch((error) => {
+        if (referenceDeleteRequestRefs.current.get(deleteKey) !== request) return
+        setSegmentDetailRefreshToken((current) => current + 1)
+        message.error(getApiErrorMessage(error, l('参考素材删除失败，请重试', 'Failed to remove reference; retry')))
+      })
+      .finally(() => {
+        if (referenceDeleteRequestRefs.current.get(deleteKey) !== request) return
+        referenceDeleteRequestRefs.current.delete(deleteKey)
+        setDeletingReferenceKeys((current) => current.filter((key) => key !== deleteKey))
+      })
+  }
+
+  const deleteReferenceOptionAsset = (asset: ReferenceOptionAsset) => {
+    if (asset.referenceIndex) {
+      deleteStoryboardReference(asset.referenceIndex, asset.source, asset.referenceSelectionRevisionNo)
+      return
+    }
+    if (asset.source === 'scene') setSelectedSceneReferenceIds((current) => current.filter((id) => id !== asset.id))
+    else if (asset.source === 'prop') setSelectedPropReferenceIds((current) => current.filter((id) => id !== asset.id))
+    else setSelectedCharacterReferenceIds((current) => current.filter((id) => id !== asset.id))
+  }
+
+  const deleteVoiceReferenceItem = (item: VoiceReferenceItem) => {
+    if (item.referenceIndex) {
+      deleteStoryboardReference(item.referenceIndex, 'dubbing', item.referenceSelectionRevisionNo)
+      return
+    }
+    setSelectedVoiceReferenceIds((current) => current.filter((id) => id !== item.id))
+  }
+
+  const clearPromptRegenerationTimer = () => {
+    if (promptRegenerateTimerRef.current === null) return
+    window.clearTimeout(promptRegenerateTimerRef.current)
+    promptRegenerateTimerRef.current = null
+  }
+
+  const pollStoryboardVideoPromptDetail = (
+    clipId: string,
+    promptId: string | number,
+    run: number,
+  ) => {
+    if (promptRegenerateRunRef.current !== run) return
+
+    promptRegenerateDetailRequestRef.current?.cancel()
+    const request = StudioAssetGenerationApi.requestStoryboardVideoPromptDetail(promptId)
+    promptRegenerateDetailRequestRef.current = request
+
+    void request.promise
+      .then((detail) => {
+        if (promptRegenerateRunRef.current !== run || promptRegenerateDetailRequestRef.current !== request) return
+        const progress = detail.progress === null || detail.progress === undefined
+          ? undefined
+          : Math.max(0, Math.min(100, Math.round(detail.progress)))
+
+        if (isStoryboardVideoPromptFailed(detail)) {
+          setPromptRegenerationByClipId((current) => ({
+            ...current,
+            [clipId]: {
+              loading: false,
+              promptId,
+              progress,
+              stageName: detail.stageName,
+              error: detail.error || detail.stageName || true,
+            },
+          }))
+          message.error(detail.error?.trim() || detail.stageName || l('提示词生成失败，请重试', 'Prompt generation failed; retry'))
+          return
+        }
+
+        if (isStoryboardVideoPromptFinished(detail)) {
+          const generatedPrompt = detail.prompt?.trim()
+          manuallyEditedPromptClipIdsRef.current.delete(clipId)
+          if (generatedPrompt) {
+            setPromptByClip((current) => current[clipId] === generatedPrompt
+              ? current
+              : { ...current, [clipId]: generatedPrompt })
+          }
+          setPromptRegenerationByClipId((current) => ({
+            ...current,
+            [clipId]: {
+              loading: false,
+              promptId,
+              progress: 100,
+              stageName: detail.stageName || l('生成完成', 'Generated'),
+            },
+          }))
+          setSegmentDetailRefreshToken((current) => current + 1)
+          message.success(l('提示词已重新生成', 'Prompt regenerated'))
+          return
+        }
+
+        setPromptRegenerationByClipId((current) => ({
+          ...current,
+          [clipId]: {
+            loading: true,
+            promptId,
+            progress,
+            stageName: detail.stageName || l('正在生成提示词', 'Generating prompt'),
+          },
+        }))
+        clearPromptRegenerationTimer()
+        promptRegenerateTimerRef.current = window.setTimeout(() => {
+          promptRegenerateTimerRef.current = null
+          pollStoryboardVideoPromptDetail(clipId, promptId, run)
+        }, PROMPT_REGENERATION_POLL_INTERVAL_MS)
+      })
+      .catch((error) => {
+        if (promptRegenerateRunRef.current !== run || promptRegenerateDetailRequestRef.current !== request) return
+        setPromptRegenerationByClipId((current) => ({
+          ...current,
+          [clipId]: {
+            loading: false,
+            promptId,
+            error,
+          },
+        }))
+        message.error(getApiErrorMessage(error, l('提示词进度查询失败，请重试', 'Failed to query prompt progress; retry')))
+      })
+      .finally(() => {
+        if (promptRegenerateDetailRequestRef.current === request) {
+          promptRegenerateDetailRequestRef.current = null
+        }
+      })
+  }
+
+  const regenerateStoryboardVideoPrompt = () => {
+    if (!activeClip || !hasRemoteInitialClips || activeClip.id.startsWith('clip-')) {
+      message.warning(l('当前片段不能重新生成提示词', 'The current clip cannot regenerate prompt'))
+      return
+    }
+    if (activePromptRegenerationState?.loading) return
+
+    const clipId = activeClip.id
+    const run = promptRegenerateRunRef.current + 1
+    promptRegenerateRunRef.current = run
+    clearPromptRegenerationTimer()
+    promptRegenerateRequestRef.current?.cancel()
+    promptRegenerateDetailRequestRef.current?.cancel()
+    promptRegenerateDetailRequestRef.current = null
+
+    setPromptRegenerationByClipId((current) => ({
+      ...current,
+      [clipId]: {
+        loading: true,
+        progress: 0,
+        stageName: l('正在提交', 'Submitting'),
+      },
+    }))
+
+    const request = StudioAssetGenerationApi.requestStoryboardVideoPromptRegenerate({
+      segmentId: toStoryboardSegmentRequestId(clipId),
+    })
+    promptRegenerateRequestRef.current = request
+
+    void request.promise
+      .then((result) => {
+        if (promptRegenerateRunRef.current !== run || promptRegenerateRequestRef.current !== request) return
+        setPromptRegenerationByClipId((current) => ({
+          ...current,
+          [clipId]: {
+            loading: true,
+            promptId: result.id,
+            progress: result.progress ?? 0,
+            stageName: l('正在生成提示词', 'Generating prompt'),
+          },
+        }))
+        pollStoryboardVideoPromptDetail(clipId, result.id, run)
+      })
+      .catch((error) => {
+        if (promptRegenerateRunRef.current !== run || promptRegenerateRequestRef.current !== request) return
+        setPromptRegenerationByClipId((current) => ({
+          ...current,
+          [clipId]: {
+            loading: false,
+            error,
+          },
+        }))
+        message.error(getApiErrorMessage(error, l('提示词重新生成失败，请重试', 'Failed to regenerate prompt; retry')))
+      })
+      .finally(() => {
+        if (promptRegenerateRequestRef.current === request) {
+          promptRegenerateRequestRef.current = null
+      }
+    })
+  }
+
+  const clearVideoGenerationTimer = () => {
+    if (videoGenerationTimerRef.current === null) return
+    window.clearTimeout(videoGenerationTimerRef.current)
+    videoGenerationTimerRef.current = null
+  }
+
+  const mergeGeneratedVideoIntoHistory = (
+    clipId: string,
+    detail: StudioStoryboardVideoDetailResult,
+  ) => {
+    const outputUrl = getStoryboardMediaOutputUrl(detail)
+    if (!outputUrl) return
+
+    setMediaHistoryByClipId((current) => {
+      const currentState = current[clipId] ?? { loading: false, items: [] }
+      const currentItems = currentState.items ?? []
+      const nextItems = [
+        detail,
+        ...currentItems.filter((item) => {
+          const sameId = String(item.id) === String(detail.id)
+          const sameKey = Boolean(item.itemKey && detail.itemKey && item.itemKey === detail.itemKey)
+          const sameUrl = getStoryboardMediaOutputUrl(item) === outputUrl
+          return !sameId && !sameKey && !sameUrl
+        }),
+      ]
+
+      return {
+        ...current,
+        [clipId]: {
+          ...currentState,
+          loading: false,
+          error: undefined,
+          items: nextItems,
+        },
+      }
+    })
+    setHistoryIndexByClip((current) => ({ ...current, [clipId]: 0 }))
+  }
+
+  const pollStoryboardVideoDetail = (
+    clipId: string,
+    videoId: string | number,
+    run: number,
+  ) => {
+    if (videoGenerationRunRef.current !== run) return
+
+    videoDetailRequestRef.current?.cancel()
+    const request = StudioAssetGenerationApi.requestStoryboardVideoDetail(videoId)
+    videoDetailRequestRef.current = request
+
+    void request.promise
+      .then((detail) => {
+        if (videoGenerationRunRef.current !== run || videoDetailRequestRef.current !== request) return
+        const progress = detail.progress === null || detail.progress === undefined
+          ? undefined
+          : Math.max(0, Math.min(100, Math.round(detail.progress)))
+
+        if (isStoryboardVideoGenerationFailed(detail)) {
+          setVideoGenerationByClipId((current) => ({
+            ...current,
+            [clipId]: {
+              loading: false,
+              id: videoId,
+              progress,
+              statusName: detail.statusName,
+              error: detail.error || detail.statusName || true,
+            },
+          }))
+          message.error(detail.error?.trim() || detail.statusName || l('视频生成失败，请重试', 'Video generation failed; retry'))
+          return
+        }
+
+        if (isStoryboardVideoGenerationFinished(detail)) {
+          mergeGeneratedVideoIntoHistory(clipId, detail)
+          setVideoGenerationByClipId((current) => ({
+            ...current,
+            [clipId]: {
+              loading: false,
+              id: videoId,
+              progress: 100,
+              statusName: detail.statusName || l('生成完成', 'Generated'),
+            },
+          }))
+          setMediaHistoryRefreshToken((current) => current + 1)
+          message.success(l('视频已生成', 'Video generated'))
+          return
+        }
+
+        setVideoGenerationByClipId((current) => ({
+          ...current,
+          [clipId]: {
+            loading: true,
+            id: videoId,
+            progress,
+            statusName: detail.statusName || l('正在生成视频', 'Generating video'),
+          },
+        }))
+        clearVideoGenerationTimer()
+        videoGenerationTimerRef.current = window.setTimeout(() => {
+          videoGenerationTimerRef.current = null
+          pollStoryboardVideoDetail(clipId, videoId, run)
+        }, VIDEO_GENERATION_POLL_INTERVAL_MS)
+      })
+      .catch((error) => {
+        if (videoGenerationRunRef.current !== run || videoDetailRequestRef.current !== request) return
+        setVideoGenerationByClipId((current) => ({
+          ...current,
+          [clipId]: {
+            loading: false,
+            id: videoId,
+            error,
+          },
+        }))
+        message.error(getApiErrorMessage(error, l('视频进度查询失败，请重试', 'Failed to query video progress; retry')))
+      })
+      .finally(() => {
+        if (videoDetailRequestRef.current === request) {
+          videoDetailRequestRef.current = null
+        }
+      })
+  }
+
+  const generateStoryboardVideo = () => {
+    if (!activeClip || !hasRemoteInitialClips || activeClip.id.startsWith('clip-')) {
+      message.warning(l('当前片段不能生成视频', 'The current clip cannot generate video'))
+      return
+    }
+    if (activeVideoGenerationState?.loading) return
+
+    const promptValue = prompt.trim()
+    if (!promptValue) {
+      message.warning(l('请输入提示词', 'Enter a prompt'))
+      return
+    }
+
+    const modelId = Number(selectedVideoModel?.id ?? videoModel)
+    if (!Number.isInteger(modelId) || modelId <= 0) {
+      message.warning(l('请选择视频模型', 'Select a video model'))
+      return
+    }
+
+    const resolutionValue = normalizeVideoResolutionValue(videoResolution)
+    if (!resolutionValue) {
+      message.warning(l('请选择视频分辨率', 'Select a video resolution'))
+      return
+    }
+
+    const durationSeconds = Math.round(videoDuration)
+    if (!Number.isInteger(durationSeconds) || durationSeconds <= 0) {
+      message.warning(l('请选择视频时长', 'Select video duration'))
+      return
+    }
+
+    const clipId = activeClip.id
+    const run = videoGenerationRunRef.current + 1
+    videoGenerationRunRef.current = run
+    clearVideoGenerationTimer()
+    videoGenerateRequestRef.current?.cancel()
+    videoDetailRequestRef.current?.cancel()
+    videoDetailRequestRef.current = null
+
+    setVideoGenerationByClipId((current) => ({
+      ...current,
+      [clipId]: {
+        loading: true,
+        progress: 0,
+        statusName: l('正在提交', 'Submitting'),
+      },
+    }))
+
+    const promptManuallyEdited = manuallyEditedPromptClipIdsRef.current.has(clipId)
+    const request = StudioAssetGenerationApi.requestStoryboardVideoGenerate({
+      segmentId: toStoryboardSegmentRequestId(clipId),
+      modelId,
+      directorPromptRunId: promptManuallyEdited
+        ? null
+        : activePromptRegenerationState?.promptId ?? activeSegmentDetail?.directorPrompt?.id ?? null,
+      visualStyleId: selectedVisualStyleIdForGeneration,
+      toneStyleId: selectedToneStyleIdForGeneration,
+      aspectRatio: selectedRatio,
+      resolution: resolutionValue,
+      durationSeconds,
+      generateAudio: true,
+      prompt: promptValue,
+    })
+    videoGenerateRequestRef.current = request
+
+    void request.promise
+      .then((detail) => {
+        if (videoGenerationRunRef.current !== run || videoGenerateRequestRef.current !== request) return
+        const videoId = detail.id
+        const progress = detail.progress === null || detail.progress === undefined
+          ? 0
+          : Math.max(0, Math.min(100, Math.round(detail.progress)))
+        setVideoGenerationByClipId((current) => ({
+          ...current,
+          [clipId]: {
+            loading: true,
+            id: videoId,
+            progress,
+            statusName: detail.statusName || l('正在生成视频', 'Generating video'),
+          },
+        }))
+
+        if (isStoryboardVideoGenerationFinished(detail)) {
+          mergeGeneratedVideoIntoHistory(clipId, detail)
+          setVideoGenerationByClipId((current) => ({
+            ...current,
+            [clipId]: {
+              loading: false,
+              id: videoId,
+              progress: 100,
+              statusName: detail.statusName || l('生成完成', 'Generated'),
+            },
+          }))
+          setMediaHistoryRefreshToken((current) => current + 1)
+          message.success(l('视频已生成', 'Video generated'))
+          return
+        }
+
+        if (isStoryboardVideoGenerationFailed(detail)) {
+          setVideoGenerationByClipId((current) => ({
+            ...current,
+            [clipId]: {
+              loading: false,
+              id: videoId,
+              progress,
+              statusName: detail.statusName,
+              error: detail.error || detail.statusName || true,
+            },
+          }))
+          message.error(detail.error?.trim() || detail.statusName || l('视频生成失败，请重试', 'Video generation failed; retry'))
+          return
+        }
+
+        pollStoryboardVideoDetail(clipId, videoId, run)
+      })
+      .catch((error) => {
+        if (videoGenerationRunRef.current !== run || videoGenerateRequestRef.current !== request) return
+        setVideoGenerationByClipId((current) => ({
+          ...current,
+          [clipId]: {
+            loading: false,
+            error,
+          },
+        }))
+        message.error(getApiErrorMessage(error, l('视频生成提交失败，请重试', 'Failed to submit video generation; retry')))
+      })
+      .finally(() => {
+        if (videoGenerateRequestRef.current === request) {
+          videoGenerateRequestRef.current = null
+        }
+      })
+  }
+
+  const selectClip = (
+    clipId: string,
+    options: { keepDescriptionExpanded?: boolean } = {},
+  ) => {
+    const detailState = segmentDetailsByClipIdRef.current[clipId]
+    const mediaHistoryState = mediaHistoryByClipIdRef.current[clipId]
+    const directorPrompt = detailState?.data?.directorPrompt?.prompt.trim()
+    if (!options.keepDescriptionExpanded) setExpandedDescriptionClipId(null)
+    if (directorPrompt && !manuallyEditedPromptClipIdsRef.current.has(clipId)) {
+      setPromptByClip((current) => current[clipId] === directorPrompt
+        ? current
+        : { ...current, [clipId]: directorPrompt })
+    }
+    if (clipId === activeClipId && hasRemoteInitialClips && !detailState?.data && !detailState?.loading) {
+      setSegmentDetailRefreshToken((current) => current + 1)
+    }
+    if (clipId === activeClipId && hasRemoteInitialClips && !mediaHistoryState?.items && !mediaHistoryState?.loading) {
+      setMediaHistoryRefreshToken((current) => current + 1)
+    }
+    setActiveClipId(clipId)
+  }
+
+  const toggleClipDescription = (clipId: string) => {
+    selectClip(clipId, { keepDescriptionExpanded: true })
+    setExpandedDescriptionClipId((current) => (current === clipId ? null : clipId))
+  }
+
   const downloadActiveImage = () => {
+    if (!activeImageUrl) {
+      message.warning(l('当前没有可下载的图片', 'There is no image to download'))
+      return
+    }
     const link = document.createElement('a')
     link.href = activeImageUrl
     link.download = `${activeClip.title}.jpg`
@@ -1160,25 +3277,255 @@ export default function ProjectClipEditingStep({
     setEditingDescription('')
   }
 
-  const mergeClipUp = (clipId: string) => {
+  const segmentDetailToClipDraft = (
+    segment: StudioEpisodeStoryboardSegmentDetailResult,
+    fallbackDescription: string,
+  ): ClipDraft => {
+    const description = segment.editorDescription.trim() || fallbackDescription
+    const directorPrompt = segment.directorPrompt?.prompt.trim()
+    const coverSource = segment.coverUrl ?? (
+      segment.coverFileId === null || segment.coverFileId === undefined
+        ? undefined
+        : String(segment.coverFileId)
+    )
+    return {
+      id: String(segment.id),
+      title: segment.title.trim() || `片段-${segment.segmentIndex}`,
+      description,
+      prompt: directorPrompt || description,
+      imageUrl: resolveAssetUrl(coverSource) ?? '',
+      revisionNo: segment.revisionNo ?? null,
+      manuallyAdded: segment.manuallyAdded ?? true,
+    }
+  }
+
+  const isManualClip = (clip: ClipDraft) => Boolean(clip.manuallyAdded || clip.id.startsWith('clip-'))
+
+  const clearRemovedClipState = (clipId: string) => {
+    manuallyAddedClipIdsRef.current.delete(clipId)
+    manuallyEditedPromptClipIdsRef.current.delete(clipId)
+    segmentDetailLoadedKeysRef.current.delete(clipId)
+    mediaHistoryLoadedKeysRef.current.delete(clipId)
+    setPromptByClip((current) => {
+      if (!(clipId in current)) return current
+      const next = { ...current }
+      delete next[clipId]
+      return next
+    })
+    setSegmentDetailsByClipId((current) => {
+      if (!(clipId in current)) return current
+      const next = { ...current }
+      delete next[clipId]
+      return next
+    })
+    setMediaHistoryByClipId((current) => {
+      if (!(clipId in current)) return current
+      const next = { ...current }
+      delete next[clipId]
+      return next
+    })
+    setHistoryIndexByClip((current) => {
+      if (!(clipId in current)) return current
+      const next = { ...current }
+      delete next[clipId]
+      return next
+    })
+    setPromptRegenerationByClipId((current) => {
+      if (!(clipId in current)) return current
+      const next = { ...current }
+      delete next[clipId]
+      return next
+    })
+    setVideoGenerationByClipId((current) => {
+      if (!(clipId in current)) return current
+      const next = { ...current }
+      delete next[clipId]
+      return next
+    })
+    setExpandedDescriptionClipId((current) => (current === clipId ? null : current))
+    if (editingClipId === clipId) closeClipEditor()
+  }
+
+  const removeClipFromList = (clipId: string, nextActiveClipId: string) => {
+    setClips((current) => {
+      if (!current.some((item) => item.id === clipId) || current.length <= 1) return current
+      const next = current.filter((item) => item.id !== clipId)
+      return hasRemoteInitialClips
+        ? next
+        : next.map((item, itemIndex) => ({ ...item, title: `片段-${itemIndex + 1}` }))
+    })
+    setActiveClipId((current) => (current === clipId ? nextActiveClipId : current))
+    clearRemovedClipState(clipId)
+  }
+
+  const removeManualClip = (clip: ClipDraft) => {
+    if (!isManualClip(clip)) return
+    if (deletingClipIds.includes(clip.id) || segmentDeleteRequestRefs.current.has(clip.id)) return
+
+    const currentIndex = clips.findIndex((item) => item.id === clip.id)
+    if (currentIndex < 0) return
+    if (clips.length <= 1) {
+      message.warning(l('至少需要保留一个片段', 'Keep at least one clip'))
+      return
+    }
+
+    const nextClips = clips.filter((item) => item.id !== clip.id)
+    const nextActiveClipId = activeClipId === clip.id
+      ? nextClips[Math.min(currentIndex, nextClips.length - 1)]?.id ?? ''
+      : activeClipId
+
+    if (!hasRemoteInitialClips || clip.id.startsWith('clip-')) {
+      removeClipFromList(clip.id, nextActiveClipId)
+      message.success(l('已删除片段', 'Clip deleted'))
+      return
+    }
+
+    const request = StudioAssetGenerationApi.requestEpisodeStoryboardSegmentDelete({
+      id: toStoryboardSegmentRequestId(clip.id),
+    })
+    segmentDeleteRequestRefs.current.set(clip.id, request)
+    setDeletingClipIds((current) => (current.includes(clip.id) ? current : [...current, clip.id]))
+
+    void request.promise
+      .then(() => {
+        if (segmentDeleteRequestRefs.current.get(clip.id) !== request) return
+        removeClipFromList(clip.id, nextActiveClipId)
+        pendingActiveClipIdAfterRemoteRefreshRef.current = nextActiveClipId
+        setSegmentDetailRefreshToken((current) => current + 1)
+        setMediaHistoryRefreshToken((current) => current + 1)
+        onStoryboardEditorRefresh?.()
+        message.success(l('已删除片段', 'Clip deleted'))
+      })
+      .catch((error) => {
+        if (segmentDeleteRequestRefs.current.get(clip.id) !== request) return
+        message.error(getApiErrorMessage(error, l('片段删除失败，请重试', 'Failed to delete clip; retry')))
+      })
+      .finally(() => {
+        if (segmentDeleteRequestRefs.current.get(clip.id) !== request) return
+        segmentDeleteRequestRefs.current.delete(clip.id)
+        setDeletingClipIds((current) => current.filter((id) => id !== clip.id))
+      })
+  }
+
+  const getClipRevisionNo = (clip: ClipDraft) => {
+    const detailRevisionNo = segmentDetailsByClipIdRef.current[clip.id]?.data?.revisionNo
+    const revisionNo = Math.floor(Number(detailRevisionNo ?? clip.revisionNo))
+    return Number.isInteger(revisionNo) && revisionNo > 0 ? revisionNo : null
+  }
+
+  const mergeClipUpLocally = (
+    clipId: string,
+    mergedSegment?: StudioEpisodeStoryboardSegmentDetailResult | null,
+  ) => {
     setClips((current) => {
       const index = current.findIndex((clip) => clip.id === clipId)
       if (index <= 0) return current
       const previous = current[index - 1]
       const currentClip = current[index]
+      const directorPrompt = mergedSegment?.directorPrompt?.prompt.trim()
+      const coverSource = mergedSegment?.coverUrl ?? (
+        mergedSegment?.coverFileId === null || mergedSegment?.coverFileId === undefined
+          ? undefined
+          : String(mergedSegment.coverFileId)
+      )
+      const nextImageUrl = resolveAssetUrl(coverSource)
+      const nextTitle = mergedSegment?.title.trim()
       const merged = {
         ...previous,
-        description: `${previous.description}\n${currentClip.description}`,
-        prompt: `${previous.prompt}\n${currentClip.prompt}`,
+        title: nextTitle || previous.title,
+        description: mergedSegment?.editorDescription.trim()
+          || `${previous.description}\n${currentClip.description}`.trim(),
+        prompt: directorPrompt || `${previous.prompt}\n${currentClip.prompt}`.trim(),
+        imageUrl: nextImageUrl ?? previous.imageUrl,
+        revisionNo: mergedSegment?.revisionNo ?? previous.revisionNo ?? null,
       }
       const result = [...current]
       result.splice(index - 1, 2, merged)
       setActiveClipId(merged.id)
       return result.map((clip, clipIndex) => ({
         ...clip,
-        title: `片段-${clipIndex + 1}`,
+        title: hasRemoteInitialClips ? clip.title : `片段-${clipIndex + 1}`,
       }))
     })
+  }
+
+  const mergeClipUp = (clipId: string) => {
+    if (segmentMergeRequestRef.current) return
+    const index = clips.findIndex((clip) => clip.id === clipId)
+    if (index <= 0) return
+    const previous = clips[index - 1]
+    const currentClip = clips[index]
+
+    if (!hasRemoteInitialClips || currentClip.id.startsWith('clip-') || previous.id.startsWith('clip-')) {
+      mergeClipUpLocally(clipId)
+      return
+    }
+
+    const previousRevisionNo = getClipRevisionNo(previous)
+    const currentRevisionNo = getClipRevisionNo(currentClip)
+    if (previousRevisionNo === null || currentRevisionNo === null) {
+      setActiveClipId(currentClip.id)
+      setSegmentDetailRefreshToken((current) => current + 1)
+      onStoryboardEditorRefresh?.()
+      message.warning(l('片段版本号还没加载完成，已刷新片段列表，请稍后再试', 'Segment revision is still loading; refreshing list'))
+      return
+    }
+
+    const request = StudioAssetGenerationApi.requestEpisodeStoryboardSegmentMergeUp({
+      id: toStoryboardSegmentRequestId(currentClip.id),
+      previousSegmentId: toStoryboardSegmentRequestId(previous.id),
+      previousRevisionNo,
+      currentRevisionNo,
+      description: '',
+    })
+    segmentMergeRequestRef.current = request
+    setMergingClipIds((current) => (current.includes(clipId) ? current : [...current, clipId]))
+
+    void request.promise
+      .then((mergedSegment) => {
+        if (segmentMergeRequestRef.current !== request) return
+        mergeClipUpLocally(clipId, mergedSegment)
+        setSegmentDetailsByClipId((current) => {
+          const next = { ...current }
+          delete next[currentClip.id]
+          if (mergedSegment) {
+            next[previous.id] = {
+              loading: false,
+              data: mergedSegment,
+            }
+          }
+          return next
+        })
+        setPromptByClip((current) => {
+          const next = { ...current }
+          delete next[currentClip.id]
+          const directorPrompt = mergedSegment?.directorPrompt?.prompt.trim()
+          if (directorPrompt) next[previous.id] = directorPrompt
+          return next
+        })
+        setHistoryIndexByClip((current) => {
+          if (!(currentClip.id in current)) return current
+          const next = { ...current }
+          delete next[currentClip.id]
+          return next
+        })
+        setSegmentDetailRefreshToken((current) => current + 1)
+        setMediaHistoryRefreshToken((current) => current + 1)
+        pendingActiveClipIdAfterRemoteRefreshRef.current = previous.id
+        onStoryboardEditorRefresh?.()
+        message.success(l('片段已向上合并', 'Segment merged upward'))
+      })
+      .catch((error) => {
+        if (segmentMergeRequestRef.current !== request) return
+        setSegmentDetailRefreshToken((current) => current + 1)
+        onStoryboardEditorRefresh?.()
+        message.error(getApiErrorMessage(error, l('片段向上合并失败，请重试', 'Failed to merge segment upward; retry')))
+      })
+      .finally(() => {
+        if (segmentMergeRequestRef.current !== request) return
+        segmentMergeRequestRef.current = null
+        setMergingClipIds((current) => current.filter((id) => id !== clipId))
+      })
   }
 
   const openClipEditor = (clip: ClipDraft) => {
@@ -1195,13 +3542,81 @@ export default function ProjectClipEditingStep({
     setEditingDescription('')
   }
 
-  const saveClipEditor = () => {
+  const saveClipEditor = async () => {
+    if (clipEditorSaving) return
     const description = editingDescription.trim()
     if (!description) {
       message.warning(l('请输入片段描述', 'Enter a clip description'))
       return
     }
     if (insertingAt !== null) {
+      const normalizedInsertPosition = Math.max(0, Math.min(insertingAt, clips.length))
+      const targetClip = clipEditorMode === 'insert-above'
+        ? clips[normalizedInsertPosition]
+        : clips[Math.max(0, Math.min(normalizedInsertPosition - 1, clips.length - 1))]
+
+      if (hasRemoteInitialClips && targetClip && !targetClip.id.startsWith('clip-')) {
+        segmentInsertRequestRef.current?.cancel()
+        const requestBody = {
+          id: toStoryboardSegmentRequestId(targetClip.id),
+          description,
+        }
+        const request = clipEditorMode === 'insert-above'
+          ? StudioAssetGenerationApi.requestEpisodeStoryboardSegmentInsertUp(requestBody)
+          : StudioAssetGenerationApi.requestEpisodeStoryboardSegmentInsertDown(requestBody)
+        segmentInsertRequestRef.current = request
+        setClipEditorSaving(true)
+
+        try {
+          const insertedSegment = await request.promise
+          if (segmentInsertRequestRef.current !== request) return
+
+          let nextActiveClipId = targetClip.id
+          if (insertedSegment) {
+            const insertedClip = segmentDetailToClipDraft(insertedSegment, description)
+            nextActiveClipId = insertedClip.id
+            manuallyAddedClipIdsRef.current.add(insertedClip.id)
+            setClips((current) => {
+              const targetIndex = current.findIndex((clip) => clip.id === targetClip.id)
+              const insertPosition = targetIndex < 0
+                ? normalizedInsertPosition
+                : clipEditorMode === 'insert-above'
+                  ? targetIndex
+                  : targetIndex + 1
+              const withoutExisting = current.filter((clip) => clip.id !== insertedClip.id)
+              const safePosition = Math.max(0, Math.min(insertPosition, withoutExisting.length))
+              const result = [...withoutExisting]
+              result.splice(safePosition, 0, insertedClip)
+              return result
+            })
+            setSegmentDetailsByClipId((current) => ({
+              ...current,
+              [insertedClip.id]: {
+                loading: false,
+                data: insertedSegment,
+              },
+            }))
+          }
+
+          pendingActiveClipIdAfterRemoteRefreshRef.current = nextActiveClipId
+          setActiveClipId(nextActiveClipId)
+          setSegmentDetailRefreshToken((current) => current + 1)
+          onStoryboardEditorRefresh?.()
+          message.success(l('片段已添加', 'Clip added'))
+          closeClipEditor()
+        } catch (error) {
+          if (segmentInsertRequestRef.current !== request) return
+          onStoryboardEditorRefresh?.()
+          message.error(getApiErrorMessage(error, l('片段添加失败，请重试', 'Failed to add clip; retry')))
+        } finally {
+          if (segmentInsertRequestRef.current === request) {
+            segmentInsertRequestRef.current = null
+            setClipEditorSaving(false)
+          }
+        }
+        return
+      }
+
       const insertedId = `clip-${Date.now()}`
       setClips((current) => {
         const position = Math.max(0, Math.min(insertingAt, current.length))
@@ -1211,18 +3626,97 @@ export default function ProjectClipEditingStep({
           description,
           prompt: `${description} 保持人物造型和场景连续，电影感构图，光线自然，画面细节清晰。`,
           imageUrl: PREVIEW_IMAGES[position % PREVIEW_IMAGES.length],
+          manuallyAdded: true,
         }
+        manuallyAddedClipIdsRef.current.add(insertedId)
         const result = [...current]
         result.splice(position, 0, inserted)
         return result.map((clip, index) => ({ ...clip, title: `片段-${index + 1}` }))
       })
       setActiveClipId(insertedId)
-    } else {
+      closeClipEditor()
+      return
+    }
+
+    if (!editingClipId) return
+
+    if (!hasRemoteInitialClips || editingClipId.startsWith('clip-')) {
       setClips((current) => current.map((clip) => (
         clip.id === editingClipId ? { ...clip, description } : clip
       )))
+      closeClipEditor()
+      return
     }
-    closeClipEditor()
+
+    segmentUpdateRequestRef.current?.cancel()
+    const request = StudioAssetGenerationApi.requestEpisodeStoryboardSegmentUpdate({
+      id: toStoryboardSegmentRequestId(editingClipId),
+      description,
+    })
+    segmentUpdateRequestRef.current = request
+    setClipEditorSaving(true)
+
+    try {
+      const updatedSegment = await request.promise
+      if (segmentUpdateRequestRef.current !== request) return
+
+      const nextDescription = updatedSegment?.editorDescription.trim() || description
+      const directorPrompt = updatedSegment?.directorPrompt?.prompt.trim()
+      const coverSource = updatedSegment?.coverUrl ?? (
+        updatedSegment?.coverFileId === null || updatedSegment?.coverFileId === undefined
+          ? undefined
+          : String(updatedSegment.coverFileId)
+      )
+      const nextImageUrl = resolveAssetUrl(coverSource)
+
+      setClips((current) => current.map((clip) => {
+        if (clip.id !== editingClipId) return clip
+        return {
+          ...clip,
+          title: updatedSegment?.title.trim() || clip.title,
+          description: nextDescription,
+          prompt: directorPrompt || clip.prompt,
+          imageUrl: nextImageUrl ?? clip.imageUrl,
+          revisionNo: updatedSegment?.revisionNo ?? clip.revisionNo ?? null,
+          manuallyAdded: updatedSegment?.manuallyAdded ?? clip.manuallyAdded,
+        }
+      }))
+
+      setSegmentDetailsByClipId((current) => {
+        if (updatedSegment) {
+          return {
+            ...current,
+            [editingClipId]: {
+              loading: false,
+              data: updatedSegment,
+            },
+          }
+        }
+        const next = { ...current }
+        delete next[editingClipId]
+        return next
+      })
+
+      if (directorPrompt) {
+        manuallyEditedPromptClipIdsRef.current.delete(editingClipId)
+        setPromptByClip((current) => current[editingClipId] === directorPrompt
+          ? current
+          : { ...current, [editingClipId]: directorPrompt })
+      } else if (activeClipId === editingClipId) {
+        setSegmentDetailRefreshToken((current) => current + 1)
+      }
+
+      message.success(l('片段内容已更新', 'Clip updated'))
+      closeClipEditor()
+    } catch (error) {
+      if (segmentUpdateRequestRef.current !== request) return
+      message.error(getApiErrorMessage(error, l('片段内容保存失败，请重试', 'Failed to save clip; retry')))
+    } finally {
+      if (segmentUpdateRequestRef.current === request) {
+        segmentUpdateRequestRef.current = null
+        setClipEditorSaving(false)
+      }
+    }
   }
 
   const editingClip = clips.find((clip) => clip.id === editingClipId)
@@ -1370,14 +3864,14 @@ export default function ProjectClipEditingStep({
           {clips.map((clip, index) => (
             <div
               key={clip.id}
-              className={`project-clip-editor__clip${clip.id === activeClip.id ? ' is-selected' : ''}`}
+              className={`project-clip-editor__clip${clip.id === activeClip.id ? ' is-selected' : ''}${expandedDescriptionClipId === clip.id ? ' is-description-expanded' : ''}`}
               role="button"
               tabIndex={0}
-              onClick={() => setActiveClipId(clip.id)}
+              onClick={() => toggleClipDescription(clip.id)}
               onKeyDown={(event) => {
                 if (event.key !== 'Enter' && event.key !== ' ') return
                 event.preventDefault()
-                setActiveClipId(clip.id)
+                toggleClipDescription(clip.id)
               }}
             >
               <div className="project-clip-editor__clip-actions is-top">
@@ -1395,7 +3889,9 @@ export default function ProjectClipEditingStep({
                 {index > 0 && (
                   <button
                     type="button"
-                    className="is-merge"
+                    className={`is-merge${mergingClipIds.includes(clip.id) ? ' is-loading' : ''}`}
+                    disabled={mergingClipIds.length > 0}
+                    aria-busy={mergingClipIds.includes(clip.id)}
                     onClick={(event) => {
                       event.stopPropagation()
                       mergeClipUp(clip.id)
@@ -1407,23 +3903,58 @@ export default function ProjectClipEditingStep({
                 )}
               </div>
               <div className="project-clip-editor__clip-main">
-                <img src={clip.imageUrl} alt="" />
+                {clip.imageUrl ? (
+                  <img src={clip.imageUrl} alt="" loading="lazy" decoding="async" />
+                ) : (
+                  <ClipCoverPlaceholder />
+                )}
                 <span>
                   <span className="project-clip-editor__clip-heading">
                     <strong>{clip.title}</strong>
-                    <button
-                      type="button"
-                      aria-label={l('编辑片段', 'Edit clip')}
-                      title={l('编辑片段', 'Edit clip')}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        openClipEditor(clip)
-                      }}
-                    >
-                      <EditOutlined />
-                    </button>
+                    <span className="project-clip-editor__clip-heading-actions">
+                      {isManualClip(clip) && (
+                        <button
+                          type="button"
+                          className={`is-danger${deletingClipIds.includes(clip.id) ? ' is-loading' : ''}`}
+                          disabled={deletingClipIds.includes(clip.id)}
+                          aria-busy={deletingClipIds.includes(clip.id)}
+                          aria-label={l('删除片段', 'Delete clip')}
+                          title={l('删除片段', 'Delete clip')}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            removeManualClip(clip)
+                          }}
+                        >
+                          <DeleteOutlined />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        aria-label={l('编辑片段', 'Edit clip')}
+                        title={l('编辑片段', 'Edit clip')}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          openClipEditor(clip)
+                        }}
+                      >
+                        <EditOutlined />
+                      </button>
+                    </span>
                   </span>
-                  <small>{clip.description}</small>
+                  <button
+                    type="button"
+                    className="project-clip-editor__clip-description"
+                    aria-expanded={expandedDescriptionClipId === clip.id}
+                    title={expandedDescriptionClipId === clip.id
+                      ? l('点击收起描述', 'Collapse description')
+                      : l('点击展开描述', 'Expand description')}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      toggleClipDescription(clip.id)
+                    }}
+                  >
+                    {clip.description}
+                  </button>
                 </span>
               </div>
               <div className="project-clip-editor__clip-actions is-bottom">
@@ -1464,99 +3995,146 @@ export default function ProjectClipEditingStep({
         <div className="project-clip-editor__preview-stage">
           <div
             className={`project-clip-editor__preview-content ${
-              previewImageRatio < 0.85 ? 'is-portrait' : previewImageRatio > 1.2 ? 'is-landscape' : 'is-square'
+              activePreviewRatio < 0.85 ? 'is-portrait' : activePreviewRatio > 1.2 ? 'is-landscape' : 'is-square'
             }`}
-            style={{ width: `min(100%, calc((100vh - 200px) * ${previewImageRatio}), 980px)` }}
+            style={{ width: `min(100%, calc((100vh - 200px) * ${activePreviewRatio}), 980px)` }}
           >
-            <div className="project-clip-editor__preview-frame" style={{ aspectRatio: previewImageRatio }}>
-            <button
-              type="button"
-              className="project-clip-editor__preview-image"
-              aria-label={l('预览当前图片', 'Preview current image')}
-              onClick={() => setImageViewerOpen(true)}
-            >
-              <img
-                src={activeImageUrl}
-                alt={activeClip.title}
-                draggable={false}
-                onLoad={(event) => {
-                  const { naturalWidth, naturalHeight } = event.currentTarget
-                  if (naturalWidth > 0 && naturalHeight > 0) {
-                    setPreviewImageRatio(naturalWidth / naturalHeight)
-                  }
-                }}
-              />
-            </button>
-            <div className="project-clip-editor__preview-toolbar">
-              <button
-                type="button"
-                className="is-video"
-                aria-label={l('图生视频', 'Image to video')}
-                onClick={() => setMode('video')}
-              >
-                <VideoCameraOutlined />
-                <span>{l('图生视频', 'Image to video')}</span>
-              </button>
-              <span className="project-clip-editor__preview-tool">
-                <button
-                  type="button"
-                  aria-label={l('高清', 'HD')}
-                  onClick={() => message.info(l('高清处理功能待接入', 'HD processing is not connected yet'))}
-                >
-                  <span className="project-clip-editor__hd-icon">HD</span>
-                </button>
-                <span className="project-clip-editor__preview-tooltip">{l('高清', 'HD')}</span>
-              </span>
-              <span className="project-clip-editor__preview-tool">
-                <button
-                  type="button"
-                  aria-label={l('下载', 'Download')}
-                  onClick={downloadActiveImage}
-                >
-                  <DownloadOutlined />
-                </button>
-                <span className="project-clip-editor__preview-tooltip">{l('下载', 'Download')}</span>
-              </span>
-              <span className="project-clip-editor__preview-tool is-details">
-                <button type="button" aria-label={l('描述', 'Description')}>
-                  <InfoCircleOutlined />
-                </button>
-                <span className="project-clip-editor__preview-tooltip">{l('描述', 'Description')}</span>
-                <span className="project-clip-editor__image-details">
-                  <strong>{l('图片详情', 'Image details')}</strong>
-                  <span className="project-clip-editor__image-detail-tags">
-                    <span>{mode === 'video' ? 'Seedance 2.5' : model === 'gpt-image-2' ? 'GPT Image 2' : 'Nano Banana 2'}</span>
-                    <span>{mode === 'video' ? l('多参生视频', 'Multi-reference video') : l('多参生图', 'Multi-reference image')}</span>
-                    <span>{l('风格', 'Style')} · {selectedStyleLabel}</span>
-                    {mode === 'image' && storyboardSkillEnabled && <span>{l('技能', 'Skill')} · {l('分镜大师', 'Storyboard master')}</span>}
-                  </span>
-                  <span className="project-clip-editor__image-detail-description">
-                    <b>{l('【描述词】', '[Description]')}</b>
-                    {activeClip.description}
-                  </span>
-                </span>
-              </span>
-            </div>
+            <div className="project-clip-editor__preview-frame" style={{ aspectRatio: activePreviewRatio }}>
+              {hasActiveVideo ? (
+                <div className="project-clip-editor__preview-video">
+                  <video
+                    key={activeVideoUrl}
+                    src={activeVideoUrl}
+                    poster={activeMediaThumbnailUrl || undefined}
+                    controls
+                    playsInline
+                    preload="metadata"
+                  />
+                </div>
+              ) : hasActiveImage ? (
+                <>
+                  <button
+                    type="button"
+                    className="project-clip-editor__preview-image"
+                    aria-label={l('预览当前图片', 'Preview current image')}
+                    onClick={() => setImageViewerOpen(true)}
+                  >
+                    <img
+                      src={activeImageUrl}
+                      alt={activeClip.title}
+                      draggable={false}
+                      onLoad={(event) => {
+                        const { naturalWidth, naturalHeight } = event.currentTarget
+                        if (naturalWidth > 0 && naturalHeight > 0) {
+                          setPreviewImageRatio(naturalWidth / naturalHeight)
+                        }
+                      }}
+                    />
+                  </button>
+                  <div className="project-clip-editor__preview-toolbar">
+                    <button
+                      type="button"
+                      className="is-video"
+                      aria-label={l('图生视频', 'Image to video')}
+                      onClick={() => setMode('video')}
+                    >
+                      <VideoCameraOutlined />
+                      <span>{l('图生视频', 'Image to video')}</span>
+                    </button>
+                    <span className="project-clip-editor__preview-tool">
+                      <button
+                        type="button"
+                        aria-label={l('高清', 'HD')}
+                        onClick={() => message.info(l('高清处理功能待接入', 'HD processing is not connected yet'))}
+                      >
+                        <span className="project-clip-editor__hd-icon">HD</span>
+                      </button>
+                      <span className="project-clip-editor__preview-tooltip">{l('高清', 'HD')}</span>
+                    </span>
+                    <span className="project-clip-editor__preview-tool">
+                      <button
+                        type="button"
+                        aria-label={l('下载', 'Download')}
+                        onClick={downloadActiveImage}
+                      >
+                        <DownloadOutlined />
+                      </button>
+                      <span className="project-clip-editor__preview-tooltip">{l('下载', 'Download')}</span>
+                    </span>
+                    <span className="project-clip-editor__preview-tool is-details">
+                      <button type="button" aria-label={l('描述', 'Description')}>
+                        <InfoCircleOutlined />
+                      </button>
+                      <span className="project-clip-editor__preview-tooltip">{l('描述', 'Description')}</span>
+                      <span className="project-clip-editor__image-details">
+                        <strong>{mode === 'video' ? l('视频详情', 'Video details') : l('图片详情', 'Image details')}</strong>
+                        <span className="project-clip-editor__image-detail-tags">
+                          <span>{mode === 'video' ? selectedVideoModelLabel : model === 'gpt-image-2' ? 'GPT Image 2' : 'Nano Banana 2'}</span>
+                          <span>{mode === 'video' ? l('多参生视频', 'Multi-reference video') : l('多参生图', 'Multi-reference image')}</span>
+                          <span>{l('风格', 'Style')} · {selectedStyleLabel}</span>
+                          {mode === 'image' && storyboardSkillEnabled && <span>{l('技能', 'Skill')} · {l('分镜大师', 'Storyboard master')}</span>}
+                        </span>
+                        <span className="project-clip-editor__image-detail-description">
+                          <b>{l('【描述词】', '[Description]')}</b>
+                          {activeClip.description}
+                        </span>
+                      </span>
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="project-clip-editor__preview-placeholder">
+                  <ClipCoverPlaceholder
+                    variant="preview"
+                    label={isActiveVideoGenerating
+                      ? l('视频生成中', 'Generating video')
+                      : activeMediaHistoryState?.loading
+                        ? l('历史加载中', 'Loading history')
+                        : l('视频待生成', 'Video pending')}
+                    hint={isActiveVideoGenerating
+                      ? `${activeVideoGenerationStatusText}${activeVideoGenerationProgressText}`
+                      : l('请点击右侧按钮生成', 'Click the button on the right to generate')}
+                  />
+                </div>
+              )}
             </div>
             <div className="project-clip-editor__history">
               <div className="project-clip-editor__history-title">
                 <HistoryOutlined />
                 <span>{l('历史记录', 'History')}</span>
-                <small>2</small>
+                <small>{activeMediaHistoryState?.loading ? '...' : activeHistoryItems.length}</small>
               </div>
               <div className="project-clip-editor__history-list">
-                {activeHistoryImages.map((imageUrl, index) => (
-                  <button
-                    key={`${activeClip.id}-${imageUrl}`}
-                    type="button"
-                    className={activeHistoryIndex === index ? 'is-selected' : ''}
-                    aria-label={l(`切换至历史版本 ${index + 1}`, `Switch to history version ${index + 1}`)}
-                    aria-pressed={activeHistoryIndex === index}
-                    onClick={() => setHistoryIndexByClip((current) => ({ ...current, [activeClip.id]: index }))}
-                  >
-                    <img src={imageUrl} alt="" />
-                  </button>
-                ))}
+                {activeMediaHistoryState?.loading && activeHistoryItems.length === 0 ? (
+                  <span className="project-clip-editor__history-empty">{l('加载中', 'Loading')}</span>
+                ) : activeHistoryItems.length > 0 ? (
+                  activeHistoryItems.map((item, index) => {
+                    const thumbnailUrl = getStoryboardMediaThumbnailUrl(item)
+                    const versionLabel = item.versionNo ? `#${item.versionNo}` : `${index + 1}`
+                    return (
+                      <button
+                        key={`${activeClip.id}-${item.itemKey ?? item.id}-${index}`}
+                        type="button"
+                        className={`${activeHistoryIndex === index ? 'is-selected' : ''}${thumbnailUrl ? ' has-image' : ' is-empty'} is-video`}
+                        aria-label={l(`切换至历史视频 ${versionLabel}`, `Switch to history video ${versionLabel}`)}
+                        aria-pressed={activeHistoryIndex === index}
+                        onClick={() => setHistoryIndexByClip((current) => ({ ...current, [activeClip.id]: index }))}
+                      >
+                        {thumbnailUrl ? (
+                          <img src={thumbnailUrl} alt="" loading="lazy" decoding="async" />
+                        ) : (
+                          <ClipCoverPlaceholder variant="history" />
+                        )}
+                        <span className="project-clip-editor__history-media-badge"><VideoCameraOutlined /></span>
+                        {typeof item.durationSeconds === 'number' && item.durationSeconds > 0 && (
+                          <span className="project-clip-editor__history-duration">{Math.round(item.durationSeconds)}s</span>
+                        )}
+                      </button>
+                    )
+                  })
+                ) : (
+                  <span className="project-clip-editor__history-empty">{l('暂无历史视频', 'No video history')}</span>
+                )}
               </div>
             </div>
           </div>
@@ -1920,19 +4498,57 @@ export default function ProjectClipEditingStep({
             <span>{l('用于保持角色与场景一致', 'Keep visual continuity')}</span>
           </div>
           <div className="project-clip-editor__references">
-            <button type="button" className="project-clip-editor__reference-add" aria-label={l('添加参考', 'Add reference')}>
-              <PlusOutlined />
-            </button>
-            {[
-              [PREVIEW_IMAGES[1], l('女主角', 'Lead')],
-              [PREVIEW_IMAGES[2], l('街边店铺', 'Street')],
-              [PREVIEW_IMAGES[3], l('夜景氛围', 'Night mood')],
-            ].map(([imageUrl, label], index) => (
-              <button key={label} type="button" className={`project-clip-editor__reference${index === 0 ? ' is-selected' : ''}`}>
-                <img src={imageUrl} alt="" />
-                <span>{label}</span>
+            <Popover
+              open={referenceAddMenuOpen}
+              trigger="click"
+              placement="bottomLeft"
+              arrow={false}
+              content={referenceAddMenu}
+              rootClassName="project-clip-editor__reference-add-popover"
+              onOpenChange={setReferenceAddMenuOpen}
+            >
+              <button
+                type="button"
+                className={`project-clip-editor__reference-add${referenceAddMenuOpen ? ' is-open' : ''}`}
+                aria-label={l('添加参考', 'Add reference')}
+                aria-haspopup="menu"
+                aria-expanded={referenceAddMenuOpen}
+              >
+                <PlusOutlined />
               </button>
-            ))}
+            </Popover>
+            <div className="project-clip-editor__reference-scroll">
+              {promptMentionAssets.map((asset, index) => {
+                const deleting = isReferenceDeleting(asset.referenceIndex)
+                return (
+                <div key={asset.id} className={`project-clip-editor__reference${index === 0 ? ' is-selected' : ''}${deleting ? ' is-deleting' : ''}`}>
+                  {asset.imageUrl ? <img src={asset.imageUrl} alt="" loading="lazy" decoding="async" /> : <PictureOutlined />}
+                  <span>{asset.name}</span>
+                  <button
+                    type="button"
+                    className="project-clip-editor__reference-remove"
+                    aria-label={l(`删除${asset.name}`, `Remove ${asset.name}`)}
+                    title={l('删除参考素材', 'Remove reference')}
+                    disabled={deleting}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      deleteStoryboardReference(
+                        asset.referenceIndex,
+                        undefined,
+                        asset.referenceSelectionRevisionNo,
+                      )
+                    }}
+                  >
+                    <DeleteOutlined />
+                  </button>
+                </div>
+                )
+              })}
+              {activeSegmentDetailState?.loading && (
+                <span className="project-clip-editor__reference-loading">{l('加载中', 'Loading')}</span>
+              )}
+            </div>
           </div>
         </section>
 
@@ -1969,15 +4585,41 @@ export default function ProjectClipEditingStep({
                 tabIndex={0}
               />
             </Tooltip>
+            {mode === 'video' && (
+              <button
+                type="button"
+                className="project-clip-editor__prompt-regenerate"
+                disabled={
+                  !activeClip
+                  || !hasRemoteInitialClips
+                  || activeClip.id.startsWith('clip-')
+                  || Boolean(activePromptRegenerationState?.loading)
+                }
+                onClick={regenerateStoryboardVideoPrompt}
+              >
+                <ReloadOutlined spin={Boolean(activePromptRegenerationState?.loading)} />
+                <span>
+                  {activePromptRegenerationState?.loading
+                    ? `${activePromptRegenerationState.stageName || l('生成中', 'Generating')}${
+                        activePromptRegenerationState.progress === undefined
+                        || activePromptRegenerationState.progress === null
+                          ? ''
+                          : ` ${activePromptRegenerationState.progress}%`
+                      }`
+                    : l('重新生成提示词', 'Regenerate prompt')}
+                </span>
+              </button>
+            )}
           </div>
           <PromptMentionEditor
             value={prompt}
             assets={promptMentionAssets}
-            maxLength={10_000}
+            maxLength={activeSegmentDetail?.directorPrompt?.maxPromptCharacters ?? 10_000}
             placeholder={l('描述画面主体、环境、动作、镜头与光线，输入 @ 引用素材', 'Describe the subject, setting, action, camera and lighting. Type @ to mention an asset')}
             menuTitle={l('可能 @ 的内容', 'Mentionable assets')}
             characterGroupLabel={l('角色', 'Characters')}
             sceneGroupLabel={l('场景', 'Scenes')}
+            propGroupLabel={l('道具', 'Props')}
             emptyLabel={l('没有匹配的素材', 'No matching assets')}
             onChange={updatePrompt}
           />
@@ -1986,12 +4628,18 @@ export default function ProjectClipEditingStep({
         <div className={`project-clip-editor__prompt-tools${mode === 'video' ? ' is-video' : ''}`}>
           <StudioSelect
             aria-label={l('影调风格', 'Tone style')}
+            className="project-clip-editor__tone-select"
+            popupClassName="project-clip-editor__style-popup asset-generation-workspace__style-popup"
+            optionLabelProp="trigger"
             value={selectedTone}
             options={toneOptions}
             onChange={(value) => setSelectedTone(String(value))}
           />
           <StudioSelect
             aria-label={l('画面风格', 'Visual style')}
+            className="project-clip-editor__style-select"
+            popupClassName="project-clip-editor__style-popup asset-generation-workspace__style-popup"
+            optionLabelProp="trigger"
             value={selectedStyle}
             options={styleOptions}
             onChange={(value) => setSelectedStyle(String(value))}
@@ -2034,16 +4682,24 @@ export default function ProjectClipEditingStep({
           <div className={`project-clip-editor__generation-selects${mode === 'video' ? ' is-video' : ''}`}>
             <StudioSelect
               aria-label={mode === 'video' ? l('视频模型', 'Video model') : l('图片模型', 'Image model')}
-              value={mode === 'video' ? videoModel : model}
+              value={mode === 'video' ? videoModel || undefined : model}
+              loading={mode === 'video' ? videoModelsLoading : undefined}
+              status={mode === 'video' && (videoModelsError || videoGenerateEstimateError) ? 'error' : undefined}
               options={mode === 'video'
-                ? [
-                    { value: 'seedance-2.5', label: 'Seedance 2.5' },
-                    { value: 'seedance-2.0', label: 'Seedance 2.0' },
-                  ]
+                ? videoModelOptions
                 : [
                     { value: 'gpt-image-2', label: 'GPT Image 2' },
                     { value: 'nano-banana-2', label: 'Nano Banana 2' },
                   ]}
+              placeholder={mode === 'video' && videoModelsLoading
+                ? l('加载视频模型中', 'Loading video models')
+                : undefined}
+              disabled={mode === 'video' && videoModelsLoading && videoModelOptions.length === 0}
+              onDropdownVisibleChange={(open) => {
+                if (mode === 'video' && open && videoModelsError) {
+                  setVideoModelsRetryToken((current) => current + 1)
+                }
+              }}
               onChange={(value) => {
                 if (mode === 'video') setVideoModel(String(value))
                 else setModel(String(value))
@@ -2062,7 +4718,7 @@ export default function ProjectClipEditingStep({
                     <section>
                       <span className="project-clip-editor__video-spec-label">{l('分辨率', 'Resolution')}</span>
                       <div className="project-clip-editor__video-resolution-options" role="group" aria-label={l('分辨率', 'Resolution')}>
-                        {(['480P', '720P'] as const).map((value) => (
+                        {videoResolutionOptions.map((value) => (
                           <button
                             key={value}
                             type="button"
@@ -2070,7 +4726,7 @@ export default function ProjectClipEditingStep({
                             aria-pressed={videoResolution === value}
                             onClick={() => setVideoResolution(value)}
                           >
-                            {value}
+                            {formatVideoResolutionLabel(value)}
                           </button>
                         ))}
                       </div>
@@ -2081,12 +4737,12 @@ export default function ProjectClipEditingStep({
                         <div
                           className="project-clip-editor__video-duration-slider"
                           style={{
-                            '--video-duration-progress': `${((videoDuration - VIDEO_DURATION_MIN) / (VIDEO_DURATION_MAX - VIDEO_DURATION_MIN)) * 100}%`,
+                            '--video-duration-progress': `${videoDurationProgress}%`,
                           } as CSSProperties}
                         >
                           <Slider
-                            min={VIDEO_DURATION_MIN}
-                            max={VIDEO_DURATION_MAX}
+                            min={videoDurationMin}
+                            max={videoDurationMax}
                             step={1}
                             value={videoDuration}
                             tooltip={{ open: false }}
@@ -2106,7 +4762,7 @@ export default function ProjectClipEditingStep({
                   aria-label={l('视频规格', 'Video output')}
                   aria-expanded={videoSpecOpen}
                 >
-                  <span>{videoResolution} · {videoDuration}s</span>
+                  <span>{formatVideoResolutionLabel(videoResolution)} · {videoDuration}s</span>
                   <DownOutlined />
                 </button>
               </Popover>
@@ -2126,11 +4782,18 @@ export default function ProjectClipEditingStep({
             type="primary"
             size="large"
             icon={<StarFilled />}
-            disabled={!prompt.trim()}
-            onClick={() => message.info(l('生成接口待接入', 'Generation API is not connected yet'))}
+            loading={mode === 'video' && isActiveVideoGenerating}
+            disabled={generationButtonDisabled}
+            onClick={() => {
+              if (mode === 'video') {
+                generateStoryboardVideo()
+                return
+              }
+              message.info(l('生成接口待接入', 'Generation API is not connected yet'))
+            }}
           >
             {mode === 'video'
-              ? `${l('生视频', 'Generate video')} · 238`
+              ? videoGenerationButtonText
               : `${l('生成图片', 'Generate image')} · 6`}
           </Button>
         </footer>
@@ -2146,7 +4809,10 @@ export default function ProjectClipEditingStep({
       maskClosable={false}
       destroyOnClose
       className="project-clip-editor-modal"
-      onCancel={closeClipEditor}
+      closable={!clipEditorSaving}
+      onCancel={() => {
+        if (!clipEditorSaving) closeClipEditor()
+      }}
       footer={null}
     >
       <div className="project-clip-editor-modal__field">
@@ -2160,17 +4826,537 @@ export default function ProjectClipEditingStep({
           value={editingDescription}
           maxLength={5000}
           autoSize={false}
+          disabled={clipEditorSaving}
           onChange={(event) => setEditingDescription(event.target.value)}
         />
         <span className="project-clip-editor-modal__count">{editingDescription.length}/5000</span>
       </div>
       <div className="project-clip-editor-modal__actions">
-        <Button onClick={closeClipEditor}>{l('取消', 'Cancel')}</Button>
-        <Button type="primary" onClick={saveClipEditor}>{l('确定', 'Confirm')}</Button>
+        <Button disabled={clipEditorSaving} onClick={closeClipEditor}>{l('取消', 'Cancel')}</Button>
+        <Button type="primary" loading={clipEditorSaving} onClick={saveClipEditor}>{l('确定', 'Confirm')}</Button>
+      </div>
+    </Modal>
+    <Modal
+      open={characterReferenceModalOpen}
+      centered
+      width={860}
+      footer={null}
+      closable={false}
+      destroyOnClose={false}
+      rootClassName="project-clip-character-modal-root"
+      className="project-clip-character-modal"
+      onCancel={() => setCharacterReferenceModalOpen(false)}
+    >
+      <div className="project-clip-character-modal__shell">
+        <header className="project-clip-character-modal__header">
+          <strong>{l(
+            `出镜角色 (${selectedCharacterReferenceAssets.length}/${characterReferenceAssets.length})`,
+            `On-screen characters (${selectedCharacterReferenceAssets.length}/${characterReferenceAssets.length})`,
+          )}</strong>
+          <div className="project-clip-character-modal__actions">
+            <label
+              htmlFor="project-clip-character-reference-search"
+              className={`project-clip-character-modal__search${characterReferenceQuery.trim() ? ' has-value' : ''}`}
+            >
+              <SearchOutlined />
+              <input
+                id="project-clip-character-reference-search"
+                value={characterReferenceQuery}
+                aria-label={l('搜索角色', 'Search characters')}
+                placeholder={l('搜索', 'Search')}
+                onChange={(event) => setCharacterReferenceQuery(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              className="project-clip-character-modal__add-role"
+              onClick={() => message.info(l('添加角色入口待接入', 'Add character entry is not connected yet'))}
+            >
+              + {l('添加角色', 'Add character')}
+            </button>
+            <button
+              type="button"
+              className="project-clip-character-modal__close"
+              aria-label={l('关闭', 'Close')}
+              onClick={() => setCharacterReferenceModalOpen(false)}
+            >
+              <CloseOutlined />
+            </button>
+          </div>
+        </header>
+
+        <div className="project-clip-character-modal__body">
+          {characterReferenceOptionsState?.loading ? (
+            <div className="project-clip-character-modal__empty">
+              <span className="project-clip-character-modal__empty-icon" aria-hidden="true" />
+              <span>{l('加载中', 'Loading')}</span>
+            </div>
+          ) : characterReferenceGroups.length > 0 ? characterReferenceGroups.map((group) => (
+            <section key={group.name} className="project-clip-character-modal__group">
+              <h3>{group.name}</h3>
+              <div className="project-clip-character-modal__grid">
+                {group.assets.map((asset, assetIndex) => {
+                  const selected = selectedCharacterReferenceIds.includes(asset.id)
+                  const assetLabel = asset.lookName || (assetIndex === 0 ? l('主图', 'Main') : l(`造型${assetIndex + 1}`, `Look ${assetIndex + 1}`))
+                  return (
+                    <button
+                      key={asset.id}
+                      type="button"
+                      className={`project-clip-character-modal__card${selected ? ' is-selected' : ''}${asset.selectable ? '' : ' is-disabled'}`}
+                      disabled={!asset.selectable}
+                      aria-pressed={selected}
+                      title={asset.disabledReason || asset.name}
+                      onClick={() => toggleCharacterReferenceAsset(asset)}
+                    >
+                      <span className="project-clip-character-modal__card-image">
+                        {asset.imageUrl ? (
+                          <img src={asset.imageUrl} alt="" loading="lazy" decoding="async" />
+                        ) : (
+                          <PictureOutlined />
+                        )}
+                      </span>
+                      <span className="project-clip-character-modal__card-label">{assetLabel}</span>
+                    </button>
+                  )
+                })}
+                <button
+                  type="button"
+                  className="project-clip-character-modal__look-add"
+                  onClick={() => message.info(l('新增造型入口待接入', 'New look entry is not connected yet'))}
+                >
+                  <span className="project-clip-character-modal__look-sparkle" aria-hidden="true" />
+                  <span>{l('新增造型', 'New look')}</span>
+                </button>
+              </div>
+            </section>
+          )) : (
+            <div className="project-clip-character-modal__empty">
+              <span className="project-clip-character-modal__empty-icon" aria-hidden="true" />
+              <span>{l('暂无角色资产', 'No character assets')}</span>
+            </div>
+          )}
+        </div>
+
+        <footer className={`project-clip-character-modal__footer${characterReferenceAssets.length === 0 ? ' is-options-empty' : ''}`}>
+          {characterReferenceAssets.length > 0 && (
+            <>
+              <span className="project-clip-character-modal__selected-label">{l('已选', 'Selected')}</span>
+              <div className={`project-clip-character-modal__selected-strip${selectedCharacterReferenceAssets.length === 0 ? ' is-empty' : ''}`}>
+                {selectedCharacterReferenceAssets.length > 0 ? selectedCharacterReferenceAssets.map((asset) => {
+                  const deleting = isReferenceDeleting(asset.referenceIndex)
+                  return (
+                    <button
+                      key={asset.id}
+                      type="button"
+                      className={`project-clip-character-modal__selected-item${deleting ? ' is-deleting' : ''}`}
+                      title={asset.name}
+                      disabled={deleting}
+                      onClick={() => deleteReferenceOptionAsset(asset)}
+                    >
+                      {asset.imageUrl ? (
+                        <img src={asset.imageUrl} alt="" loading="lazy" decoding="async" />
+                      ) : (
+                        <PictureOutlined />
+                      )}
+                      <span className="project-clip-character-modal__selected-delete" aria-hidden="true">
+                        <DeleteOutlined />
+                      </span>
+                    </button>
+                  )
+                }) : (
+                  <span className="project-clip-character-modal__selected-empty">{l('未选择角色', 'No characters selected')}</span>
+                )}
+              </div>
+            </>
+          )}
+          <Button
+            type="primary"
+            className="project-clip-character-modal__confirm"
+            loading={referenceAddingSource === 'character'}
+            disabled={Boolean(referenceAddingSource && referenceAddingSource !== 'character')}
+            onClick={confirmCharacterReferenceSelection}
+          >
+            {l('确定', 'Confirm')}
+          </Button>
+        </footer>
+      </div>
+    </Modal>
+    <Modal
+      open={sceneReferenceModalOpen}
+      centered
+      width={860}
+      footer={null}
+      closable={false}
+      destroyOnClose={false}
+      rootClassName="project-clip-character-modal-root"
+      className="project-clip-character-modal project-clip-character-modal--scene"
+      onCancel={() => setSceneReferenceModalOpen(false)}
+    >
+      <div className="project-clip-character-modal__shell">
+        <header className="project-clip-character-modal__header">
+          <strong>{l(
+            `出镜场景 (${selectedSceneReferenceAssets.length}/${sceneReferenceAssets.length})`,
+            `On-screen scenes (${selectedSceneReferenceAssets.length}/${sceneReferenceAssets.length})`,
+          )}</strong>
+          <div className="project-clip-character-modal__actions">
+            <label
+              htmlFor="project-clip-scene-reference-search"
+              className={`project-clip-character-modal__search${sceneReferenceQuery.trim() ? ' has-value' : ''}`}
+            >
+              <SearchOutlined />
+              <input
+                id="project-clip-scene-reference-search"
+                value={sceneReferenceQuery}
+                aria-label={l('搜索场景', 'Search scenes')}
+                placeholder={l('搜索', 'Search')}
+                onChange={(event) => setSceneReferenceQuery(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              className="project-clip-character-modal__add-role"
+              onClick={() => message.info(l('添加场景入口待接入', 'Add scene entry is not connected yet'))}
+            >
+              + {l('添加场景', 'Add scene')}
+            </button>
+            <button
+              type="button"
+              className="project-clip-character-modal__close"
+              aria-label={l('关闭', 'Close')}
+              onClick={() => setSceneReferenceModalOpen(false)}
+            >
+              <CloseOutlined />
+            </button>
+          </div>
+        </header>
+
+        <div className="project-clip-character-modal__body">
+          {sceneReferenceOptionsState?.loading ? (
+            <div className="project-clip-character-modal__empty">
+              <span className="project-clip-character-modal__empty-icon" aria-hidden="true" />
+              <span>{l('加载中', 'Loading')}</span>
+            </div>
+          ) : sceneReferenceGroups.length > 0 ? sceneReferenceGroups.map((group) => (
+            <section key={group.name} className="project-clip-character-modal__group">
+              <h3>{group.name}</h3>
+              <div className="project-clip-character-modal__grid">
+                {group.assets.map((asset, assetIndex) => {
+                  const selected = selectedSceneReferenceIds.includes(asset.id)
+                  const assetLabel = asset.lookName || (assetIndex === 0 ? l('主图', 'Main') : l(`场景${assetIndex + 1}`, `Scene ${assetIndex + 1}`))
+                  return (
+                    <button
+                      key={asset.id}
+                      type="button"
+                      className={`project-clip-character-modal__card${selected ? ' is-selected' : ''}${asset.selectable ? '' : ' is-disabled'}`}
+                      disabled={!asset.selectable}
+                      aria-pressed={selected}
+                      title={asset.disabledReason || asset.name}
+                      onClick={() => toggleSceneReferenceAsset(asset)}
+                    >
+                      <span className="project-clip-character-modal__card-image">
+                        {asset.imageUrl ? (
+                          <img src={asset.imageUrl} alt="" loading="lazy" decoding="async" />
+                        ) : (
+                          <PictureOutlined />
+                        )}
+                      </span>
+                      <span className="project-clip-character-modal__card-label">{assetLabel}</span>
+                    </button>
+                  )
+                })}
+                <button
+                  type="button"
+                  className="project-clip-character-modal__look-add"
+                  onClick={() => message.info(l('新增场景入口待接入', 'New scene entry is not connected yet'))}
+                >
+                  <span className="project-clip-character-modal__look-sparkle" aria-hidden="true" />
+                  <span>{l('新增场景', 'New scene')}</span>
+                </button>
+              </div>
+            </section>
+          )) : (
+            <div className="project-clip-character-modal__empty">
+              <span className="project-clip-character-modal__empty-icon" aria-hidden="true" />
+              <span>{l('暂无场景资产', 'No scene assets')}</span>
+            </div>
+          )}
+        </div>
+
+        <footer className={`project-clip-character-modal__footer${sceneReferenceAssets.length === 0 ? ' is-options-empty' : ''}`}>
+          {sceneReferenceAssets.length > 0 && (
+            <>
+              <span className="project-clip-character-modal__selected-label">{l('已选', 'Selected')}</span>
+              <div className={`project-clip-character-modal__selected-strip${selectedSceneReferenceAssets.length === 0 ? ' is-empty' : ''}`}>
+                {selectedSceneReferenceAssets.length > 0 ? selectedSceneReferenceAssets.map((asset) => {
+                  const deleting = isReferenceDeleting(asset.referenceIndex)
+                  return (
+                    <button
+                      key={asset.id}
+                      type="button"
+                      className={`project-clip-character-modal__selected-item${deleting ? ' is-deleting' : ''}`}
+                      title={asset.name}
+                      disabled={deleting}
+                      onClick={() => deleteReferenceOptionAsset(asset)}
+                    >
+                      {asset.imageUrl ? (
+                        <img src={asset.imageUrl} alt="" loading="lazy" decoding="async" />
+                      ) : (
+                        <PictureOutlined />
+                      )}
+                      <span className="project-clip-character-modal__selected-delete" aria-hidden="true">
+                        <DeleteOutlined />
+                      </span>
+                    </button>
+                  )
+                }) : (
+                  <span className="project-clip-character-modal__selected-empty">{l('未选择场景', 'No scenes selected')}</span>
+                )}
+              </div>
+            </>
+          )}
+          <Button
+            type="primary"
+            className="project-clip-character-modal__confirm"
+            loading={referenceAddingSource === 'scene'}
+            disabled={Boolean(referenceAddingSource && referenceAddingSource !== 'scene')}
+            onClick={confirmSceneReferenceSelection}
+          >
+            {l('确定', 'Confirm')}
+          </Button>
+        </footer>
+      </div>
+    </Modal>
+    <Modal
+      open={propReferenceModalOpen}
+      centered
+      width={860}
+      footer={null}
+      closable={false}
+      destroyOnClose={false}
+      rootClassName="project-clip-character-modal-root"
+      className="project-clip-character-modal project-clip-character-modal--scene"
+      onCancel={() => setPropReferenceModalOpen(false)}
+    >
+      <div className="project-clip-character-modal__shell">
+        <header className="project-clip-character-modal__header">
+          <strong>{l(
+            `出镜道具 (${selectedPropReferenceAssets.length}/${propReferenceAssets.length})`,
+            `On-screen props (${selectedPropReferenceAssets.length}/${propReferenceAssets.length})`,
+          )}</strong>
+          <div className="project-clip-character-modal__actions">
+            <label
+              htmlFor="project-clip-prop-reference-search"
+              className={`project-clip-character-modal__search${propReferenceQuery.trim() ? ' has-value' : ''}`}
+            >
+              <SearchOutlined />
+              <input
+                id="project-clip-prop-reference-search"
+                value={propReferenceQuery}
+                aria-label={l('搜索道具', 'Search props')}
+                placeholder={l('搜索', 'Search')}
+                onChange={(event) => setPropReferenceQuery(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              className="project-clip-character-modal__add-role"
+              onClick={() => message.info(l('添加道具入口待接入', 'Add prop entry is not connected yet'))}
+            >
+              + {l('添加道具', 'Add prop')}
+            </button>
+            <button
+              type="button"
+              className="project-clip-character-modal__close"
+              aria-label={l('关闭', 'Close')}
+              onClick={() => setPropReferenceModalOpen(false)}
+            >
+              <CloseOutlined />
+            </button>
+          </div>
+        </header>
+
+        <div className="project-clip-character-modal__body">
+          {propReferenceOptionsState?.loading ? (
+            <div className="project-clip-character-modal__empty">
+              <span className="project-clip-character-modal__empty-icon" aria-hidden="true" />
+              <span>{l('加载中', 'Loading')}</span>
+            </div>
+          ) : propReferenceGroups.length > 0 ? propReferenceGroups.map((group) => (
+            <section key={group.name} className="project-clip-character-modal__group">
+              <h3>{group.name}</h3>
+              <div className="project-clip-character-modal__grid">
+                {group.assets.map((asset, assetIndex) => {
+                  const selected = selectedPropReferenceIds.includes(asset.id)
+                  const assetLabel = asset.lookName || (assetIndex === 0 ? l('主图', 'Main') : l(`道具${assetIndex + 1}`, `Prop ${assetIndex + 1}`))
+                  return (
+                    <button
+                      key={asset.id}
+                      type="button"
+                      className={`project-clip-character-modal__card${selected ? ' is-selected' : ''}${asset.selectable ? '' : ' is-disabled'}`}
+                      disabled={!asset.selectable}
+                      aria-pressed={selected}
+                      title={asset.disabledReason || asset.name}
+                      onClick={() => togglePropReferenceAsset(asset)}
+                    >
+                      <span className="project-clip-character-modal__card-image">
+                        {asset.imageUrl ? (
+                          <img src={asset.imageUrl} alt="" loading="lazy" decoding="async" />
+                        ) : (
+                          <PictureOutlined />
+                        )}
+                      </span>
+                      <span className="project-clip-character-modal__card-label">{assetLabel}</span>
+                    </button>
+                  )
+                })}
+                <button
+                  type="button"
+                  className="project-clip-character-modal__look-add"
+                  onClick={() => message.info(l('新增道具入口待接入', 'New prop entry is not connected yet'))}
+                >
+                  <span className="project-clip-character-modal__look-sparkle" aria-hidden="true" />
+                  <span>{l('新增道具', 'New prop')}</span>
+                </button>
+              </div>
+            </section>
+          )) : (
+            <div className="project-clip-character-modal__empty">
+              <span className="project-clip-character-modal__empty-icon" aria-hidden="true" />
+              <span>{l('暂无道具资产', 'No prop assets')}</span>
+            </div>
+          )}
+        </div>
+
+        <footer className={`project-clip-character-modal__footer${propReferenceAssets.length === 0 ? ' is-options-empty' : ''}`}>
+          {propReferenceAssets.length > 0 && (
+            <>
+              <span className="project-clip-character-modal__selected-label">{l('已选', 'Selected')}</span>
+              <div className={`project-clip-character-modal__selected-strip${selectedPropReferenceAssets.length === 0 ? ' is-empty' : ''}`}>
+                {selectedPropReferenceAssets.length > 0 ? selectedPropReferenceAssets.map((asset) => {
+                  const deleting = isReferenceDeleting(asset.referenceIndex)
+                  return (
+                    <button
+                      key={asset.id}
+                      type="button"
+                      className={`project-clip-character-modal__selected-item${deleting ? ' is-deleting' : ''}`}
+                      title={asset.name}
+                      disabled={deleting}
+                      onClick={() => deleteReferenceOptionAsset(asset)}
+                    >
+                      {asset.imageUrl ? (
+                        <img src={asset.imageUrl} alt="" loading="lazy" decoding="async" />
+                      ) : (
+                        <PictureOutlined />
+                      )}
+                      <span className="project-clip-character-modal__selected-delete" aria-hidden="true">
+                        <DeleteOutlined />
+                      </span>
+                    </button>
+                  )
+                }) : (
+                  <span className="project-clip-character-modal__selected-empty">{l('未选择道具', 'No props selected')}</span>
+                )}
+              </div>
+            </>
+          )}
+          <Button
+            type="primary"
+            className="project-clip-character-modal__confirm"
+            loading={referenceAddingSource === 'prop'}
+            disabled={Boolean(referenceAddingSource && referenceAddingSource !== 'prop')}
+            onClick={confirmPropReferenceSelection}
+          >
+            {l('确定', 'Confirm')}
+          </Button>
+        </footer>
+      </div>
+    </Modal>
+    <Modal
+      open={voiceReferenceModalOpen}
+      centered
+      width={560}
+      footer={null}
+      closable={false}
+      destroyOnClose={false}
+      rootClassName="project-clip-character-modal-root"
+      className="project-clip-voice-reference-modal"
+      onCancel={() => setVoiceReferenceModalOpen(false)}
+    >
+      <div className="project-clip-voice-reference-modal__shell">
+        <header className="project-clip-voice-reference-modal__header">
+          <strong>{l(
+            `出镜音色 ${selectedVoiceReferenceItems.length}/${voiceReferenceItems.length}`,
+            `On-screen voices ${selectedVoiceReferenceItems.length}/${voiceReferenceItems.length}`,
+          )}</strong>
+          <button
+            type="button"
+            className="project-clip-voice-reference-modal__close"
+            aria-label={l('关闭', 'Close')}
+            onClick={() => setVoiceReferenceModalOpen(false)}
+          >
+            <CloseOutlined />
+          </button>
+        </header>
+        <div className="project-clip-voice-reference-modal__notice" role="status">
+          <InfoCircleOutlined />
+          <span>{l('请选择需要添加的角色音色，未配置的可前往「资产确认」或「配音」选择', 'Select the character voices to add. Unconfigured voices can be set in Assets or Voice.')}</span>
+        </div>
+        <div className="project-clip-voice-reference-modal__list">
+          {dubbingReferenceOptionsState?.loading ? (
+            <div className="project-clip-voice-reference-modal__empty">
+              <span className="project-clip-character-modal__empty-icon" aria-hidden="true" />
+              <span>{l('加载中', 'Loading')}</span>
+            </div>
+          ) : voiceReferenceItems.length > 0 ? voiceReferenceItems.map((item) => {
+            const selected = selectedVoiceReferenceIds.includes(item.id)
+            const deleting = isReferenceDeleting(item.referenceIndex)
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className={`project-clip-voice-reference-modal__item${selected ? ' is-selected' : ''}${item.configured ? '' : ' is-disabled'}${deleting ? ' is-deleting' : ''}`}
+                disabled={!item.configured || deleting}
+                aria-pressed={selected}
+                onClick={() => toggleVoiceReferenceItem(item)}
+              >
+                <span className="project-clip-voice-reference-modal__thumb">
+                  {item.imageUrl ? (
+                    <img src={item.imageUrl} alt="" loading="lazy" decoding="async" />
+                  ) : (
+                    <AudioOutlined />
+                  )}
+                </span>
+                <span className="project-clip-voice-reference-modal__meta">
+                  <strong>{item.character}</strong>
+                  <small>{item.voice}</small>
+                </span>
+                <span className="project-clip-voice-reference-modal__checkbox" aria-hidden="true">
+                  {selected && <CheckOutlined />}
+                </span>
+              </button>
+            )
+          }) : (
+            <div className="project-clip-voice-reference-modal__empty">
+              <span className="project-clip-character-modal__empty-icon" aria-hidden="true" />
+              <span>{l('暂无音色资产', 'No voice assets')}</span>
+            </div>
+          )}
+        </div>
+        <footer className="project-clip-voice-reference-modal__footer">
+          <Button onClick={() => setVoiceReferenceModalOpen(false)}>{l('取消', 'Cancel')}</Button>
+          <Button
+            type="primary"
+            loading={referenceAddingSource === 'dubbing'}
+            disabled={Boolean(referenceAddingSource && referenceAddingSource !== 'dubbing')}
+            onClick={confirmVoiceReferenceSelection}
+          >
+            {l('确定', 'Confirm')}
+          </Button>
+        </footer>
       </div>
     </Modal>
     <ImageViewer
-      open={imageViewerOpen}
+      open={imageViewerOpen && hasActiveImage}
       imageUrl={activeImageUrl}
       alt={activeClip.title}
       onClose={() => setImageViewerOpen(false)}
