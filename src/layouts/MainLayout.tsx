@@ -204,7 +204,6 @@ const MainLayout: React.FC = () => {
       admin: language === 'en-US' ? 'Administration' : '管理',
       chapters: t('breadcrumb.chapters'),
       studio: t('breadcrumb.studio'),
-      prep: t('breadcrumb.prep'),
       shots: t('breadcrumb.shots'),
       editor: t('breadcrumb.editor'),
       edit: t('breadcrumb.edit'),

@@ -64,11 +64,9 @@ const App = () => {
               <Route path="director-desk" element={<DirectorDeskStandalonePage embeddedHome />} />
               <Route path="projects/:projectId" element={<ProjectWorkbench />} />
               <Route path="projects/:projectId/roles/:characterId/edit" element={<RoleDetailPage />} />
-              <Route path="projects/:projectId/chapters/:chapterId/prep/*" element={<Navigate to="../shots" replace />} />
               <Route path="projects/:projectId/chapters/:chapterId/studio" element={<ChapterStudio />} />
               <Route path="projects/:projectId/chapters/:chapterId/shots/:shotId/edit" element={<ChapterShotEditPage />} />
               <Route path="projects/:projectId/chapters/:chapterId/shots" element={<ChapterShotsPage />} />
-              <Route path="projects/:projectId/chapters/:chapterId/prep-drafts" element={<Navigate to="../shots" replace />} />
               <Route path="projects/:projectId/editor" element={<VideoEditor />} />
               <Route path="assets" element={<AssetManager />} />
               <Route path="assets/actors/:actorImageId/edit" element={<ActorAssetEditPage />} />

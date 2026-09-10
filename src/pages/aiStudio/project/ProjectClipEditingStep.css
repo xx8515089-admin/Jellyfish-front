@@ -82,8 +82,8 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 20px 8px 26px;
+  gap: 0;
+  padding: 10px 8px 22px;
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: thin;
@@ -104,6 +104,15 @@
   cursor: pointer;
   outline: none;
   transition: background 150ms ease;
+}
+
+@supports (content-visibility: auto) {
+  .project-clip-editor__clip,
+  .project-clip-character-modal__card,
+  .project-clip-voice-reference-modal__item {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 96px;
+  }
 }
 
 .project-clip-editor__clip:hover,
@@ -191,7 +200,7 @@
   color: #101828;
 }
 
-.project-clip-editor__clip-main > span {
+.project-clip-editor__clip-text {
   width: 100%;
   min-width: 0;
   display: flex;
@@ -202,67 +211,77 @@
 .project-clip-editor__clip-heading {
   width: 100%;
   min-width: 0;
+  min-height: 22px;
+  box-sizing: border-box;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 4px;
 }
 
 .project-clip-editor__clip-heading strong {
+  display: block;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.project-clip-editor__clip-heading-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
+.project-clip-editor__clip-side-actions {
   flex: 0 0 auto;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
 }
 
-.project-clip-editor__clip-heading button {
-  width: 22px;
-  height: 22px;
-  flex: 0 0 22px;
+.project-clip-editor__clip:hover .project-clip-editor__clip-side-actions,
+.project-clip-editor__clip.is-selected .project-clip-editor__clip-side-actions,
+.project-clip-editor__clip:focus-within .project-clip-editor__clip-side-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.project-clip-editor__clip-side-actions button {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
   padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 4px;
+  border-radius: 3px;
   background: transparent;
   color: #98a2b3;
   cursor: pointer;
-  opacity: 0;
+  font-size: 12px;
   transition: color 150ms ease, background 150ms ease, opacity 150ms ease;
 }
 
-.project-clip-editor__clip:hover .project-clip-editor__clip-heading button {
-  opacity: 1;
-}
-
-.project-clip-editor__clip-heading button:hover {
+.project-clip-editor__clip-side-actions button:hover,
+.project-clip-editor__clip-side-actions button:focus-visible {
   color: var(--project-create-primary);
   background: var(--project-create-primary-bg);
+  outline: none;
 }
 
-.project-clip-editor__clip-heading button.is-danger {
-  color: #ff4d4f;
-}
-
-.project-clip-editor__clip-heading button.is-danger:hover {
-  background: rgba(255, 77, 79, 0.12);
+.project-clip-editor__clip-side-actions .project-clip-editor__clip-delete {
   color: #ff6b6b;
 }
 
-.project-clip-editor__clip-heading button.is-loading {
-  opacity: 1;
-  cursor: wait;
+.project-clip-editor__clip-side-actions .project-clip-editor__clip-delete:hover,
+.project-clip-editor__clip-side-actions .project-clip-editor__clip-delete:focus-visible {
+  background: rgba(255, 77, 79, 0.14);
+  color: #ff4d4f;
 }
 
-.project-clip-editor__clip-heading button:disabled {
+.project-clip-editor__clip-side-actions button.is-loading,
+.project-clip-editor__clip-side-actions button:disabled {
   cursor: wait;
 }
 
@@ -313,46 +332,42 @@
   line-height: 18px;
 }
 
-.project-clip-editor__clip-actions {
-  position: absolute;
-  right: 4px;
-  left: 86px;
-  height: 26px;
+.project-clip-editor__clip-insert-actions {
+  position: relative;
+  height: 18px;
+  min-height: 18px;
+  box-sizing: border-box;
+  padding: 0 4px 0 86px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   visibility: hidden;
   opacity: 0;
   pointer-events: none;
   transition: opacity 140ms ease, visibility 140ms ease;
 }
 
-.project-clip-editor__clip:hover .project-clip-editor__clip-actions {
+.project-clip-editor__clip-insert-actions:hover,
+.project-clip-editor__clip-insert-actions:focus-within,
+.project-clip-editor__clip-insert-actions:has(+ .project-clip-editor__clip:hover),
+.project-clip-editor__clip:hover + .project-clip-editor__clip-insert-actions {
   visibility: visible;
   opacity: 1;
   pointer-events: auto;
 }
 
-.project-clip-editor__clip-actions::before {
+.project-clip-editor__clip-insert-actions::before {
   content: '';
   position: absolute;
   top: 50%;
-  right: 0;
-  left: 0;
+  right: 4px;
+  left: 86px;
   height: 1px;
   background: linear-gradient(90deg, #dbe2ea 0%, #e7ebf0 100%);
   transform: translateY(-50%);
 }
 
-.project-clip-editor__clip-actions.is-top {
-  top: -15px;
-}
-
-.project-clip-editor__clip-actions.is-bottom {
-  bottom: -15px;
-}
-
-.project-clip-editor__clip-actions button {
+.project-clip-editor__clip-insert-actions button {
   position: relative;
   z-index: 1;
   min-width: 24px;
@@ -372,21 +387,23 @@
   transition: border-color 160ms ease, color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
-.project-clip-editor__clip-actions button:hover {
+.project-clip-editor__clip-insert-actions button:hover,
+.project-clip-editor__clip-insert-actions button:focus-visible {
   border-color: color-mix(in srgb, var(--project-create-primary) 56%, #dce3eb);
   background: var(--project-create-primary-bg);
   color: var(--project-create-primary);
   box-shadow: 0 4px 10px color-mix(in srgb, var(--project-create-primary) 14%, transparent);
+  outline: none;
   transform: translateY(-1px);
 }
 
-.project-clip-editor__clip-actions button:disabled {
+.project-clip-editor__clip-insert-actions button:disabled {
   cursor: not-allowed;
   opacity: 0.52;
   transform: none;
 }
 
-.project-clip-editor__clip-actions button:disabled:hover {
+.project-clip-editor__clip-insert-actions button:disabled:hover {
   border-color: #d9e1ea;
   background: #fff;
   color: #475467;
@@ -394,23 +411,19 @@
   transform: none;
 }
 
-.project-clip-editor__clip-actions button:not(.is-merge) {
+.project-clip-editor__clip-insert-actions button:not(.is-merge) {
   width: 24px;
   flex: 0 0 24px;
   padding: 0;
   color: var(--project-create-primary);
 }
 
-.project-clip-editor__clip-actions button.is-merge {
+.project-clip-editor__clip-insert-actions button.is-merge {
   margin-left: auto;
-  flex: 0 0 auto;
-  padding-inline: 9px;
+  width: 24px;
+  flex: 0 0 24px;
+  padding: 0;
   color: #475467;
-  font-weight: 500;
-}
-
-.project-clip-editor__clip-actions.is-bottom button {
-  margin-right: auto;
 }
 
 .project-clip-editor__batch-footer {
@@ -3026,6 +3039,37 @@
   opacity: 1;
 }
 
+.project-clip-editor-delete-modal__content {
+  margin-bottom: 20px;
+  color: var(--jf-text-soft, #c9c9c9);
+  font-size: 13px;
+  line-height: 21px;
+}
+
+.project-clip-editor-delete-modal__content p {
+  margin: 0 0 10px;
+}
+
+.project-clip-editor-delete-modal__content strong {
+  display: block;
+  color: var(--jf-text, #f2f2f2);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.project-clip-editor-delete-modal .project-clip-editor-modal__actions .ant-btn-primary.ant-btn-dangerous {
+  border-color: #ff4d4f;
+  background: #ff4d4f;
+  color: #ffffff;
+}
+
+.project-clip-editor-delete-modal .project-clip-editor-modal__actions .ant-btn-primary.ant-btn-dangerous:hover,
+.project-clip-editor-delete-modal .project-clip-editor-modal__actions .ant-btn-primary.ant-btn-dangerous:focus-visible {
+  border-color: #ff7875;
+  background: #ff7875;
+  color: #ffffff;
+}
+
 .project-clip-character-modal-root .ant-modal-mask {
   background: rgba(0, 0, 0, 0.68);
   backdrop-filter: blur(8px);
@@ -4147,25 +4191,38 @@
   color: var(--jf-text-soft, #c9c9c9) !important;
 }
 
-.project-clip-editor__clip-actions::before {
+.project-clip-editor__clip-insert-actions::before {
   background: linear-gradient(90deg, transparent 0%, var(--jf-border, #323237) 18%, var(--jf-border, #323237) 82%, transparent 100%) !important;
 }
 
-.project-clip-editor__clip-actions button {
+.project-clip-editor__clip-insert-actions button,
+.project-clip-editor__clip-side-actions button {
   background: var(--jf-panel-2, #202023) !important;
   border-color: var(--jf-border, #323237) !important;
   color: var(--jf-text-soft, #c9c9c9) !important;
   box-shadow: 0 4px 12px rgb(0 0 0 / 26%) !important;
 }
 
-.project-clip-editor__clip-actions button:hover {
+.project-clip-editor__clip-side-actions button {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.project-clip-editor__clip-insert-actions button:hover,
+.project-clip-editor__clip-side-actions button:hover {
   background: var(--jf-panel-3, #29292d) !important;
   border-color: var(--jf-accent-border, rgba(255, 255, 255, 0.18)) !important;
   color: var(--jf-text, #f2f2f2) !important;
 }
 
-.project-clip-editor__clip-actions button:disabled,
-.project-clip-editor__clip-actions button:disabled:hover {
+.project-clip-editor__clip-side-actions .project-clip-editor__clip-delete,
+.project-clip-editor__clip-side-actions .project-clip-editor__clip-delete:hover {
+  color: #ff6b6b !important;
+}
+
+.project-clip-editor__clip-insert-actions button:disabled,
+.project-clip-editor__clip-insert-actions button:disabled:hover {
   background: var(--jf-panel-2, #202023) !important;
   border-color: var(--jf-border, #323237) !important;
   color: var(--jf-text-muted, #7a7a82) !important;

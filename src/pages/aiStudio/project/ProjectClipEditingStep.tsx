@@ -1,5 +1,8 @@
 import {
+  Fragment,
   forwardRef,
+  memo,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -42,6 +45,7 @@ import {
   StudioAssetGenerationApi,
   type StudioAssetImageTaskRequest,
   type StudioEpisodeStoryboardSegmentDetailResult,
+  type StudioEpisodeStoryboardSegmentSourceType,
   type StudioStoryboardMediaHistoryItem,
   type StudioStoryboardVideoDetailResult,
   type StudioStoryboardVideoPromptDetailResult,
@@ -57,7 +61,8 @@ import { StudioModelsApi, type StudioGenerationModel } from '../../../services/s
 import ImageViewer from './ImageViewer'
 import StudioSelect from './StudioSelect'
 import VoiceLibraryModal from './VoiceLibraryModal'
-import { resolveAssetUrl } from '../assets/utils'
+import { schedulePollWhenVisible, type PollTimerCancel } from './assetBatchGenerationPolling'
+import { downloadMediaFile, normalizeMediaFileId, resolveAssetUrl } from '../assets/utils'
 import {
   PROJECT_CREATION_DRAFT_KEYS,
   buildEpisodeSourceSignature,
@@ -170,6 +175,7 @@ const DEFAULT_VIDEO_RESOLUTION = '720p'
 const FALLBACK_VIDEO_RESOLUTIONS = ['480p', '720p']
 const PROMPT_REGENERATION_POLL_INTERVAL_MS = 3000
 const VIDEO_GENERATION_POLL_INTERVAL_MS = 3000
+const VIDEO_ESTIMATE_DEBOUNCE_MS = 300
 
 export type ClipDraft = {
   id: string
@@ -177,9 +183,34 @@ export type ClipDraft = {
   description: string
   prompt: string
   imageUrl: string
+  sourceType?: StudioEpisodeStoryboardSegmentSourceType | null
   revisionNo?: number | null
   manuallyAdded?: boolean
 }
+
+const isManuallyDeletableSourceType = (
+  sourceType?: StudioEpisodeStoryboardSegmentSourceType | null,
+) => sourceType === 2
+
+const getManuallyDeletableState = (
+  sourceType?: StudioEpisodeStoryboardSegmentSourceType | null,
+  fallback?: boolean,
+) => {
+  if (sourceType !== null && sourceType !== undefined) return isManuallyDeletableSourceType(sourceType)
+  return fallback
+}
+
+const resolveManuallyDeletable = (
+  sourceType: StudioEpisodeStoryboardSegmentSourceType | null | undefined,
+  fallback: boolean,
+) => getManuallyDeletableState(sourceType, fallback) ?? fallback
+
+const isClipManuallyDeletable = (
+  clip: Pick<ClipDraft, 'id' | 'sourceType' | 'manuallyAdded'>,
+) => resolveManuallyDeletable(
+  clip.sourceType,
+  Boolean(clip.manuallyAdded || clip.id.startsWith('clip-')),
+)
 
 type VoiceLineDraft = {
   id: string
@@ -482,7 +513,11 @@ const getReferenceOptionLookName = (option: StudioStoryboardVideoReferenceOption
 ).trim()
 
 const getReferenceOptionImageUrl = (option: StudioStoryboardVideoReferenceOption) => (
-  resolveAssetUrl(option.fileUrl ?? (option.fileId === null || option.fileId === undefined ? undefined : String(option.fileId)))
+  resolveAssetUrl(
+    option.source === 'dubbing' && option.characterCoverUrl
+      ? option.characterCoverUrl
+      : option.fileUrl ?? (option.fileId === null || option.fileId === undefined ? undefined : String(option.fileId)),
+  )
 )
 
 const getReferenceOptionKind = (
@@ -720,8 +755,9 @@ type PromptMentionEditorProps = {
   emptyLabel: string
   onChange: (value: string) => void
 }
+const PROMPT_PARENT_SYNC_DELAY_MS = 200
 
-function PromptMentionEditor({
+const PromptMentionEditor = memo(function PromptMentionEditor({
   value,
   assets,
   maxLength,
@@ -734,7 +770,15 @@ function PromptMentionEditor({
   onChange,
 }: PromptMentionEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null)
+  const counterRef = useRef<HTMLSpanElement>(null)
   const mentionRangeRef = useRef<Range | null>(null)
+  const localValueRef = useRef(value)
+  const latestValuePropRef = useRef(value)
+  const previousValuePropRef = useRef(value)
+  const onChangeRef = useRef(onChange)
+  const publishTimerRef = useRef<number | null>(null)
+  latestValuePropRef.current = value
+  onChangeRef.current = onChange
   const [menuOpen, setMenuOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [highlightedIndex, setHighlightedIndex] = useState(0)
@@ -757,27 +801,63 @@ function PromptMentionEditor({
   useEffect(() => {
     const editor = editorRef.current
     if (!editor) return
-    if (editor.dataset.value !== value || editor.dataset.promptMentionSignature !== mentionAssetSignature) {
-      renderPromptEditorValue(editor, value, assets)
+    const valuePropChanged = previousValuePropRef.current !== value
+    previousValuePropRef.current = value
+    if (valuePropChanged && value !== localValueRef.current) {
+      if (publishTimerRef.current !== null) window.clearTimeout(publishTimerRef.current)
+      publishTimerRef.current = null
+      localValueRef.current = value
+    }
+    if (
+      editor.dataset.value !== localValueRef.current
+      || editor.dataset.promptMentionSignature !== mentionAssetSignature
+    ) {
+      renderPromptEditorValue(editor, localValueRef.current, assets)
       editor.dataset.promptMentionSignature = mentionAssetSignature
     }
-  }, [assets, mentionAssetSignature, value])
+    if (counterRef.current) {
+      counterRef.current.textContent = `${localValueRef.current.length}/${maxLength}`
+    }
+  }, [assets, maxLength, mentionAssetSignature, value])
+
+  useEffect(() => () => {
+    if (publishTimerRef.current !== null) window.clearTimeout(publishTimerRef.current)
+  }, [])
 
   const closeMenu = () => {
     setMenuOpen(false)
     mentionRangeRef.current = null
   }
 
-  const syncValue = () => {
+  const publishValue = () => {
+    if (publishTimerRef.current !== null) window.clearTimeout(publishTimerRef.current)
+    publishTimerRef.current = null
+    const nextValue = localValueRef.current
+    if (nextValue !== latestValuePropRef.current) onChangeRef.current(nextValue)
+  }
+
+  const syncValue = (publishImmediately = false) => {
     const editor = editorRef.current
     if (!editor) return
     const nextValue = readPromptEditorValue(editor)
     if (nextValue.length > maxLength) {
-      renderPromptEditorValue(editor, value, assets)
+      renderPromptEditorValue(editor, localValueRef.current, assets)
       return
     }
+    localValueRef.current = nextValue
     editor.dataset.value = nextValue
-    if (nextValue !== value) onChange(nextValue)
+    if (counterRef.current) counterRef.current.textContent = `${nextValue.length}/${maxLength}`
+    if (nextValue === latestValuePropRef.current) {
+      if (publishTimerRef.current !== null) window.clearTimeout(publishTimerRef.current)
+      publishTimerRef.current = null
+      return
+    }
+    if (publishImmediately) {
+      publishValue()
+      return
+    }
+    if (publishTimerRef.current !== null) window.clearTimeout(publishTimerRef.current)
+    publishTimerRef.current = window.setTimeout(publishValue, PROMPT_PARENT_SYNC_DELAY_MS)
   }
 
   const updateMentionMenu = () => {
@@ -824,7 +904,7 @@ function PromptMentionEditor({
     }
     editor.focus({ preventScroll: true })
     closeMenu()
-    syncValue()
+    syncValue(true)
   }
 
   const removeMention = (mention: HTMLElement) => {
@@ -840,7 +920,7 @@ function PromptMentionEditor({
     selection?.removeAllRanges()
     selection?.addRange(range)
     editor.focus({ preventScroll: true })
-    syncValue()
+    syncValue(true)
     closeMenu()
   }
 
@@ -866,7 +946,7 @@ function PromptMentionEditor({
                 insertMention(asset)
               }}
             >
-              {asset.imageUrl ? <img src={asset.imageUrl} alt="" /> : <PictureOutlined />}
+              {asset.imageUrl ? <img src={asset.imageUrl} alt="" loading="lazy" decoding="async" /> : <PictureOutlined />}
               <span>{asset.name}</span>
               {highlighted && <CheckOutlined />}
             </button>
@@ -955,7 +1035,10 @@ function PromptMentionEditor({
           updateMentionMenu()
         }}
         onMouseUp={updateMentionMenu}
-        onBlur={() => closeMenu()}
+        onBlur={() => {
+          closeMenu()
+          publishValue()
+        }}
         onPaste={(event) => {
           event.preventDefault()
           document.execCommand('insertText', false, event.clipboardData.getData('text/plain'))
@@ -980,10 +1063,10 @@ function PromptMentionEditor({
           )}
         </div>
       )}
-      <span className="project-clip-editor__prompt-count">{value.length}/{maxLength}</span>
+      <span ref={counterRef} className="project-clip-editor__prompt-count">{value.length}/{maxLength}</span>
     </div>
   )
-}
+})
 
 const VOICE_INLINE_TOKEN_PATTERN = /(<#[^#\n]+#>|<[^<>\n]+>)/g
 const VOICE_PAUSE_TOKEN_EXACT_PATTERN = /^<#[^#\n]+#>$/
@@ -1360,7 +1443,13 @@ export default function ProjectClipEditingStep({
   const hasRemoteInitialClips = Boolean(remoteInitialClips && remoteInitialClips.length > 0)
   const sourceSignature = useMemo(() => {
     if (!hasRemoteInitialClips) return buildEpisodeSourceSignature(episodes)
-    return `storyboard:${initialClips.map((clip) => `${clip.id}:${clip.title}:${clip.description}`).join('|')}`
+    return `storyboard:${initialClips.map((clip) => [
+      clip.id,
+      clip.title,
+      clip.description,
+      clip.sourceType ?? '',
+      clip.manuallyAdded === undefined ? '' : Number(clip.manuallyAdded),
+    ].join(':')).join('|')}`
   }, [episodes, hasRemoteInitialClips, initialClips])
   const [restoredDraft] = useState(() =>
     readProjectCreationDraft<ClipEditingDraft>(PROJECT_CREATION_DRAFT_KEYS.clips))
@@ -1368,12 +1457,19 @@ export default function ProjectClipEditingStep({
   const restoredClips = canRestoreDraft
     && Array.isArray(restoredDraft.clips)
     && restoredDraft.clips.length > 0
-    ? restoredDraft.clips.map((clip) => ({
-      ...clip,
-      revisionNo: clip.revisionNo
-        ?? initialClips.find((initialClip) => initialClip.id === clip.id)?.revisionNo
-        ?? null,
-    }))
+    ? restoredDraft.clips.map((clip) => {
+      const initialClip = initialClips.find((item) => item.id === clip.id)
+      const sourceType = initialClip?.sourceType ?? clip.sourceType ?? null
+      return {
+        ...clip,
+        sourceType,
+        revisionNo: clip.revisionNo ?? initialClip?.revisionNo ?? null,
+        manuallyAdded: resolveManuallyDeletable(
+          sourceType,
+          initialClip?.manuallyAdded ?? clip.manuallyAdded ?? Boolean(clip.id.startsWith('clip-')),
+        ),
+      }
+    })
     : initialClips
   const restoredActiveClipId = canRestoreDraft
     && restoredClips.some((clip) => clip.id === restoredDraft.activeClipId)
@@ -1496,6 +1592,7 @@ export default function ProjectClipEditingStep({
   const [expandedDescriptionClipId, setExpandedDescriptionClipId] = useState<string | null>(null)
   const [editingDescription, setEditingDescription] = useState('')
   const [imageViewerOpen, setImageViewerOpen] = useState(false)
+  const [mediaDownloadingFileId, setMediaDownloadingFileId] = useState<string | null>(null)
   const [historyIndexByClip, setHistoryIndexByClip] = useState<Record<string, number>>(
     canRestoreDraft ? restoredDraft.historyIndexByClip : {},
   )
@@ -1540,11 +1637,11 @@ export default function ProjectClipEditingStep({
   const videoGenerateEstimateRequestRef = useRef<StudioAssetImageTaskRequest<StudioStoryboardVideoGenerateEstimateResult> | null>(null)
   const videoGenerateRequestRef = useRef<StudioAssetImageTaskRequest<StudioStoryboardVideoDetailResult> | null>(null)
   const videoDetailRequestRef = useRef<StudioAssetImageTaskRequest<StudioStoryboardVideoDetailResult> | null>(null)
-  const videoGenerationTimerRef = useRef<number | null>(null)
+  const videoGenerationTimerRef = useRef<PollTimerCancel | null>(null)
   const videoGenerationRunRef = useRef(0)
   const promptRegenerateRequestRef = useRef<StudioAssetImageTaskRequest<StudioStoryboardVideoPromptRegenerateResult> | null>(null)
   const promptRegenerateDetailRequestRef = useRef<StudioAssetImageTaskRequest<StudioStoryboardVideoPromptDetailResult> | null>(null)
-  const promptRegenerateTimerRef = useRef<number | null>(null)
+  const promptRegenerateTimerRef = useRef<PollTimerCancel | null>(null)
   const promptRegenerateRunRef = useRef(0)
   const referenceOptionsRequestRef = useRef<StudioAssetImageTaskRequest<StudioStoryboardVideoReferenceOption[]> | null>(null)
   const referenceAddRequestRef = useRef<StudioAssetImageTaskRequest<StudioStoryboardVideoReferenceAddResult | null> | null>(null)
@@ -1554,7 +1651,9 @@ export default function ProjectClipEditingStep({
   const mediaHistoryLoadedKeysRef = useRef(new Set<string>())
   const manuallyEditedPromptClipIdsRef = useRef(new Set<string>())
   const manuallyAddedClipIdsRef = useRef(new Set<string>(
-    restoredClips.filter((clip) => clip.manuallyAdded || clip.id.startsWith('clip-')).map((clip) => clip.id),
+    restoredClips
+      .filter(isClipManuallyDeletable)
+      .map((clip) => clip.id),
   ))
   const pendingActiveClipIdAfterRemoteRefreshRef = useRef<string | null>(null)
   const [segmentDetailsByClipId, setSegmentDetailsByClipId] = useState<Record<string, SegmentDetailState>>({})
@@ -1564,6 +1663,7 @@ export default function ProjectClipEditingStep({
   const [clipEditorSaving, setClipEditorSaving] = useState(false)
   const [mergingClipIds, setMergingClipIds] = useState<string[]>([])
   const [deletingClipIds, setDeletingClipIds] = useState<string[]>([])
+  const [deleteConfirmClipId, setDeleteConfirmClipId] = useState<string | null>(null)
   const [referenceAddingSource, setReferenceAddingSource] = useState<StudioStoryboardVideoReferenceOptionSource | null>(null)
   const segmentDetailsByClipIdRef = useRef(segmentDetailsByClipId)
   segmentDetailsByClipIdRef.current = segmentDetailsByClipId
@@ -1642,6 +1742,7 @@ export default function ProjectClipEditingStep({
   const hasActiveImage = activeHistoryItem?.mediaType !== 'video' && Boolean(activeMediaUrl)
   const activeImageUrl = hasActiveImage ? activeMediaUrl : ''
   const activeVideoUrl = hasActiveVideo ? activeMediaUrl : ''
+  const activeMediaFileId = normalizeMediaFileId(activeHistoryItem?.outputFileId)
   const activePreviewRatio = hasActiveImage && !activeHistoryItem?.aspectRatio
     ? previewImageRatio
     : getStoryboardMediaRatio(activeHistoryItem, selectedRatio)
@@ -2075,13 +2176,20 @@ export default function ProjectClipEditingStep({
     sourceSignatureRef.current = sourceSignature
     const pendingActiveClipId = pendingActiveClipIdAfterRemoteRefreshRef.current
     const preservedManualClipIds = pendingActiveClipId ? manuallyAddedClipIdsRef.current : new Set<string>()
-    const nextInitialClips = initialClips.map((clip) => ({
-      ...clip,
-      manuallyAdded: clip.manuallyAdded || clip.id.startsWith('clip-') || preservedManualClipIds.has(clip.id),
-    }))
+    const nextInitialClips = initialClips.map((clip) => {
+      const sourceType = clip.sourceType ?? (preservedManualClipIds.has(clip.id) ? 2 : null)
+      return {
+        ...clip,
+        sourceType,
+        manuallyAdded: resolveManuallyDeletable(
+          sourceType,
+          Boolean(clip.manuallyAdded || clip.id.startsWith('clip-') || preservedManualClipIds.has(clip.id)),
+        ),
+      }
+    })
     manuallyAddedClipIdsRef.current = new Set(
       nextInitialClips
-        .filter((clip) => clip.manuallyAdded || clip.id.startsWith('clip-'))
+        .filter(isClipManuallyDeletable)
         .map((clip) => clip.id),
     )
     setClips(nextInitialClips)
@@ -2147,7 +2255,7 @@ export default function ProjectClipEditingStep({
     videoDetailRequestRef.current?.cancel()
     videoDetailRequestRef.current = null
     if (videoGenerationTimerRef.current !== null) {
-      window.clearTimeout(videoGenerationTimerRef.current)
+      videoGenerationTimerRef.current()
       videoGenerationTimerRef.current = null
     }
     videoGenerationRunRef.current += 1
@@ -2156,7 +2264,7 @@ export default function ProjectClipEditingStep({
     promptRegenerateDetailRequestRef.current?.cancel()
     promptRegenerateDetailRequestRef.current = null
     if (promptRegenerateTimerRef.current !== null) {
-      window.clearTimeout(promptRegenerateTimerRef.current)
+      promptRegenerateTimerRef.current()
       promptRegenerateTimerRef.current = null
     }
     promptRegenerateRunRef.current += 1
@@ -2190,7 +2298,7 @@ export default function ProjectClipEditingStep({
     videoDetailRequestRef.current?.cancel()
     videoDetailRequestRef.current = null
     if (videoGenerationTimerRef.current !== null) {
-      window.clearTimeout(videoGenerationTimerRef.current)
+      videoGenerationTimerRef.current()
       videoGenerationTimerRef.current = null
     }
     videoGenerationRunRef.current += 1
@@ -2199,7 +2307,7 @@ export default function ProjectClipEditingStep({
     promptRegenerateDetailRequestRef.current?.cancel()
     promptRegenerateDetailRequestRef.current = null
     if (promptRegenerateTimerRef.current !== null) {
-      window.clearTimeout(promptRegenerateTimerRef.current)
+      promptRegenerateTimerRef.current()
       promptRegenerateTimerRef.current = null
     }
     promptRegenerateRunRef.current += 1
@@ -2338,36 +2446,40 @@ export default function ProjectClipEditingStep({
     }
 
     let active = true
-    const request = StudioAssetGenerationApi.requestStoryboardVideoGenerateEstimate({
-      modelId,
-      resolution: resolutionValue,
-      durationSeconds,
-    })
-    videoGenerateEstimateRequestRef.current = request
+    let request: StudioAssetImageTaskRequest<StudioStoryboardVideoGenerateEstimateResult> | null = null
     setVideoGenerateEstimate(undefined)
     setVideoGenerateEstimateLoading(true)
     setVideoGenerateEstimateError(undefined)
-
-    void request.promise
-      .then((estimate) => {
-        if (!active || videoGenerateEstimateRequestRef.current !== request) return
-        setVideoGenerateEstimate(estimate)
+    const timer = window.setTimeout(() => {
+      if (!active) return
+      request = StudioAssetGenerationApi.requestStoryboardVideoGenerateEstimate({
+        modelId,
+        resolution: resolutionValue,
+        durationSeconds,
       })
-      .catch((error) => {
-        if (!active || videoGenerateEstimateRequestRef.current !== request) return
-        setVideoGenerateEstimate(undefined)
-        setVideoGenerateEstimateError(error)
-      })
-      .finally(() => {
-        if (!active || videoGenerateEstimateRequestRef.current !== request) return
-        setVideoGenerateEstimateLoading(false)
-        videoGenerateEstimateRequestRef.current = null
-      })
+      videoGenerateEstimateRequestRef.current = request
+      void request.promise
+        .then((estimate) => {
+          if (!active || videoGenerateEstimateRequestRef.current !== request) return
+          setVideoGenerateEstimate(estimate)
+        })
+        .catch((error) => {
+          if (!active || videoGenerateEstimateRequestRef.current !== request) return
+          setVideoGenerateEstimate(undefined)
+          setVideoGenerateEstimateError(error)
+        })
+        .finally(() => {
+          if (!active || videoGenerateEstimateRequestRef.current !== request) return
+          setVideoGenerateEstimateLoading(false)
+          videoGenerateEstimateRequestRef.current = null
+        })
+    }, VIDEO_ESTIMATE_DEBOUNCE_MS)
 
     return () => {
       active = false
-      request.cancel()
-      if (videoGenerateEstimateRequestRef.current === request) {
+      window.clearTimeout(timer)
+      request?.cancel()
+      if (request && videoGenerateEstimateRequestRef.current === request) {
         videoGenerateEstimateRequestRef.current = null
       }
     }
@@ -2380,6 +2492,7 @@ export default function ProjectClipEditingStep({
     if (!hasRemoteInitialClips || !activeClip?.id || activeClip.id.startsWith('clip-')) return undefined
 
     const clipId = activeClip.id
+    const clipSourceType = activeClip.sourceType ?? null
     const loadedKey = `${clipId}:${segmentDetailRefreshToken}`
     if (segmentDetailLoadedKeysRef.current.has(loadedKey) && segmentDetailsByClipIdRef.current[clipId]?.data) {
       return undefined
@@ -2418,9 +2531,15 @@ export default function ProjectClipEditingStep({
           ? undefined
           : String(detail.coverFileId))
         const nextImageUrl = resolveAssetUrl(coverSource)
-        if (detail.manuallyAdded) manuallyAddedClipIdsRef.current.add(clipId)
+        const manualState = getManuallyDeletableState(detail.sourceType ?? clipSourceType, detail.manuallyAdded)
+        if (manualState === true) {
+          manuallyAddedClipIdsRef.current.add(clipId)
+        } else if (manualState === false) {
+          manuallyAddedClipIdsRef.current.delete(clipId)
+        }
         setClips((current) => current.map((clip) => {
           if (clip.id !== clipId) return clip
+          const sourceType = detail.sourceType ?? clip.sourceType ?? null
           return {
             ...clip,
             title: detail.title.trim() || clip.title,
@@ -2428,7 +2547,11 @@ export default function ProjectClipEditingStep({
             prompt: directorPrompt || clip.prompt,
             imageUrl: nextImageUrl ?? clip.imageUrl,
             revisionNo: detail.revisionNo ?? clip.revisionNo ?? null,
-            manuallyAdded: detail.manuallyAdded ?? clip.manuallyAdded,
+            sourceType,
+            manuallyAdded: resolveManuallyDeletable(
+              sourceType,
+              detail.manuallyAdded ?? clip.manuallyAdded ?? false,
+            ),
           }
         }))
       })
@@ -2453,7 +2576,7 @@ export default function ProjectClipEditingStep({
       request.cancel()
       if (segmentDetailRequestRef.current === request) segmentDetailRequestRef.current = null
     }
-  }, [activeClip?.id, hasRemoteInitialClips, l, segmentDetailRefreshToken])
+  }, [activeClip?.id, activeClip?.sourceType, hasRemoteInitialClips, l, segmentDetailRefreshToken])
 
   useEffect(() => {
     mediaHistoryRequestRef.current?.cancel()
@@ -2558,11 +2681,12 @@ export default function ProjectClipEditingStep({
     voicePreviewAudioRef.current = null
   }, [])
 
-  const updatePrompt = (value: string) => {
-    if (!activeClip) return
-    manuallyEditedPromptClipIdsRef.current.add(activeClip.id)
-    setPromptByClip((current) => ({ ...current, [activeClip.id]: value }))
-  }
+  const activePromptClipId = activeClip?.id
+  const updatePrompt = useCallback((value: string) => {
+    if (!activePromptClipId) return
+    manuallyEditedPromptClipIdsRef.current.add(activePromptClipId)
+    setPromptByClip((current) => ({ ...current, [activePromptClipId]: value }))
+  }, [activePromptClipId])
 
   const getReferenceDeleteKey = (segmentId: string | number, referenceIndex: number) => (
     `${String(segmentId)}:${referenceIndex}`
@@ -2821,7 +2945,7 @@ export default function ProjectClipEditingStep({
 
   const clearPromptRegenerationTimer = () => {
     if (promptRegenerateTimerRef.current === null) return
-    window.clearTimeout(promptRegenerateTimerRef.current)
+    promptRegenerateTimerRef.current()
     promptRegenerateTimerRef.current = null
   }
 
@@ -2890,7 +3014,7 @@ export default function ProjectClipEditingStep({
           },
         }))
         clearPromptRegenerationTimer()
-        promptRegenerateTimerRef.current = window.setTimeout(() => {
+        promptRegenerateTimerRef.current = schedulePollWhenVisible(() => {
           promptRegenerateTimerRef.current = null
           pollStoryboardVideoPromptDetail(clipId, promptId, run)
         }, PROMPT_REGENERATION_POLL_INTERVAL_MS)
@@ -2977,7 +3101,7 @@ export default function ProjectClipEditingStep({
 
   const clearVideoGenerationTimer = () => {
     if (videoGenerationTimerRef.current === null) return
-    window.clearTimeout(videoGenerationTimerRef.current)
+    videoGenerationTimerRef.current()
     videoGenerationTimerRef.current = null
   }
 
@@ -3073,7 +3197,7 @@ export default function ProjectClipEditingStep({
           },
         }))
         clearVideoGenerationTimer()
-        videoGenerationTimerRef.current = window.setTimeout(() => {
+        videoGenerationTimerRef.current = schedulePollWhenVisible(() => {
           videoGenerationTimerRef.current = null
           pollStoryboardVideoDetail(clipId, videoId, run)
         }, VIDEO_GENERATION_POLL_INTERVAL_MS)
@@ -3257,17 +3381,22 @@ export default function ProjectClipEditingStep({
     setExpandedDescriptionClipId((current) => (current === clipId ? null : clipId))
   }
 
-  const downloadActiveImage = () => {
-    if (!activeImageUrl) {
-      message.warning(l('当前没有可下载的图片', 'There is no image to download'))
+  const downloadActiveMedia = async () => {
+    if (!activeMediaFileId) {
+      message.warning(l('当前没有可下载的媒体文件', 'There is no media file to download'))
       return
     }
-    const link = document.createElement('a')
-    link.href = activeImageUrl
-    link.download = `${activeClip.title}.jpg`
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
+    if (mediaDownloadingFileId) return
+    setMediaDownloadingFileId(activeMediaFileId)
+    try {
+      await downloadMediaFile(activeMediaFileId)
+    } catch (error) {
+      message.error(error instanceof Error && error.message.trim()
+        ? error.message
+        : l('下载失败，请重试', 'Download failed; try again'))
+    } finally {
+      setMediaDownloadingFileId(null)
+    }
   }
 
   const openClipInsert = (position: number, direction: 'insert-above' | 'insert-below') => {
@@ -3295,11 +3424,21 @@ export default function ProjectClipEditingStep({
       prompt: directorPrompt || description,
       imageUrl: resolveAssetUrl(coverSource) ?? '',
       revisionNo: segment.revisionNo ?? null,
-      manuallyAdded: segment.manuallyAdded ?? true,
+      sourceType: segment.sourceType ?? null,
+      manuallyAdded: resolveManuallyDeletable(
+        segment.sourceType,
+        segment.manuallyAdded ?? true,
+      ),
     }
   }
 
-  const isManualClip = (clip: ClipDraft) => Boolean(clip.manuallyAdded || clip.id.startsWith('clip-'))
+  const isManualClip = (clip: ClipDraft) => {
+    const detailSourceType = segmentDetailsByClipIdRef.current[clip.id]?.data?.sourceType
+    return resolveManuallyDeletable(
+      detailSourceType ?? clip.sourceType,
+      Boolean(clip.manuallyAdded || clip.id.startsWith('clip-') || manuallyAddedClipIdsRef.current.has(clip.id)),
+    )
+  }
 
   const clearRemovedClipState = (clipId: string) => {
     manuallyAddedClipIdsRef.current.delete(clipId)
@@ -3407,6 +3546,12 @@ export default function ProjectClipEditingStep({
       })
   }
 
+  const openDeleteClipConfirm = (clip: ClipDraft) => {
+    if (!isManualClip(clip)) return
+    if (deletingClipIds.includes(clip.id) || segmentDeleteRequestRefs.current.has(clip.id)) return
+    setDeleteConfirmClipId(clip.id)
+  }
+
   const getClipRevisionNo = (clip: ClipDraft) => {
     const detailRevisionNo = segmentDetailsByClipIdRef.current[clip.id]?.data?.revisionNo
     const revisionNo = Math.floor(Number(detailRevisionNo ?? clip.revisionNo))
@@ -3430,6 +3575,11 @@ export default function ProjectClipEditingStep({
       )
       const nextImageUrl = resolveAssetUrl(coverSource)
       const nextTitle = mergedSegment?.title.trim()
+      const mergedSourceType = mergedSegment?.sourceType ?? 3
+      const mergedManuallyAdded = resolveManuallyDeletable(
+        mergedSourceType,
+        mergedSegment?.manuallyAdded ?? true,
+      )
       const merged = {
         ...previous,
         title: nextTitle || previous.title,
@@ -3438,7 +3588,15 @@ export default function ProjectClipEditingStep({
         prompt: directorPrompt || `${previous.prompt}\n${currentClip.prompt}`.trim(),
         imageUrl: nextImageUrl ?? previous.imageUrl,
         revisionNo: mergedSegment?.revisionNo ?? previous.revisionNo ?? null,
+        sourceType: mergedSourceType,
+        manuallyAdded: mergedManuallyAdded,
       }
+      if (mergedManuallyAdded) {
+        manuallyAddedClipIdsRef.current.add(previous.id)
+      } else {
+        manuallyAddedClipIdsRef.current.delete(previous.id)
+      }
+      manuallyAddedClipIdsRef.current.delete(currentClip.id)
       const result = [...current]
       result.splice(index - 1, 2, merged)
       setActiveClipId(merged.id)
@@ -3575,7 +3733,11 @@ export default function ProjectClipEditingStep({
           if (insertedSegment) {
             const insertedClip = segmentDetailToClipDraft(insertedSegment, description)
             nextActiveClipId = insertedClip.id
-            manuallyAddedClipIdsRef.current.add(insertedClip.id)
+            if (isManualClip(insertedClip)) {
+              manuallyAddedClipIdsRef.current.add(insertedClip.id)
+            } else {
+              manuallyAddedClipIdsRef.current.delete(insertedClip.id)
+            }
             setClips((current) => {
               const targetIndex = current.findIndex((clip) => clip.id === targetClip.id)
               const insertPosition = targetIndex < 0
@@ -3626,6 +3788,7 @@ export default function ProjectClipEditingStep({
           description,
           prompt: `${description} 保持人物造型和场景连续，电影感构图，光线自然，画面细节清晰。`,
           imageUrl: PREVIEW_IMAGES[position % PREVIEW_IMAGES.length],
+          sourceType: 2,
           manuallyAdded: true,
         }
         manuallyAddedClipIdsRef.current.add(insertedId)
@@ -3668,9 +3831,22 @@ export default function ProjectClipEditingStep({
           : String(updatedSegment.coverFileId)
       )
       const nextImageUrl = resolveAssetUrl(coverSource)
+      if (updatedSegment) {
+        const currentClipSourceType = clips.find((clip) => clip.id === editingClipId)?.sourceType ?? null
+        const manualState = getManuallyDeletableState(
+          updatedSegment.sourceType ?? currentClipSourceType,
+          updatedSegment.manuallyAdded,
+        )
+        if (manualState === true) {
+          manuallyAddedClipIdsRef.current.add(editingClipId)
+        } else if (manualState === false) {
+          manuallyAddedClipIdsRef.current.delete(editingClipId)
+        }
+      }
 
       setClips((current) => current.map((clip) => {
         if (clip.id !== editingClipId) return clip
+        const sourceType = updatedSegment?.sourceType ?? clip.sourceType ?? null
         return {
           ...clip,
           title: updatedSegment?.title.trim() || clip.title,
@@ -3678,7 +3854,11 @@ export default function ProjectClipEditingStep({
           prompt: directorPrompt || clip.prompt,
           imageUrl: nextImageUrl ?? clip.imageUrl,
           revisionNo: updatedSegment?.revisionNo ?? clip.revisionNo ?? null,
-          manuallyAdded: updatedSegment?.manuallyAdded ?? clip.manuallyAdded,
+          sourceType,
+          manuallyAdded: resolveManuallyDeletable(
+            sourceType,
+            updatedSegment?.manuallyAdded ?? clip.manuallyAdded ?? false,
+          ),
         }
       }))
 
@@ -3727,6 +3907,23 @@ export default function ProjectClipEditingStep({
     : clipEditorMode === 'insert-below'
       ? l('向下插入片段', 'Insert clip below')
       : l('编辑', 'Edit')
+  const deleteConfirmClip = deleteConfirmClipId
+    ? clips.find((clip) => clip.id === deleteConfirmClipId)
+    : undefined
+  const deleteConfirmLoading = deleteConfirmClipId
+    ? deletingClipIds.includes(deleteConfirmClipId)
+    : false
+  const closeDeleteClipConfirm = () => {
+    if (!deleteConfirmLoading) setDeleteConfirmClipId(null)
+  }
+  const confirmDeleteClip = () => {
+    if (!deleteConfirmClip) {
+      setDeleteConfirmClipId(null)
+      return
+    }
+    setDeleteConfirmClipId(null)
+    removeManualClip(deleteConfirmClip)
+  }
 
   const updateVoiceLine = (id: string, patch: Partial<VoiceLineDraft>) => {
     setVoiceLines((current) => current.map((line) => (line.id === id ? { ...line, ...patch } : line)))
@@ -3861,117 +4058,125 @@ export default function ProjectClipEditingStep({
           </div>
         </header>
         <div className="project-clip-editor__clip-list">
-          {clips.map((clip, index) => (
-            <div
-              key={clip.id}
-              className={`project-clip-editor__clip${clip.id === activeClip.id ? ' is-selected' : ''}${expandedDescriptionClipId === clip.id ? ' is-description-expanded' : ''}`}
-              role="button"
-              tabIndex={0}
-              onClick={() => toggleClipDescription(clip.id)}
-              onKeyDown={(event) => {
-                if (event.key !== 'Enter' && event.key !== ' ') return
-                event.preventDefault()
-                toggleClipDescription(clip.id)
-              }}
-            >
-              <div className="project-clip-editor__clip-actions is-top">
-                <button
-                  type="button"
-                  aria-label={l('在上方插入片段', 'Insert clip above')}
-                  title={l('在上方插入片段', 'Insert clip above')}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    openClipInsert(index, 'insert-above')
-                  }}
-                >
-                  <PlusOutlined />
-                </button>
-                {index > 0 && (
+          {clips.map((clip, index) => {
+            const clipCanDelete = isManualClip(clip)
+            const clipDeleting = deletingClipIds.includes(clip.id)
+            return (
+              <Fragment key={clip.id}>
+                <div className="project-clip-editor__clip-insert-actions">
                   <button
                     type="button"
-                    className={`is-merge${mergingClipIds.includes(clip.id) ? ' is-loading' : ''}`}
-                    disabled={mergingClipIds.length > 0}
-                    aria-busy={mergingClipIds.includes(clip.id)}
+                    aria-label={l('在上方插入片段', 'Insert clip above')}
+                    title={l('在上方插入片段', 'Insert clip above')}
                     onClick={(event) => {
                       event.stopPropagation()
-                      mergeClipUp(clip.id)
+                      openClipInsert(index, 'insert-above')
                     }}
                   >
-                    <MergeCellsOutlined />
-                    <span>{l('向上合并片段', 'Merge upward')}</span>
+                    <PlusOutlined />
                   </button>
-                )}
-              </div>
-              <div className="project-clip-editor__clip-main">
-                {clip.imageUrl ? (
-                  <img src={clip.imageUrl} alt="" loading="lazy" decoding="async" />
-                ) : (
-                  <ClipCoverPlaceholder />
-                )}
-                <span>
-                  <span className="project-clip-editor__clip-heading">
-                    <strong>{clip.title}</strong>
-                    <span className="project-clip-editor__clip-heading-actions">
-                      {isManualClip(clip) && (
-                        <button
-                          type="button"
-                          className={`is-danger${deletingClipIds.includes(clip.id) ? ' is-loading' : ''}`}
-                          disabled={deletingClipIds.includes(clip.id)}
-                          aria-busy={deletingClipIds.includes(clip.id)}
-                          aria-label={l('删除片段', 'Delete clip')}
-                          title={l('删除片段', 'Delete clip')}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            removeManualClip(clip)
-                          }}
-                        >
-                          <DeleteOutlined />
-                        </button>
-                      )}
+                  {index > 0 && (
+                    <button
+                      type="button"
+                      className={`is-merge${mergingClipIds.includes(clip.id) ? ' is-loading' : ''}`}
+                      disabled={mergingClipIds.length > 0}
+                      aria-busy={mergingClipIds.includes(clip.id)}
+                      aria-label={l('向上合并片段', 'Merge upward')}
+                      title={l('向上合并片段', 'Merge upward')}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        mergeClipUp(clip.id)
+                      }}
+                    >
+                      <MergeCellsOutlined />
+                    </button>
+                  )}
+                </div>
+                <div
+                  className={`project-clip-editor__clip${clip.id === activeClip.id ? ' is-selected' : ''}${expandedDescriptionClipId === clip.id ? ' is-description-expanded' : ''}`}
+                  data-source-type={clip.sourceType ?? undefined}
+                  data-can-delete={clipCanDelete ? 'true' : 'false'}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => toggleClipDescription(clip.id)}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return
+                    event.preventDefault()
+                    toggleClipDescription(clip.id)
+                  }}
+                >
+                  <div className="project-clip-editor__clip-main">
+                    {clip.imageUrl ? (
+                      <img src={clip.imageUrl} alt="" loading="lazy" decoding="async" />
+                    ) : (
+                      <ClipCoverPlaceholder />
+                    )}
+                    <span className="project-clip-editor__clip-text">
+                      <span className="project-clip-editor__clip-heading">
+                        <strong>{clip.title}</strong>
+                        <span className="project-clip-editor__clip-side-actions">
+                          <button
+                            type="button"
+                            aria-label={l('编辑片段', 'Edit clip')}
+                            title={l('编辑片段', 'Edit clip')}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              openClipEditor(clip)
+                            }}
+                          >
+                            <EditOutlined />
+                          </button>
+                          {clipCanDelete && (
+                            <button
+                              type="button"
+                              className={`project-clip-editor__clip-delete${clipDeleting ? ' is-loading' : ''}`}
+                              disabled={clipDeleting}
+                              aria-busy={clipDeleting}
+                              aria-label={l('删除片段', 'Delete clip')}
+                              title={l('删除片段', 'Delete clip')}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                openDeleteClipConfirm(clip)
+                              }}
+                            >
+                              <DeleteOutlined />
+                            </button>
+                          )}
+                        </span>
+                      </span>
                       <button
                         type="button"
-                        aria-label={l('编辑片段', 'Edit clip')}
-                        title={l('编辑片段', 'Edit clip')}
+                        className="project-clip-editor__clip-description"
+                        aria-expanded={expandedDescriptionClipId === clip.id}
+                        title={expandedDescriptionClipId === clip.id
+                          ? l('点击收起描述', 'Collapse description')
+                          : l('点击展开描述', 'Expand description')}
                         onClick={(event) => {
                           event.stopPropagation()
-                          openClipEditor(clip)
+                          toggleClipDescription(clip.id)
                         }}
                       >
-                        <EditOutlined />
+                        {clip.description}
                       </button>
                     </span>
-                  </span>
-                  <button
-                    type="button"
-                    className="project-clip-editor__clip-description"
-                    aria-expanded={expandedDescriptionClipId === clip.id}
-                    title={expandedDescriptionClipId === clip.id
-                      ? l('点击收起描述', 'Collapse description')
-                      : l('点击展开描述', 'Expand description')}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      toggleClipDescription(clip.id)
-                    }}
-                  >
-                    {clip.description}
-                  </button>
-                </span>
-              </div>
-              <div className="project-clip-editor__clip-actions is-bottom">
-                <button
-                  type="button"
-                  aria-label={l('在下方插入片段', 'Insert clip below')}
-                  title={l('在下方插入片段', 'Insert clip below')}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    openClipInsert(index + 1, 'insert-below')
-                  }}
-                >
-                  <PlusOutlined />
-                </button>
-              </div>
-            </div>
-          ))}
+                  </div>
+                </div>
+              </Fragment>
+            )
+          })}
+          <div className="project-clip-editor__clip-insert-actions is-last">
+            <button
+              type="button"
+              aria-label={l('在下方插入片段', 'Insert clip below')}
+              title={l('在下方插入片段', 'Insert clip below')}
+              onClick={(event) => {
+                event.stopPropagation()
+                openClipInsert(clips.length, 'insert-below')
+              }}
+            >
+              <PlusOutlined />
+            </button>
+          </div>
         </div>
         <footer className="project-clip-editor__batch-footer">
           <button type="button" onClick={() => message.info(l('批量生成功能待接入', 'Batch generation is not connected yet'))}>
@@ -4023,6 +4228,7 @@ export default function ProjectClipEditingStep({
                       src={activeImageUrl}
                       alt={activeClip.title}
                       draggable={false}
+                      decoding="async"
                       onLoad={(event) => {
                         const { naturalWidth, naturalHeight } = event.currentTarget
                         if (naturalWidth > 0 && naturalHeight > 0) {
@@ -4055,9 +4261,10 @@ export default function ProjectClipEditingStep({
                       <button
                         type="button"
                         aria-label={l('下载', 'Download')}
-                        onClick={downloadActiveImage}
+                        disabled={!activeMediaFileId || Boolean(mediaDownloadingFileId)}
+                        onClick={() => { void downloadActiveMedia() }}
                       >
-                        <DownloadOutlined />
+                        {mediaDownloadingFileId === activeMediaFileId ? <ClockCircleOutlined /> : <DownloadOutlined />}
                       </button>
                       <span className="project-clip-editor__preview-tooltip">{l('下载', 'Download')}</span>
                     </span>
@@ -4834,6 +5041,27 @@ export default function ProjectClipEditingStep({
       <div className="project-clip-editor-modal__actions">
         <Button disabled={clipEditorSaving} onClick={closeClipEditor}>{l('取消', 'Cancel')}</Button>
         <Button type="primary" loading={clipEditorSaving} onClick={saveClipEditor}>{l('确定', 'Confirm')}</Button>
+      </div>
+    </Modal>
+    <Modal
+      title={l('确认删除片段', 'Delete clip?')}
+      open={deleteConfirmClipId !== null}
+      centered
+      width={420}
+      maskClosable={false}
+      destroyOnClose
+      className="project-clip-editor-modal project-clip-editor-delete-modal"
+      closable={!deleteConfirmLoading}
+      onCancel={closeDeleteClipConfirm}
+      footer={null}
+    >
+      <div className="project-clip-editor-delete-modal__content">
+        <p>{l('删除后无法恢复，请确认是否继续。', 'This cannot be undone. Continue?')}</p>
+        {deleteConfirmClip && <strong>{deleteConfirmClip.title}</strong>}
+      </div>
+      <div className="project-clip-editor-modal__actions">
+        <Button disabled={deleteConfirmLoading} onClick={closeDeleteClipConfirm}>{l('取消', 'Cancel')}</Button>
+        <Button danger type="primary" loading={deleteConfirmLoading} onClick={confirmDeleteClip}>{l('删除', 'Delete')}</Button>
       </div>
     </Modal>
     <Modal

@@ -1263,6 +1263,31 @@ code {
   box-shadow: none !important;
 }
 
+.project-create-page__episode-list button.is-locked {
+  background: rgba(214, 158, 46, 0.12) !important;
+  border-color: rgba(214, 158, 46, 0.2) !important;
+  color: #e6c27c !important;
+}
+
+.project-create-page__episode-list button.is-locked:hover,
+.project-create-page__episode-list button.is-locked.is-selected {
+  background: rgba(214, 158, 46, 0.18) !important;
+  border-color: rgba(230, 194, 124, 0.45) !important;
+  color: #f3d99f !important;
+}
+
+.project-create-page__episode-editor.is-locked {
+  border-color: rgba(230, 194, 124, 0.35) !important;
+}
+
+.project-create-page__episode-readonly {
+  color: #e6c27c !important;
+}
+
+.project-create-page__episode-saving {
+  color: var(--jf-text-soft) !important;
+}
+
 .project-create-page__episode-import-modal .ant-modal-content,
 .project-create-page__exit-modal .ant-modal-content {
   background: var(--jf-panel) !important;
