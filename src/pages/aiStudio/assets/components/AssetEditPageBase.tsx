@@ -17,11 +17,11 @@ import {
   Upload,
   message,
 } from 'antd'
-import { ArrowLeftOutlined, CloseCircleOutlined, EditOutlined, ReloadOutlined, UploadOutlined } from '@ant-design/icons'
+import { ArrowLeftOutlined, CloseCircleOutlined, DownloadOutlined, EditOutlined, ReloadOutlined, UploadOutlined } from '@ant-design/icons'
 import { FilmService, ScriptProcessingService, StudioFilesService } from '../../../../services/generated'
 import type { TaskStatus } from '../../../../services/generated'
 import { listTaskLinksNormalized } from '../../../../services/filmTaskLinks'
-import { buildFileDownloadUrl } from '../utils'
+import { buildFileContentUrl, downloadMediaFile, normalizeMediaFileId } from '../utils'
 import { DisplayImageCard } from './DisplayImageCard'
 import { ProjectVisualStyleAndStyleFields } from '../../project/ProjectVisualStyleAndStyleFields'
 import { useProjectStyleOptions } from '../../project/useProjectStyleOptions'
@@ -282,6 +282,7 @@ export function AssetEditPageBase<TAsset extends BaseAsset, TImage extends BaseA
   const [adoptingImageId, setAdoptingImageId] = useState<string | null>(null)
   const [uploadProgressByImageId, setUploadProgressByImageId] = useState<Record<number, number>>({})
   const [clearingImageId, setClearingImageId] = useState<number | null>(null)
+  const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null)
   const [promptSpec, setPromptSpec] = useState<AssetGenerationSpec | null>(null)
   const smartDetectRelationType = useMemo(() => getSmartDetectRelationType(relationType), [relationType])
   const smartDetectRelationEntityId = useMemo(
@@ -438,10 +439,25 @@ export function AssetEditPageBase<TAsset extends BaseAsset, TImage extends BaseA
       return {
         angle,
         image,
-        imageUrl: buildFileDownloadUrl(image?.file_id),
+        imageUrl: buildFileContentUrl(image?.file_id),
       }
     })
   }, [formViewCount, images])
+
+  const downloadImageFile = async (fileId?: string | null) => {
+    const normalizedFileId = normalizeMediaFileId(fileId)
+    if (!normalizedFileId || downloadingFileId) return
+    setDownloadingFileId(normalizedFileId)
+    try {
+      await downloadMediaFile(normalizedFileId)
+    } catch (error) {
+      message.error(error instanceof Error && error.message.trim()
+        ? error.message
+        : l('下载失败，请重试', 'Download failed; try again'))
+    } finally {
+      setDownloadingFileId(null)
+    }
+  }
 
   const minViewCount = useMemo(() => clampViewCount(asset?.view_count), [asset?.view_count])
 
@@ -1044,7 +1060,13 @@ export function AssetEditPageBase<TAsset extends BaseAsset, TImage extends BaseA
                           </div>
                           <div className="flex flex-wrap gap-2">
                             {spec.current_image_file_id ? (
-                              <Button size="small" href={buildFileDownloadUrl(spec.current_image_file_id)} target="_blank">
+                              <Button
+                                size="small"
+                                icon={<DownloadOutlined />}
+                                loading={downloadingFileId === normalizeMediaFileId(spec.current_image_file_id)}
+                                disabled={Boolean(downloadingFileId)}
+                                onClick={() => { void downloadImageFile(spec.current_image_file_id) }}
+                              >
                                 {l('下载图片', 'Download image')}
                               </Button>
                             ) : null}
@@ -1119,7 +1141,13 @@ export function AssetEditPageBase<TAsset extends BaseAsset, TImage extends BaseA
                               </Button>
                             </Upload>
                             {slot.imageUrl ? (
-                              <Button size="small" href={slot.imageUrl} target="_blank">
+                              <Button
+                                size="small"
+                                icon={<DownloadOutlined />}
+                                loading={downloadingFileId === normalizeMediaFileId(slot.image?.file_id)}
+                                disabled={!normalizeMediaFileId(slot.image?.file_id) || Boolean(downloadingFileId)}
+                                onClick={() => { void downloadImageFile(slot.image?.file_id) }}
+                              >
                                 {l('下载', 'Download')}
                               </Button>
                             ) : null}
@@ -1175,7 +1203,7 @@ export function AssetEditPageBase<TAsset extends BaseAsset, TImage extends BaseA
               <Col xs={24} sm={12} md={8} key={candidate.id}>
                 <DisplayImageCard
                   title={candidate.view_angle ? l(`角度：${ANGLE_LABEL_MAP[candidate.view_angle] ?? candidate.view_angle}`, `View: ${ANGLE_LABEL_EN_MAP[candidate.view_angle] ?? candidate.view_angle}`) : candidate.source === 'task-link' ? l('任务产物', 'Task output') : l(`图片 ${candidate.id}`, `Image ${candidate.id}`)}
-                  imageUrl={buildFileDownloadUrl(candidate.file_id)}
+                  imageUrl={buildFileContentUrl(candidate.file_id)}
                   imageAlt={candidate.id}
                   placeholder={l('无缩略图', 'No thumbnail')}
                   hoverable={false}
@@ -1277,7 +1305,7 @@ export function AssetEditPageBase<TAsset extends BaseAsset, TImage extends BaseA
                             width={72}
                             height={72}
                             style={{ objectFit: 'cover', borderRadius: 8 }}
-                            src={buildFileDownloadUrl(fid)}
+                            src={buildFileContentUrl(fid)}
                           />
                           <Typography.Text className="block mt-1 text-[10px]" type="secondary" ellipsis={{ tooltip: fid }}>
                             {fid}

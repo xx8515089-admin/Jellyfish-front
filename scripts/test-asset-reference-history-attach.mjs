@@ -24,14 +24,17 @@ test('history references attach existing file IDs instead of fetching remote ima
   assert.doesNotMatch(workspaceSource, /setData\('text\/plain',\s*item\.imageUrl\)/)
 })
 
-test('history and reference thumbnails keep API image URLs for display without download actions', () => {
+test('history and reference thumbnails keep API image URLs for display while downloads use file IDs', () => {
   assert.match(workspaceSource, /resolveAssetUrl\(reference\.url\s*\?\?\s*reference\.fileId\)/)
   assert.match(workspaceSource, /resolveAssetUrl\(item\.imageUrl\s*\?\?\s*item\.fileId\s*\?\?\s*item\.thumbnailUrl\)/)
   assert.match(workspaceSource, /resolveAssetUrl\(item\.coverUrl\s*\?\?\s*item\.coverFileId\)/)
-  assert.doesNotMatch(workspaceSource, /DownloadOutlined/)
-  assert.doesNotMatch(workspaceSource, /downloadPreviewImage/)
-  assert.doesNotMatch(assetsStepSource, /key:\s*'download'/)
-  assert.doesNotMatch(assetsStepSource, /downloadAssetImage/)
+  assert.match(workspaceSource, /const\s+downloadPreviewImage\s*=\s*async\s*\(\)\s*=>/)
+  assert.match(workspaceSource, /await\s+downloadMediaFile\(fileId\)/)
+  assert.match(assetsStepSource, /key:\s*'download'/)
+  assert.match(assetsStepSource, /const\s+downloadAssetImage\s*=\s*async\s*\(asset:\s*AssetDraft\)\s*=>/)
+  assert.match(assetsStepSource, /await\s+downloadMediaFile\(fileId\)/)
+  assert.doesNotMatch(workspaceSource, /buildFileDownloadUrl/)
+  assert.doesNotMatch(assetsStepSource, /buildFileDownloadUrl/)
 })
 
 test('existing fileId references post to the references API through the parent service path', () => {

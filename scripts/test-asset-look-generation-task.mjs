@@ -37,11 +37,17 @@ function harness(storage = new Map()) {
   const creates = []
   const queries = []
   const makeRequest = (promise) => ({ promise, cancelled: false, cancel() { this.cancelled = true } })
+  const schedulePollWhenVisible = (callback, delay) => {
+    const id = ++timerId
+    timers.set(id, { callback, due: clock + delay, delay })
+    return () => timers.delete(id)
+  }
   const exports = {}
   vm.runInNewContext(compiled, {
     exports,
     require: (name) => {
       if (name.endsWith('/assetGenerationProgressState')) return progressState
+      if (name.endsWith('/assetBatchGenerationPolling')) return { schedulePollWhenVisible }
       if (name.endsWith('/auth')) return { getStoredAuthUser: () => user }
       if (name.endsWith('/useBilingualText')) return { bilingualText: (_zh, en) => en }
       if (name.endsWith('/apiErrors')) return { getApiErrorMessage: (error, fallback) => error?.message || fallback }

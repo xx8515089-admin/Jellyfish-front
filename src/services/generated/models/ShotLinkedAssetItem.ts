@@ -31,7 +31,7 @@ export type ShotLinkedAssetItem = {
      */
     provider_prompt_text?: (string | null);
     /**
-     * 缩略图下载地址（/api/v1/studio/files/{file_id}/download）
+     * 缩略图预览地址（/api/v1/studio/files/content?id={file_id}）
      */
     thumbnail?: string;
     /**

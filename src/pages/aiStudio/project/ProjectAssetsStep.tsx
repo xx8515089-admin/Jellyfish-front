@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type React from 'react'
 import { Button, Dropdown, Empty, Input, Modal, Spin, message } from 'antd'
 import {
@@ -6,6 +6,7 @@ import {
   CheckOutlined,
   CloseOutlined,
   DeleteOutlined,
+  DownloadOutlined,
   EyeOutlined,
   MoreOutlined,
   PictureOutlined,
@@ -39,7 +40,6 @@ import type {
   StudioScriptImportId,
 } from '../../../services/studioScripts'
 import type { SystemVoiceRead } from '../../../services/systemVoices'
-import AssetGenerationWorkspace, { loadAssetVisualStyleOptions } from './AssetGenerationWorkspace'
 import { AssetCardGenerationProgress } from './AssetGenerationProgress'
 import type {
   AssetImageGenerationInput,
@@ -59,8 +59,13 @@ import {
   selectAssetGenerationState,
 } from './assetBatchGenerationState'
 import { normalizeAssetGenerationProgress } from './assetGenerationProgressState'
-import { startBatchGenerationPolling } from './assetBatchGenerationPolling'
+import {
+  schedulePollWhenVisible,
+  startBatchGenerationPolling,
+  type PollTimerCancel,
+} from './assetBatchGenerationPolling'
 import { mergeHydratedAssets, mergeHydratedIds } from './assetDraftHydration'
+import { downloadMediaFile, normalizeMediaFileId } from '../assets/utils'
 import {
   createImageOptionsClientRevision,
   DEFAULT_ASSET_IMAGE_RATIO_OPTIONS,
@@ -70,6 +75,7 @@ import {
 } from './assetImageGenerationSettings'
 import {
   PROJECT_CREATION_DRAFT_KEYS,
+  PROJECT_CREATION_DRAFT_DELAY_MS,
   buildEpisodeSourceSignature,
   getProjectCreationDraftKey,
   readFullProjectCreationDraft,
@@ -77,6 +83,11 @@ import {
   useProjectCreationDraft,
 } from './projectCreationDraft'
 import './ProjectAssetsStep.css'
+
+const loadAssetGenerationWorkspaceModule = () => import('./AssetGenerationWorkspace')
+const AssetGenerationWorkspace = lazy(loadAssetGenerationWorkspaceModule)
+const loadAssetVisualStyleOptions = () => loadAssetGenerationWorkspaceModule()
+  .then((module) => module.loadAssetVisualStyleOptions())
 
 export type AssetEpisodeSource = {
   id: string
@@ -149,7 +160,7 @@ type ActiveAssetImageRun = {
   previousImageUrl?: string
   previousUpdatedAt?: string
   resultMissCount: number
-  timer: number | null
+  timer: PollTimerCancel | null
   request?: StudioAssetImageTaskRequest<unknown>
 }
 
@@ -254,6 +265,11 @@ type PersonalAsset = {
   region?: string
 }
 
+type PersonalAssetCacheEntry = {
+  items: PersonalAsset[]
+  expiresAt: number
+}
+
 type PersonalAssetFilter = 'gender' | 'style' | 'age' | 'region'
 
 const EMPTY_PERSONAL_FILTERS: Record<PersonalAssetFilter, string> = {
@@ -262,6 +278,7 @@ const EMPTY_PERSONAL_FILTERS: Record<PersonalAssetFilter, string> = {
   age: 'all',
   region: 'all',
 }
+const PERSONAL_ASSET_CACHE_TTL_MS = 60_000
 
 const KIND_LABELS: Record<AssetKind, { zh: string; en: string }> = {
   role: { zh: '角色', en: 'Characters' },
@@ -749,6 +766,7 @@ export default function ProjectAssetsStep({
   const batchStatusRevisionRef = useRef(0)
   const batchCreationBlockedRef = useRef(true)
   const [episodeAssetsGeneratePending, setEpisodeAssetsGeneratePending] = useState(false)
+  const [assetDownloadFileId, setAssetDownloadFileId] = useState<string>()
   const assetGenerationStatusByScopeRef = useRef<Record<string, AssetGenerationStatusBucket>>({})
   const [assetGenerationStatusRefreshToken, setAssetGenerationStatusRefreshToken] = useState(0)
   const [assetGenerationEstimateRefreshToken, setAssetGenerationEstimateRefreshToken] = useState(0)
@@ -805,6 +823,7 @@ export default function ProjectAssetsStep({
   const [personalAssetId, setPersonalAssetId] = useState('')
   const [personalAssetsLoading, setPersonalAssetsLoading] = useState(false)
   const personalAssetsRequestRevisionRef = useRef(0)
+  const personalAssetsCacheRef = useRef(new Map<AssetKind, PersonalAssetCacheEntry>())
   const [personalAssetFilters, setPersonalAssetFilters] = useState(EMPTY_PERSONAL_FILTERS)
   const [voiceLibraryOpen, setVoiceLibraryOpen] = useState(false)
   const [voiceTargetAsset, setVoiceTargetAsset] = useState<AssetDraft>()
@@ -943,7 +962,8 @@ export default function ProjectAssetsStep({
         // 创建请求尚未返回任务 ID 时不能主动取消；让它完成后立即保存任务 ID，
         // 否则后端已经接单而前端丢失 ID 时，用户重试会重复创建并再次扣费。
         if (!run.taskId) return
-        if (run.timer !== null) window.clearTimeout(run.timer)
+        run.timer?.()
+        run.timer = null
         run.request?.cancel()
         imageRuns.delete(assetKey)
       })
@@ -977,7 +997,7 @@ export default function ProjectAssetsStep({
   const flushAssetDraft = useProjectCreationDraft(
     draftKey,
     assetDraft,
-    350,
+    PROJECT_CREATION_DRAFT_DELAY_MS,
     draftPersistenceEnabledRef,
   )
 
@@ -1303,7 +1323,8 @@ export default function ProjectAssetsStep({
       activeAssetImageRunsRef.current.forEach((run, assetKey) => {
         // 尚在创建任务的请求继续完成并写回原剧本的 sidecar，避免切换数据源时丢失任务 ID。
         if (!run.taskId) return
-        if (run.timer !== null) window.clearTimeout(run.timer)
+        run.timer?.()
+        run.timer = null
         run.request?.cancel()
         activeAssetImageRunsRef.current.delete(assetKey)
       })
@@ -1366,8 +1387,8 @@ export default function ProjectAssetsStep({
     }
 
     let disposed = false
-    let startTimer: number | null = null
-    const timers = new Map<StudioScriptAssetType, number>()
+    let cancelStartTimer: PollTimerCancel | null = null
+    const timers = new Map<StudioScriptAssetType, PollTimerCancel>()
     const requests = new Map<StudioScriptAssetType, StudioScriptAssetListRequest>()
     const loadedAssetTypes = new Set<StudioScriptAssetType>()
     const isActive = () => !disposed && assetPollingGenerationRef.current === generation
@@ -1401,7 +1422,8 @@ export default function ProjectAssetsStep({
         patchLane(assetType, { loading: false, polling: false })
         return
       }
-      const timer = window.setTimeout(() => {
+      timers.get(assetType)?.()
+      const timer = schedulePollWhenVisible(() => {
         timers.delete(assetType)
         void runLane(assetType, failureCount)
       }, delayMs)
@@ -1516,8 +1538,8 @@ export default function ProjectAssetsStep({
     setRemoteAssetsByScope((current) => ({
       [pollingScopeId]: current[pollingScopeId] ?? {},
     }))
-    startTimer = window.setTimeout(() => {
-      startTimer = null
+    cancelStartTimer = schedulePollWhenVisible(() => {
+      cancelStartTimer = null
       ASSET_TYPES.forEach((assetType) => void runLane(assetType))
     }, 0)
 
@@ -1526,8 +1548,9 @@ export default function ProjectAssetsStep({
       if (assetPollingGenerationRef.current === generation) {
         assetPollingGenerationRef.current += 1
       }
-      if (startTimer !== null) window.clearTimeout(startTimer)
-      timers.forEach((timer) => window.clearTimeout(timer))
+      cancelStartTimer?.()
+      cancelStartTimer = null
+      timers.forEach((cancelTimer) => cancelTimer())
       timers.clear()
       requests.forEach((request) => request.cancel())
       requests.clear()
@@ -2402,7 +2425,7 @@ export default function ProjectAssetsStep({
 
   const clearAssetImageRun = (run: ActiveAssetImageRun) => {
     if (activeAssetImageRunsRef.current.get(run.assetKey) !== run) return
-    if (run.timer !== null) window.clearTimeout(run.timer)
+    run.timer?.()
     run.timer = null
     run.request = undefined
     activeAssetImageRunsRef.current.delete(run.assetKey)
@@ -2455,8 +2478,8 @@ export default function ProjectAssetsStep({
     failureCount = 0,
   ) => {
     if (!isCurrentAssetImageRun(run) || !run.taskId) return
-    if (run.timer !== null) window.clearTimeout(run.timer)
-    run.timer = window.setTimeout(() => {
+    run.timer?.()
+    run.timer = schedulePollWhenVisible(() => {
       run.timer = null
       void pollAssetImageTask(run, failureCount)
     }, delayMs)
@@ -2591,7 +2614,7 @@ export default function ProjectAssetsStep({
           ASSET_IMAGE_TASK_POLL_INTERVAL_MS * 2 ** Math.min(run.resultMissCount - 1, 2),
           12_000,
         )
-        run.timer = window.setTimeout(() => {
+        run.timer = schedulePollWhenVisible(() => {
           run.timer = null
           void refreshGeneratedAsset(run)
         }, retryDelay)
@@ -2627,7 +2650,7 @@ export default function ProjectAssetsStep({
           ASSET_IMAGE_TASK_POLL_INTERVAL_MS * 2 ** (nextFailureCount - 1),
           12_000,
         )
-        run.timer = window.setTimeout(() => {
+        run.timer = schedulePollWhenVisible(() => {
           run.timer = null
           void refreshGeneratedAsset(run, nextFailureCount)
         }, retryDelay)
@@ -2990,7 +3013,8 @@ export default function ProjectAssetsStep({
       okButtonProps: { danger: true },
       onOk: () => {
         if (!isCurrentAssetImageRun(run)) return
-        if (run.timer !== null) window.clearTimeout(run.timer)
+        run.timer?.()
+        run.timer = null
         run.request?.cancel()
         removePersistedAssetImageRun(run)
         clearAssetImageRun(run)
@@ -3122,12 +3146,19 @@ export default function ProjectAssetsStep({
     setPersonalAssetId('')
     setPersonalAssetFilters(EMPTY_PERSONAL_FILTERS)
     setPersonalAssets([])
-    setPersonalAssetsLoading(true)
     const requestRevision = ++personalAssetsRequestRevisionRef.current
     const requestSourceSignature = sourceSignature
     const isCurrent = () => componentMountedRef.current
       && requestRevision === personalAssetsRequestRevisionRef.current
       && latestSourceSignatureRef.current === requestSourceSignature
+    const cached = personalAssetsCacheRef.current.get(kind)
+    if (cached && cached.expiresAt > Date.now()) {
+      setPersonalAssets(cached.items)
+      setPersonalAssetsLoading(false)
+      return
+    }
+    if (cached) personalAssetsCacheRef.current.delete(kind)
+    setPersonalAssetsLoading(true)
     try {
       const entityType = kind === 'role' ? 'character' : kind
       const response = await StudioEntitiesApi.list(entityType, { page: 1, pageSize: 100 })
@@ -3150,6 +3181,10 @@ export default function ProjectAssetsStep({
             : typeof item.country === 'string' ? item.country : undefined,
         }
       }).filter((item) => item.id && item.name)
+      personalAssetsCacheRef.current.set(kind, {
+        items: nextAssets,
+        expiresAt: Date.now() + PERSONAL_ASSET_CACHE_TTL_MS,
+      })
       setPersonalAssets(nextAssets)
     } catch {
       if (!isCurrent()) return
@@ -3189,6 +3224,7 @@ export default function ProjectAssetsStep({
   const handleAddMenuClick = (key: 'generate' | 'personal' | 'local') => {
     setAddMenuOpen(false)
     if (key === 'generate') {
+      void loadAssetGenerationWorkspaceModule()
       setGenerationAssetId(undefined)
       setGenerationAssetSnapshot(undefined)
       setGenerationActiveLookId(undefined)
@@ -3203,6 +3239,7 @@ export default function ProjectAssetsStep({
   }
 
   const openAssetWorkspace = (asset: AssetDraft) => {
+    void loadAssetGenerationWorkspaceModule()
     setGenerationAssetSnapshot(asset)
     setGenerationAssetId(asset.id)
     setGenerationActiveLookId(undefined)
@@ -3280,6 +3317,7 @@ export default function ProjectAssetsStep({
         image_url: asset.imageUrl,
         thumbnail: asset.imageUrl,
       })
+      personalAssetsCacheRef.current.delete(asset.kind)
       message.success(l('已存入个人空间', 'Saved to personal space'))
     } catch {
       message.error(l('存入个人空间失败', 'Failed to save to personal space'))
@@ -3311,9 +3349,28 @@ export default function ProjectAssetsStep({
     })
   }
 
+  const downloadAssetImage = async (asset: AssetDraft) => {
+    const fileId = normalizeMediaFileId(asset.coverFileId)
+    if (!fileId || assetDownloadFileId) return
+    setAssetDownloadFileId(fileId)
+    try {
+      await downloadMediaFile(fileId)
+    } catch (error) {
+      message.error(error instanceof Error && error.message.trim()
+        ? error.message
+        : l('下载失败，请重试', 'Download failed; try again'))
+    } finally {
+      if (componentMountedRef.current) setAssetDownloadFileId(undefined)
+    }
+  }
+
   const handleAssetMenuClick = (asset: AssetDraft, key: string) => {
     if (assetImageOperationLocked(asset.id)) {
       message.warning(l('图片任务尚未结束，暂时不能修改资产', 'Wait for the image task before modifying the asset'))
+      return
+    }
+    if (key === 'download') {
+      void downloadAssetImage(asset)
       return
     }
     if (key === 'store') {
@@ -3579,6 +3636,7 @@ export default function ProjectAssetsStep({
             {visibleAssets.map((asset) => {
               const cardGenerationState = selectAssetGenerationState(assetImageTasks[asset.id], batchAssetImageTasks[asset.id])
               const cardGenerating = isAssetImageTaskActive(cardGenerationState)
+              const assetFileId = normalizeMediaFileId(asset.coverFileId)
               return (
                 <article
                   key={asset.id}
@@ -3587,6 +3645,8 @@ export default function ProjectAssetsStep({
                   tabIndex={0}
                   aria-busy={cardGenerating}
                   aria-label={l(`打开${asset.name}资产详情`, `Open ${asset.name} asset details`)}
+                  onPointerEnter={() => { void loadAssetGenerationWorkspaceModule() }}
+                  onFocus={() => { void loadAssetGenerationWorkspaceModule() }}
                   onClick={(event) => {
                     if (!event.currentTarget.contains(event.target as Node)) return
                     if ((event.target as HTMLElement).closest('button')) return
@@ -3668,6 +3728,12 @@ export default function ProjectAssetsStep({
                       overlayClassName="project-assets-step__asset-menu"
                       menu={{
                         items: [
+                          {
+                            key: 'download',
+                            label: l('下载', 'Download'),
+                            icon: assetDownloadFileId === assetFileId ? <Spin size="small" /> : <DownloadOutlined />,
+                            disabled: !assetFileId || Boolean(assetDownloadFileId),
+                          },
                           { key: 'store', label: l('存入空间', 'Save to space') },
                           { key: 'space-import', label: l('空间导入', 'Import from space') },
                           { key: 'local-import', label: l('本地导入', 'Import from device') },
@@ -3876,7 +3942,13 @@ export default function ProjectAssetsStep({
       )}
 
       {generationWorkspaceOpen && (
-        <AssetGenerationWorkspace
+        <Suspense fallback={(
+          <div className="project-assets-step__workspace-loading" role="status">
+            <Spin />
+            <span>{l('正在加载资产编辑器...', 'Loading asset editor...')}</span>
+          </div>
+        )}>
+          <AssetGenerationWorkspace
           key={generationAssetId ?? `new-${kind}`}
           kind={kind}
           ratio={ratio}
@@ -3987,13 +4059,14 @@ export default function ProjectAssetsStep({
             setGenerationAssetSnapshot(undefined)
             setGenerationActiveLookId(undefined)
           }}
-          onGenerate={async (input) => {
-            if (!generationAsset) {
-              throw new Error(l('未找到可生成的后端资产', 'No persisted asset is available to generate'))
-            }
-            await submitExistingAssetImage(generationAsset, input)
-          }}
-        />
+            onGenerate={async (input) => {
+              if (!generationAsset) {
+                throw new Error(l('未找到可生成的后端资产', 'No persisted asset is available to generate'))
+              }
+              await submitExistingAssetImage(generationAsset, input)
+            }}
+          />
+        </Suspense>
       )}
 
       <Modal

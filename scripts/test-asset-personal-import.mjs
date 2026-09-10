@@ -38,11 +38,14 @@ function harness() {
   const mounted = { current: true }
   const latestSource = { current: 'script-A' }
   const revision = { current: 0 }
+  const personalAssetsCache = { current: new Map() }
   const patch = (key, value) => { state[key] = value; writes.push(key) }
   const shared = {
     componentMountedRef: mounted,
     latestSourceSignatureRef: latestSource,
     personalAssetsRequestRevisionRef: revision,
+    personalAssetsCacheRef: personalAssetsCache,
+    PERSONAL_ASSET_CACHE_TTL_MS: 60_000,
     assetImageOperationLocked: () => false,
     scopedAssets: [],
     EMPTY_PERSONAL_FILTERS: {},

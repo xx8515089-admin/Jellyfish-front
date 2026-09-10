@@ -1,6 +1,7 @@
 import { OpenAPI } from './generated'
 import type { CancelablePromise } from './generated'
 import { request as __request } from './generated/core/request'
+import { getStoredAuthUser } from '../auth'
 
 type ApiEnvelope<T> = {
   code?: number
@@ -54,8 +55,21 @@ function getStudioModels(type = 2): CancelablePromise<ApiEnvelope<StudioGenerati
   })
 }
 
-let imageModelsRequest: Promise<StudioGenerationModel[]> | null = null
-let videoModelsRequest: Promise<StudioGenerationModel[]> | null = null
+type StudioModelsCacheEntry = {
+  models: StudioGenerationModel[]
+  expiresAt: number
+}
+
+const STUDIO_MODELS_CACHE_TTL_MS = 5 * 60 * 1000
+const STUDIO_MODELS_CACHE_MAX_ENTRIES = 8
+const studioModelsRequests = new Map<string, Promise<StudioGenerationModel[]>>()
+const studioModelsCache = new Map<string, StudioModelsCacheEntry>()
+
+const getStudioModelsCacheKey = (type: number) => {
+  const user = getStoredAuthUser()
+  const userScope = user?.id ?? user?.username ?? 'anonymous'
+  return `${String(userScope)}:${type}`
+}
 
 function loadStudioModels(type: number, errorMessage: string): Promise<StudioGenerationModel[]> {
   return getStudioModels(type)
@@ -74,26 +88,52 @@ function loadStudioModels(type: number, errorMessage: string): Promise<StudioGen
     })
 }
 
+function loadCachedStudioModels(
+  type: number,
+  errorMessage: string,
+  force = false,
+): Promise<StudioGenerationModel[]> {
+  const cacheKey = getStudioModelsCacheKey(type)
+  const cached = studioModelsCache.get(cacheKey)
+  if (!force && cached && cached.expiresAt > Date.now()) {
+    studioModelsCache.delete(cacheKey)
+    studioModelsCache.set(cacheKey, cached)
+    return Promise.resolve(cached.models)
+  }
+  if (cached) studioModelsCache.delete(cacheKey)
+
+  const pending = studioModelsRequests.get(cacheKey)
+  if (pending) return pending
+  const request = loadStudioModels(type, errorMessage)
+    .then((models) => {
+      if (models.length > 0) {
+        studioModelsCache.set(cacheKey, {
+          models,
+          expiresAt: Date.now() + STUDIO_MODELS_CACHE_TTL_MS,
+        })
+        while (studioModelsCache.size > STUDIO_MODELS_CACHE_MAX_ENTRIES) {
+          const oldestKey = studioModelsCache.keys().next().value as string | undefined
+          if (oldestKey === undefined) break
+          studioModelsCache.delete(oldestKey)
+        }
+      }
+      return models
+    })
+    .finally(() => {
+      if (studioModelsRequests.get(cacheKey) === request) studioModelsRequests.delete(cacheKey)
+    })
+  studioModelsRequests.set(cacheKey, request)
+  return request
+}
+
 export const StudioModelsApi = {
   /** 查询图片生成模型；默认固定为后端模型类型 2，并合并 StrictMode 等并发请求。 */
-  async getImageModels(): Promise<StudioGenerationModel[]> {
-    if (imageModelsRequest) return imageModelsRequest
-
-    imageModelsRequest = loadStudioModels(2, 'Image model loading failed')
-      .finally(() => {
-        imageModelsRequest = null
-      })
-    return imageModelsRequest
+  async getImageModels(force = false): Promise<StudioGenerationModel[]> {
+    return loadCachedStudioModels(2, 'Image model loading failed', force)
   },
 
   /** 查询视频生成模型；后端模型类型固定为 3，并合并 StrictMode 等并发请求。 */
-  async getVideoModels(): Promise<StudioGenerationModel[]> {
-    if (videoModelsRequest) return videoModelsRequest
-
-    videoModelsRequest = loadStudioModels(3, 'Video model loading failed')
-      .finally(() => {
-        videoModelsRequest = null
-      })
-    return videoModelsRequest
+  async getVideoModels(force = false): Promise<StudioGenerationModel[]> {
+    return loadCachedStudioModels(3, 'Video model loading failed', force)
   },
 }

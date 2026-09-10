@@ -4,7 +4,7 @@ import { EditOutlined, LinkOutlined, PlusOutlined } from '@ant-design/icons'
 import { useParams, useNavigate } from 'react-router-dom'
 import { StudioShotLinksService } from '../../../../../services/generated'
 import type { ProjectSceneLinkRead } from '../../../../../services/generated'
-import { buildFileDownloadUrl, resolveAssetUrl } from '../../../assets/utils'
+import { buildFileContentUrl, resolveAssetUrl } from '../../../assets/utils'
 import { DisplayImageCard } from '../../../assets/components/DisplayImageCard'
 import { StudioEntitiesApi } from '../../../../../services/studioEntities'
 import { StudioAssetTypeFormModal } from '../../../assets/components/StudioAssetTypeFormModal'
@@ -171,7 +171,7 @@ export function ScenesTab() {
     const url = resolveAssetUrl(thumbnail)
     if (url) return url
     // 兼容后端返回 file_id 的情况
-    if (thumbnail && !thumbnail.includes('/') && !thumbnail.includes(':')) return buildFileDownloadUrl(thumbnail)
+    if (thumbnail && !thumbnail.includes('/') && !thumbnail.includes(':')) return buildFileContentUrl(thumbnail)
     return undefined
   }
 

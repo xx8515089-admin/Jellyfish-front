@@ -9,6 +9,7 @@ import {
   type StudioAssetLookGenerateRequest,
 } from '../../../services/studioAssetGeneration'
 import { normalizeAssetGenerationProgress } from './assetGenerationProgressState'
+import { schedulePollWhenVisible, type PollTimerCancel } from './assetBatchGenerationPolling'
 
 export type AssetLookGenerationTaskSnapshot = {
   phase: 'idle' | 'submitting' | 'running' | 'poll-failed' | 'refreshing' | 'refresh-failed' | 'failed'
@@ -102,7 +103,7 @@ function createController(assetId: number, userScope: string, storageKey: string
   } : { phase: 'idle', progress: 0, revision: 0 }
   updateTaskActivity(userScope, assetId, Boolean(snapshot.taskId), false)
   const listeners = new Set<() => void>()
-  let timer: ReturnType<typeof window.setTimeout> | undefined
+  let cancelTimer: PollTimerCancel | undefined
   let activeRequest: StudioAssetImageTaskRequest<StudioAssetImageTaskDetail> | undefined
   let pollRun = 0
   let consecutiveErrors = 0
@@ -133,8 +134,8 @@ function createController(assetId: number, userScope: string, storageKey: string
 
   const stopPolling = () => {
     pollRun += 1
-    if (timer !== undefined) window.clearTimeout(timer)
-    timer = undefined
+    cancelTimer?.()
+    cancelTimer = undefined
     const request = activeRequest
     activeRequest = undefined
     request?.cancel()
@@ -150,8 +151,9 @@ function createController(assetId: number, userScope: string, storageKey: string
 
   const schedulePoll = (run: number, taskId: string, delay: number) => {
     if (!canPoll(run, taskId)) return
-    timer = window.setTimeout(() => {
-      timer = undefined
+    cancelTimer?.()
+    cancelTimer = schedulePollWhenVisible(() => {
+      cancelTimer = undefined
       void poll(run, taskId)
     }, delay)
   }
@@ -213,7 +215,7 @@ function createController(assetId: number, userScope: string, storageKey: string
       publish({ ...snapshot, phase: 'refreshing', errorMessage: undefined })
       return
     }
-    if (activeRequest || timer !== undefined) return
+    if (activeRequest || cancelTimer !== undefined) return
     consecutiveErrors = 0
     publish({ ...snapshot, phase: 'running', errorMessage: undefined })
     void poll(pollRun, snapshot.taskId!)

@@ -4,6 +4,7 @@ import { Button, Input, Popover, Spin, message } from 'antd'
 import {
   CloseOutlined,
   DeleteOutlined,
+  DownloadOutlined,
   EyeOutlined,
   FileSyncOutlined,
   FlagOutlined,
@@ -26,7 +27,7 @@ import type {
   StudioAssetLookItem,
   StudioAssetReferenceItem,
 } from '../../../services/studioAssetGeneration'
-import { resolveAssetUrl } from '../assets/utils'
+import { downloadMediaFile, normalizeMediaFileId, resolveAssetUrl } from '../assets/utils'
 import ImageViewer from './ImageViewer'
 import StudioSelect from './StudioSelect'
 import StudioRatioOption from './StudioRatioOption'
@@ -173,7 +174,13 @@ const EMPTY_LOOK_GENERATION_TASK: AssetLookGenerationTaskSnapshot = {
 }
 const getEmptyLookGenerationTask = () => EMPTY_LOOK_GENERATION_TASK
 const subscribeToEmptyLookGenerationTask = () => () => {}
-const visualStyleOptionCache = new Map<string, AssetVisualStyleOption[]>()
+type VisualStyleOptionCacheEntry = {
+  options: AssetVisualStyleOption[]
+  expiresAt: number
+}
+const VISUAL_STYLE_OPTION_CACHE_TTL_MS = 5 * 60 * 1000
+const VISUAL_STYLE_OPTION_MAX_USER_SCOPES = 4
+const visualStyleOptionCache = new Map<string, VisualStyleOptionCacheEntry>()
 const visualStyleOptionRequests = new Map<string, Promise<AssetVisualStyleOption[]>>()
 
 const getVisualStyleUserScope = () => {
@@ -194,10 +201,15 @@ const getImageOptionsSignature = (input: AssetImageOptionsInput) => JSON.stringi
 ])
 
 /** 仅在资产编辑器没有上游快照时补查画面风格，并按用户合并并发请求。 */
-export const loadAssetVisualStyleOptions = () => {
+export const loadAssetVisualStyleOptions = (force = false) => {
   const userScope = getVisualStyleUserScope()
   const cached = visualStyleOptionCache.get(userScope)
-  if (cached) return Promise.resolve(cached)
+  if (!force && cached && cached.expiresAt > Date.now()) {
+    visualStyleOptionCache.delete(userScope)
+    visualStyleOptionCache.set(userScope, cached)
+    return Promise.resolve(cached.options)
+  }
+  if (cached) visualStyleOptionCache.delete(userScope)
 
   const pending = visualStyleOptionRequests.get(userScope)
   if (pending) return pending
@@ -215,7 +227,15 @@ export const loadAssetVisualStyleOptions = () => {
         })
       })
       const result = [...uniqueOptions.values()]
-      visualStyleOptionCache.set(userScope, result)
+      visualStyleOptionCache.set(userScope, {
+        options: result,
+        expiresAt: Date.now() + VISUAL_STYLE_OPTION_CACHE_TTL_MS,
+      })
+      while (visualStyleOptionCache.size > VISUAL_STYLE_OPTION_MAX_USER_SCOPES) {
+        const oldestScope = visualStyleOptionCache.keys().next().value as string | undefined
+        if (oldestScope === undefined) break
+        visualStyleOptionCache.delete(oldestScope)
+      }
       return result
     })
     .finally(() => {
@@ -394,6 +414,7 @@ export default function AssetGenerationWorkspace({
   const [generationCreditEstimateLoading, setGenerationCreditEstimateLoading] = useState(false)
   const [referenceUploadPending, setReferenceUploadPending] = useState(false)
   const [localLookUploadPending, setLocalLookUploadPending] = useState(false)
+  const [downloadingFileId, setDownloadingFileId] = useState<string>()
   const [lookEpisodeSelectionPending, setLookEpisodeSelectionPending] = useState(false)
   const [lookEpisodeConfirmId, setLookEpisodeConfirmId] = useState<string>()
   const [lookRenamePendingId, setLookRenamePendingId] = useState<string>()
@@ -953,7 +974,7 @@ export default function AssetGenerationWorkspace({
         <span className="asset-generation-workspace__style-option">
           <span className="asset-generation-workspace__style-option-thumb">
             {option.coverUrl ? (
-              <img src={option.coverUrl} alt="" aria-hidden="true" />
+              <img src={option.coverUrl} alt="" aria-hidden="true" loading="lazy" decoding="async" />
             ) : option.name === noStyleLabel ? <StopOutlined /> : <PictureOutlined />}
           </span>
           <span className="asset-generation-workspace__style-option-name" title={option.name}>
@@ -1190,6 +1211,21 @@ export default function AssetGenerationWorkspace({
     if (!imageUrl) return
     setViewerImageUrl(imageUrl)
     setImageViewerOpen(true)
+  }
+
+  const downloadPreviewImage = async () => {
+    const fileId = normalizeMediaFileId(selectedHistoryItem?.fileId)
+    if (!fileId || downloadingFileId) return
+    setDownloadingFileId(fileId)
+    try {
+      await downloadMediaFile(fileId)
+    } catch (error) {
+      message.error(error instanceof Error && error.message.trim()
+        ? error.message
+        : l('下载失败，请重试', 'Download failed; try again'))
+    } finally {
+      if (imageOptionsMountedRef.current) setDownloadingFileId(undefined)
+    }
   }
 
   const selectHistoryImage = (item: ResolvedAssetImageHistoryItem) => {
@@ -1889,7 +1925,7 @@ export default function AssetGenerationWorkspace({
                   aria-label={l('查看人物大图', 'View full-size character image')}
                   onClick={() => openImageViewer()}
                 >
-                  <img src={previewImage} alt={name || l(copy.nameZh, copy.nameEn)} />
+                  <img src={previewImage} alt={name || l(copy.nameZh, copy.nameEn)} decoding="async" />
                 </button>
                 <div className="asset-generation-workspace__preview-top-actions" aria-label={l('主图操作', 'Main image actions')}>
                   <button
@@ -1936,6 +1972,22 @@ export default function AssetGenerationWorkspace({
                     }}
                   >
                     <EyeOutlined />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!normalizeMediaFileId(selectedHistoryItem?.fileId) || Boolean(downloadingFileId)}
+                    aria-label={l('下载原图', 'Download original image')}
+                    title={normalizeMediaFileId(selectedHistoryItem?.fileId)
+                      ? l('下载原图', 'Download original image')
+                      : l('文件尚未生成，无法下载', 'The file is not ready for download')}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      void downloadPreviewImage()
+                    }}
+                  >
+                    {downloadingFileId === normalizeMediaFileId(selectedHistoryItem?.fileId)
+                      ? <Spin size="small" />
+                      : <DownloadOutlined />}
                   </button>
                   <button
                     type="button"
@@ -2245,7 +2297,7 @@ export default function AssetGenerationWorkspace({
                     onClick={() => selectLook(look.id)}
                   >
                     <span className="asset-generation-workspace__look-preview">
-                      {imageUrl ? <img src={imageUrl} alt="" /> : <PictureOutlined />}
+                      {imageUrl ? <img src={imageUrl} alt="" loading="lazy" decoding="async" /> : <PictureOutlined />}
                       {hasAssetGenerationProgress(getGenerationStateForLook(look)) && (
                         <span className="asset-generation-workspace__look-progress">
                           <AssetGenerationProgress state={getGenerationStateForLook(look)} compact />
@@ -2384,7 +2436,7 @@ export default function AssetGenerationWorkspace({
               <div className="asset-generation-workspace__description-references">
                 {previewImage && (
                   <button type="button" className="is-selected" onClick={() => openImageViewer()}>
-                    <img src={previewImage} alt={name || l(copy.nameZh, copy.nameEn)} />
+                    <img src={previewImage} alt={name || l(copy.nameZh, copy.nameEn)} decoding="async" />
                     <span>{name || l(copy.lookZh, copy.lookEn)}</span>
                   </button>
                 )}
@@ -2535,6 +2587,7 @@ export default function AssetGenerationWorkspace({
                   src={episodeLook.imageUrl}
                   alt=""
                   className="asset-generation-workspace__episode-confirm-thumb"
+                  decoding="async"
                 />
               )}
               {episodeLook?.imageUrl && lookEpisodeConfirmTarget.imageUrl && (
@@ -2547,6 +2600,7 @@ export default function AssetGenerationWorkspace({
                   src={lookEpisodeConfirmTarget.imageUrl}
                   alt=""
                   className="asset-generation-workspace__episode-confirm-thumb"
+                  decoding="async"
                 />
               )}
             </div>

@@ -101,7 +101,7 @@ import type {
   ChapterStatus,
 } from '../../../services/generated'
 import { listTaskLinksNormalized } from '../../../services/filmTaskLinks'
-import { buildFileDownloadUrl, resolveAssetUrl } from '../assets/utils'
+import { buildFileContentUrl, downloadMediaFile, resolveAssetUrl } from '../assets/utils'
 import { executeTaskCancel } from '../components/taskActionHelpers'
 import { useRelationTaskNotification } from '../components/taskNotificationHelpers'
 import { TASK_COPY } from '../components/taskCopy'
@@ -552,6 +552,7 @@ const ChapterStudio: React.FC = () => {
   const [loopCurrent, setLoopCurrent] = useState(false)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [previewVideoFileId, setPreviewVideoFileId] = useState<string | null>(null)
+  const [previewVideoDownloading, setPreviewVideoDownloading] = useState(false)
   const [isPlaying, setIsPlaying] = useState(false)
   const [videoDuration, setVideoDuration] = useState(0)
   const [videoTime, setVideoTime] = useState(0)
@@ -924,7 +925,21 @@ const ChapterStudio: React.FC = () => {
     [selectedShotIds, shots],
   )
   const currentPreviewVideoFileId = previewVideoFileId || selectedShot?.generated_video_file_id || null
-  const currentPreviewVideoUrl = currentPreviewVideoFileId ? buildFileDownloadUrl(currentPreviewVideoFileId) ?? '' : ''
+  const currentPreviewVideoUrl = currentPreviewVideoFileId ? buildFileContentUrl(currentPreviewVideoFileId) ?? '' : ''
+
+  const downloadCurrentPreviewVideo = async () => {
+    if (!currentPreviewVideoFileId || previewVideoDownloading) return
+    setPreviewVideoDownloading(true)
+    try {
+      await downloadMediaFile(currentPreviewVideoFileId)
+    } catch (error) {
+      message.error(error instanceof Error && error.message.trim()
+        ? error.message
+        : l('下载失败，请重试', 'Download failed; try again'))
+    } finally {
+      setPreviewVideoDownloading(false)
+    }
+  }
 
   useEffect(() => {
     // 切换分镜时：主预览区视频跟随分镜（清空手动选择的预览视频）
@@ -2424,11 +2439,9 @@ const ChapterStudio: React.FC = () => {
                   <Button
                     size="small"
                     icon={<DownloadOutlined />}
-                    disabled={!currentPreviewVideoFileId || !currentPreviewVideoUrl}
-                    onClick={() => {
-                      if (!currentPreviewVideoUrl) return
-                      window.open(currentPreviewVideoUrl, '_blank', 'noopener,noreferrer')
-                    }}
+                    loading={previewVideoDownloading}
+                    disabled={!currentPreviewVideoFileId || previewVideoDownloading}
+                    onClick={() => { void downloadCurrentPreviewVideo() }}
                   />
                 </Tooltip>
               </Space>
@@ -3155,6 +3168,7 @@ function Inspector(props: {
   const [frameImageTask, setFrameImageTask] = useState<RelationTaskState | null>(null)
   const [frameImageSettledTask, setFrameImageSettledTask] = useState<RelationTaskState | null>(null)
   const [generatedVideos, setGeneratedVideos] = useState<Array<{ linkId: number; fileId: string; url: string }>>([])
+  const [generatedVideoDownloadFileId, setGeneratedVideoDownloadFileId] = useState<string | null>(null)
   const [videoReadiness, setVideoReadiness] = useState<ShotVideoReadinessRead | null>(null)
   const [videoReadinessLoading, setVideoReadinessLoading] = useState(false)
   const [keyframeCards, setKeyframeCards] = useState<Record<PromptFrameType, KeyframeCardState>>({
@@ -3194,6 +3208,20 @@ function Inspector(props: {
         : null,
     onNavigate: () => undefined,
   })
+
+  const downloadGeneratedVideo = async (fileId: string) => {
+    if (!fileId || generatedVideoDownloadFileId) return
+    setGeneratedVideoDownloadFileId(fileId)
+    try {
+      await downloadMediaFile(fileId)
+    } catch (error) {
+      message.error(error instanceof Error && error.message.trim()
+        ? error.message
+        : l('下载失败，请重试', 'Download failed; try again'))
+    } finally {
+      setGeneratedVideoDownloadFileId(null)
+    }
+  }
   useRelationTaskNotification({
     task: promptTask,
     settledTask: promptSettledTask,
@@ -3332,7 +3360,7 @@ function Inspector(props: {
           .map((l) => ({
             linkId: l.id,
             fileId: String(l.file_id),
-            url: buildFileDownloadUrl(String(l.file_id)) ?? '',
+            url: buildFileContentUrl(String(l.file_id)) ?? '',
           }))
           .filter((v) => Boolean(v.url))
           .filter((v) => {
@@ -3342,7 +3370,7 @@ function Inspector(props: {
           })
         const currentId = selectedShot.generated_video_file_id?.trim() || ''
         if (currentId && !list.some((x) => x.fileId === currentId)) {
-          const currentUrl = buildFileDownloadUrl(currentId) ?? ''
+          const currentUrl = buildFileContentUrl(currentId) ?? ''
           if (currentUrl) list.unshift({ linkId: -1, fileId: currentId, url: currentUrl })
         }
         setGeneratedVideos(list)
@@ -4436,7 +4464,7 @@ function Inspector(props: {
         .map((l) => ({
           linkId: l.id,
           fileId: String(l.file_id),
-          thumbUrl: buildFileDownloadUrl(String(l.file_id)) ?? '',
+          thumbUrl: buildFileContentUrl(String(l.file_id)) ?? '',
         }))
       if (thumbs.length > 0 || i === retryCount - 1) break
       await sleep(800)
@@ -5571,10 +5599,9 @@ function Inspector(props: {
                                 <Button
                                   size="small"
                                   icon={<DownloadOutlined />}
-                                  onClick={() => {
-                                    if (!item.url) return
-                                    window.open(item.url, '_blank', 'noopener,noreferrer')
-                                  }}
+                                  loading={generatedVideoDownloadFileId === item.fileId}
+                                  disabled={!item.fileId || Boolean(generatedVideoDownloadFileId)}
+                                  onClick={() => { void downloadGeneratedVideo(item.fileId) }}
                                 />
                               </Tooltip>
                             </div>
@@ -5742,7 +5769,7 @@ function Inspector(props: {
                                 width={72}
                                 height={72}
                                 style={{ objectFit: 'cover', borderRadius: 8, border: '1px solid #e2e8f0' }}
-                                src={buildFileDownloadUrl(fid)}
+                                src={buildFileContentUrl(fid)}
                               />
                             </Tooltip>
                             <div className="mt-1">
@@ -6440,7 +6467,7 @@ function Inspector(props: {
                           width={72}
                           height={72}
                           style={{ objectFit: 'cover', borderRadius: 8 }}
-                          src={buildFileDownloadUrl(fid)}
+                          src={buildFileContentUrl(fid)}
                         />
                       ))}
                     </Image.PreviewGroup>

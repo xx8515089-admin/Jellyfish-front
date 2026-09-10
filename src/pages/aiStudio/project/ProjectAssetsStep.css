@@ -108,6 +108,19 @@
   overflow: hidden;
 }
 
+.project-assets-step__workspace-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #f4f6f8;
+  color: #667085;
+  font-size: 13px;
+}
+
 .project-assets-step__summary {
   min-height: 62px;
   margin: 12px var(--project-assets-gutter) 0;
@@ -367,6 +380,14 @@
   cursor: pointer;
   box-shadow: 0 2px 5px rgba(16, 24, 40, 0.055);
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+@supports (content-visibility: auto) {
+  .project-assets-step__card,
+  .project-assets-space-import__card {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 300px;
+  }
 }
 
 .project-assets-step__card:hover {

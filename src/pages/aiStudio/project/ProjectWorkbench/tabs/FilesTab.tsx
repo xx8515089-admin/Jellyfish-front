@@ -1,27 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Button, Card, Checkbox, Col, Empty, Modal, Pagination, Row, Space, Spin, Tag } from 'antd'
+import { Button, Card, Checkbox, Col, Empty, Modal, Pagination, Row, Space, Spin, Tag, message } from 'antd'
 import { DownloadOutlined, FileImageOutlined, VideoCameraOutlined } from '@ant-design/icons'
 import { useNavigate, useParams } from 'react-router-dom'
 import { StudioFilesService, StudioShotsService } from '../../../../../services/generated'
 import type { FileRead } from '../../../../../services/generated'
 import { DisplayImageCard } from '../../../assets/components/DisplayImageCard'
 import { useChapters } from '../hooks/useProjectData'
-import { buildFileDownloadUrl } from '../../../assets/utils'
+import { buildFileContentUrl, downloadMediaFile } from '../../../assets/utils'
 import { useBilingualText } from '../../../../../i18n/useBilingualText'
 import StudioSelect from '../../StudioSelect'
 
 const PAGE_SIZE = 10
-
-function openDownload(url: string) {
-  window.open(url, '_blank', 'noopener,noreferrer')
-}
-
-function batchOpenDownloads(urls: string[]) {
-  urls.forEach((url, i) => {
-    if (!url) return
-    setTimeout(() => window.open(url, '_blank', 'noopener,noreferrer'), i * 350)
-  })
-}
 
 export function FilesTab() {
   const navigate = useNavigate()
@@ -42,6 +31,7 @@ export function FilesTab() {
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [previewVideo, setPreviewVideo] = useState<FileRead | null>(null)
+  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(() => new Set())
 
   const selectedChapter = useMemo(
     () => chapters.find((c) => c.title === chapterTitle),
@@ -114,20 +104,56 @@ export function FilesTab() {
     })
   }
 
-  /** 展示与下载均使用 `/api/v1/studio/files/{id}/download`（由 buildFileDownloadUrl 拼接）。 */
-  const fileResourceUrl = (file: FileRead) => buildFileDownloadUrl(file.id)
+  const fileResourceUrl = (file: FileRead) => buildFileContentUrl(file.id)
 
-  const downloadOne = (file: FileRead) => {
-    const url = fileResourceUrl(file)
-    if (url) openDownload(url)
+  const showDownloadError = (error: unknown) => {
+    message.error(error instanceof Error && error.message.trim()
+      ? error.message
+      : l('下载失败，请重试', 'Download failed; try again'))
   }
 
-  const handleBatchDownload = () => {
-    const urls = Array.from(selectedIds)
-      .map((id) => buildFileDownloadUrl(id))
-      .filter((u): u is string => Boolean(u))
-    batchOpenDownloads(urls)
+  const setFileDownloading = (id: string, downloading: boolean) => {
+    setDownloadingIds((current) => {
+      const next = new Set(current)
+      if (downloading) next.add(id)
+      else next.delete(id)
+      return next
+    })
   }
+
+  const downloadOne = async (file: FileRead) => {
+    if (downloadingIds.has(file.id)) return
+    setFileDownloading(file.id, true)
+    try {
+      await downloadMediaFile(file.id)
+    } catch (error) {
+      showDownloadError(error)
+    } finally {
+      setFileDownloading(file.id, false)
+    }
+  }
+
+  const handleBatchDownload = async () => {
+    const targetIds = Array.from(selectedIds)
+    if (!targetIds.length) return
+    setDownloadingIds((current) => new Set([...current, ...targetIds]))
+    try {
+      for (const id of targetIds) {
+        try {
+          await downloadMediaFile(id)
+        } catch (error) {
+          showDownloadError(error)
+        }
+      }
+    } finally {
+      setDownloadingIds((current) => {
+        const next = new Set(current)
+        targetIds.forEach((id) => next.delete(id))
+        return next
+      })
+    }
+  }
+  const batchDownloadPending = Array.from(selectedIds).some((id) => downloadingIds.has(id))
 
   return (
     <>
@@ -136,7 +162,13 @@ export function FilesTab() {
         extra={
           <Space wrap>
             {selectedIds.size > 0 ? (
-              <Button type="primary" icon={<DownloadOutlined />} onClick={handleBatchDownload}>
+              <Button
+                type="primary"
+                icon={<DownloadOutlined />}
+                loading={batchDownloadPending}
+                disabled={batchDownloadPending}
+                onClick={() => { void handleBatchDownload() }}
+              >
                 {l(`批量下载（${selectedIds.size}）`, `Download selected (${selectedIds.size})`)}
               </Button>
             ) : null}
@@ -227,9 +259,11 @@ export function FilesTab() {
                           type="primary"
                           ghost
                           icon={<DownloadOutlined />}
+                          loading={downloadingIds.has(file.id)}
+                          disabled={downloadingIds.has(file.id)}
                           onClick={(e) => {
                             e.stopPropagation()
-                            downloadOne(file)
+                            void downloadOne(file)
                           }}
                         >
                           {l('下载', 'Download')}
@@ -268,7 +302,7 @@ export function FilesTab() {
         {previewVideo ? (
           <video
             className="w-full max-h-[70vh] bg-black rounded"
-            src={buildFileDownloadUrl(previewVideo.id)}
+            src={buildFileContentUrl(previewVideo.id)}
             controls
             playsInline
           >

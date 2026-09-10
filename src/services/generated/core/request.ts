@@ -8,6 +8,7 @@ import type { ApiResult } from './ApiResult';
 import { CancelablePromise } from './CancelablePromise';
 import type { OnCancel } from './CancelablePromise';
 import type { OpenAPIConfig } from './OpenAPI';
+import { joinApiBasePath } from '../../../config/api';
 
 export const isDefined = <T>(value: T | null | undefined): value is Exclude<T, null | undefined> => {
     return value !== undefined && value !== null;
@@ -93,7 +94,7 @@ const getUrl = (config: OpenAPIConfig, options: ApiRequestOptions): string => {
             return substring;
         });
 
-    const url = `${config.BASE}${path}`;
+    const url = joinApiBasePath(config.BASE, path);
     if (options.query) {
         return `${url}${getQueryString(options.query)}`;
     }

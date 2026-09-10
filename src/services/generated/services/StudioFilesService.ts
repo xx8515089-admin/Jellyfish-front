@@ -104,9 +104,9 @@ export class StudioFilesService {
     }): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',
-            url: '/api/v1/studio/files/{file_id}/download',
-            path: {
-                'file_id': fileId,
+            url: '/api/v1/studio/files/download',
+            query: {
+                'id': fileId,
             },
             errors: {
                 422: `Validation Error`,
