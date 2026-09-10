@@ -163,6 +163,8 @@ export type StudioStoryboardVideoReferenceOption = {
   voiceName?: string | null
   characterName?: string | null
   dubbingGenerationId?: string | number | null
+  characterCoverUrl?: string | null
+  character_cover_url?: string | null
   characterLookName?: string | null
   defaultLook?: boolean
   selected: boolean
@@ -300,11 +302,15 @@ export type StudioEpisodeStoryboardReferenceSelection = {
   references: StudioEpisodeStoryboardPromptReference[]
 }
 
+export type StudioEpisodeStoryboardSegmentSourceType = 1 | 2 | 3
+
 export type StudioEpisodeStoryboardSegment = {
   id: string
   segmentIndex: number
   title: string
   editorDescription: string
+  sourceType?: StudioEpisodeStoryboardSegmentSourceType | null
+  source_type?: StudioEpisodeStoryboardSegmentSourceType | null
   status?: number | null
   statusName?: string
   progress?: number | null
@@ -1500,6 +1506,12 @@ function normalizeStoryboardVideoReferenceOptionSource(
   return fallback
 }
 
+function normalizeStoryboardSegmentSourceType(value: unknown): StudioEpisodeStoryboardSegmentSourceType | undefined {
+  const sourceType = normalizeNumberOrNull(value)
+  if (sourceType === 1 || sourceType === 2 || sourceType === 3) return sourceType
+  return undefined
+}
+
 function normalizeStoryboardVideoReferenceOptions(
   data: unknown,
   fallbackSource: StudioStoryboardVideoReferenceOptionSource,
@@ -1556,6 +1568,7 @@ function normalizeStoryboardVideoReferenceOptions(
       voiceName: normalizeHistoryValue(item.voiceName ?? item.voice_name) ?? null,
       characterName: normalizeHistoryValue(item.characterName ?? item.character_name) ?? null,
       dubbingGenerationId: normalizeHistoryValue(item.dubbingGenerationId ?? item.dubbing_generation_id) ?? null,
+      characterCoverUrl: normalizeHistoryValue(item.characterCoverUrl ?? item.character_cover_url) ?? null,
       characterLookName: normalizeHistoryValue(item.characterLookName ?? item.character_look_name) ?? null,
       defaultLook: normalizeHistoryBoolean(item.defaultLook ?? item.default_look),
       selected: Boolean(normalizeHistoryBoolean(item.selected)),
@@ -1661,6 +1674,8 @@ function extractStoryboardSegmentRows(data: unknown): unknown[] {
   if (nestedSegment) {
     return [{
       ...nestedSegment,
+      sourceType: nestedSegment.sourceType ?? nestedSegment.source_type ?? record.sourceType ?? record.source_type,
+      source_type: nestedSegment.source_type ?? nestedSegment.sourceType ?? record.source_type ?? record.sourceType,
       shots: nestedSegment.shots ?? nestedSegment.lens ?? record.shots ?? record.lens,
     }]
   }
@@ -1685,6 +1700,7 @@ function normalizeStoryboardSegments(data: unknown): StudioEpisodeStoryboardSegm
       Math.floor(normalizeFiniteNumber(item.segmentIndex ?? item.segment_index ?? item.index) ?? (index + 1)),
     )
     const id = normalizeHistoryValue(item.id ?? item.segmentId ?? item.segment_id) ?? `segment-${segmentIndex}`
+    const sourceType = normalizeStoryboardSegmentSourceType(item.sourceType ?? item.source_type)
     return [{
       id,
       segmentIndex,
@@ -1695,6 +1711,7 @@ function normalizeStoryboardSegments(data: unknown): StudioEpisodeStoryboardSegm
           ?? item.description
           ?? item.prompt,
       ) ?? '',
+      sourceType: sourceType ?? null,
       status: normalizeNumberOrNull(item.status),
       statusName: normalizeHistoryValue(item.statusName ?? item.status_name),
       progress: normalizeNumberOrNull(item.progress),
@@ -1704,16 +1721,18 @@ function normalizeStoryboardSegments(data: unknown): StudioEpisodeStoryboardSegm
       error: normalizeHistoryValue(item.error),
       durationSeconds: normalizeNumberOrNull(item.durationSeconds ?? item.duration_seconds),
       manuallyEdited: normalizeHistoryBoolean(item.manuallyEdited ?? item.manually_edited),
-      manuallyAdded: normalizeHistoryBoolean(
-        item.manuallyAdded
-          ?? item.manually_added
-          ?? item.manualAdded
-          ?? item.manual_added
-          ?? item.createdManually
-          ?? item.created_manually
-          ?? item.insertedManually
-          ?? item.inserted_manually,
-      ),
+      manuallyAdded: sourceType !== undefined
+        ? sourceType === 2
+        : normalizeHistoryBoolean(
+          item.manuallyAdded
+            ?? item.manually_added
+            ?? item.manualAdded
+            ?? item.manual_added
+            ?? item.createdManually
+            ?? item.created_manually
+            ?? item.insertedManually
+            ?? item.inserted_manually,
+        ),
       revisionNo: normalizeNumberOrNull(item.revisionNo ?? item.revision_no),
       primaryImageId: normalizeHistoryValue(item.primaryImageId ?? item.primary_image_id) ?? null,
       coverFileId: normalizeHistoryValue(item.coverFileId ?? item.cover_file_id) ?? null,
@@ -1780,11 +1799,13 @@ function normalizeEpisodeStoryboardSegmentDetail(data: unknown): StudioEpisodeSt
   const record = asRecord(data)
   const [segment] = normalizeStoryboardSegments(data)
   const fallbackSegmentIndex = normalizeNumberOrNull(record?.segmentIndex ?? record?.segment_index) ?? 1
+  const fallbackSourceType = normalizeStoryboardSegmentSourceType(record?.sourceType ?? record?.source_type)
   const normalizedSegment: StudioEpisodeStoryboardSegment = segment ?? {
     id: normalizeHistoryValue(record?.id ?? record?.segmentId ?? record?.segment_id) ?? `segment-${fallbackSegmentIndex}`,
     segmentIndex: fallbackSegmentIndex,
     title: normalizeHistoryValue(record?.title ?? record?.name) ?? `片段-${fallbackSegmentIndex}`,
     editorDescription: normalizeHistoryValue(record?.editorDescription ?? record?.editor_description ?? record?.description) ?? '',
+    sourceType: fallbackSourceType ?? null,
     status: normalizeNumberOrNull(record?.status),
     statusName: normalizeHistoryValue(record?.statusName ?? record?.status_name),
     progress: normalizeNumberOrNull(record?.progress),
@@ -1794,16 +1815,18 @@ function normalizeEpisodeStoryboardSegmentDetail(data: unknown): StudioEpisodeSt
     error: normalizeHistoryValue(record?.error),
     durationSeconds: normalizeNumberOrNull(record?.durationSeconds ?? record?.duration_seconds),
     manuallyEdited: normalizeHistoryBoolean(record?.manuallyEdited ?? record?.manually_edited),
-    manuallyAdded: normalizeHistoryBoolean(
-      record?.manuallyAdded
-        ?? record?.manually_added
-        ?? record?.manualAdded
-        ?? record?.manual_added
-        ?? record?.createdManually
-        ?? record?.created_manually
-        ?? record?.insertedManually
-        ?? record?.inserted_manually,
-    ),
+    manuallyAdded: fallbackSourceType !== undefined
+      ? fallbackSourceType === 2
+      : normalizeHistoryBoolean(
+        record?.manuallyAdded
+          ?? record?.manually_added
+          ?? record?.manualAdded
+          ?? record?.manual_added
+          ?? record?.createdManually
+          ?? record?.created_manually
+          ?? record?.insertedManually
+          ?? record?.inserted_manually,
+      ),
     revisionNo: normalizeNumberOrNull(record?.revisionNo ?? record?.revision_no),
     primaryImageId: normalizeHistoryValue(record?.primaryImageId ?? record?.primary_image_id) ?? null,
     coverFileId: normalizeHistoryValue(record?.coverFileId ?? record?.cover_file_id) ?? null,

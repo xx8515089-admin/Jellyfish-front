@@ -28,6 +28,7 @@ import { StudioScriptsApi } from '../../../services/studioScripts'
 import type { StudioScriptImportId, StudioScriptImportListItem } from '../../../services/studioScripts'
 import { useBilingualText } from '../../../i18n/useBilingualText'
 import { clearProjectCreationDrafts } from './projectCreationDraft'
+import { loadScriptImportChapters, loadScriptImportDetail } from './scriptImportResumeCache'
 import {
   createCanvasWorkspace,
   deleteCanvasWorkspace,
@@ -75,6 +76,7 @@ type ProjectView = {
 
 const WORKFLOW_PAGE_SIZE = 10
 const CANVAS_PAGE_SIZE = 10
+const WORKFLOW_SEARCH_DEBOUNCE_MS = 300
 
 const toUIImportProject = (item: StudioScriptImportListItem): ProjectView => ({
   id: String(item.id),
@@ -126,6 +128,7 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
   const [canvasWorkspaces, setCanvasWorkspaces] = useState<CanvasWorkspace[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const searchInputRef = useRef<InputRef>(null)
   const [page, setPage] = useState(1)
@@ -140,38 +143,45 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
   const [renameForm] = Form.useForm()
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search)
+      setPage(1)
+    }, WORKFLOW_SEARCH_DEBOUNCE_MS)
+    return () => window.clearTimeout(timer)
+  }, [search])
+
+  useEffect(() => {
     if (workspaceView === 'canvas') {
       setLoading(false)
       return
     }
 
     let active = true
-
-    const loadProjects = async () => {
-      setLoading(true)
-      try {
-        const response = await StudioScriptsApi.getImports({
-          page,
-          pageSize: WORKFLOW_PAGE_SIZE,
-          keyword: search.trim() || undefined,
-        })
-        if (active) {
-          setProjects((response.items ?? []).map(toUIImportProject))
-          setTotalProjects(response.total ?? 0)
-        }
-      } catch {
-        if (active) {
-          setProjects([])
-          setTotalProjects(0)
-        }
-      } finally {
+    setLoading(true)
+    const request = StudioScriptsApi.requestImports({
+      page,
+      pageSize: WORKFLOW_PAGE_SIZE,
+      keyword: debouncedSearch.trim() || undefined,
+    })
+    void request.promise
+      .then((response) => {
+        if (!active) return
+        setProjects((response.items ?? []).map(toUIImportProject))
+        setTotalProjects(response.total ?? 0)
+      })
+      .catch(() => {
+        if (!active) return
+        setProjects([])
+        setTotalProjects(0)
+      })
+      .finally(() => {
         if (active) setLoading(false)
-      }
+      })
+    return () => {
+      active = false
+      request.cancel()
     }
-
-    void loadProjects()
-    return () => { active = false }
-  }, [page, search, workflowListRefreshToken, workspaceView])
+  }, [debouncedSearch, page, workflowListRefreshToken, workspaceView])
 
   useEffect(() => {
     if (workspaceView !== 'canvas') return
@@ -254,6 +264,11 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
 
     const scriptImport = project.scriptImport
     if (!scriptImport) return
+    // 导航不等待预取；创建页会复用同一个在途 Promise，详情和分集可并行返回。
+    void loadScriptImportDetail(scriptImport.id).catch(() => undefined)
+    if (Number(scriptImport.currentStep) >= 2) {
+      void loadScriptImportChapters(scriptImport.id).catch(() => undefined)
+    }
     navigate(`/projects/create?scriptImportId=${encodeURIComponent(String(scriptImport.id))}`, {
       state: {
         scriptImport,
@@ -353,7 +368,13 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
             </span>
           )}
           {p.coverUrl ? (
-            <img className="project-lobby-card__image" src={p.coverUrl} alt="" />
+            <img
+              className="project-lobby-card__image"
+              src={p.coverUrl}
+              alt=""
+              loading="lazy"
+              decoding="async"
+            />
           ) : (
             <div className="project-lobby-card__placeholder" aria-hidden="true">
               <ImageIcon size={28} strokeWidth={1.6} />
@@ -522,7 +543,6 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
               onFocus={() => setSearchOpen(true)}
               onChange={(event) => {
                 setSearch(event.target.value)
-                setPage(1)
               }}
               onBlur={() => {
                 if (!search) setSearchOpen(false)

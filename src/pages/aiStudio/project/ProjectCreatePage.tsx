@@ -1,10 +1,11 @@
 import type React from 'react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Input, message, Modal, Spin, theme, Tooltip } from 'antd'
 import {
   ArrowRightOutlined,
   CloseOutlined,
   FileAddOutlined,
+  LockOutlined,
   StarFilled,
   PlusOutlined,
   StopOutlined,
@@ -12,6 +13,7 @@ import {
 import { useLocation, useNavigate } from 'react-router-dom'
 import { getStoredAuthUser } from '../../../auth'
 import { getApiErrorMessage } from '../../../services/apiErrors'
+import { StudioChaptersService } from '../../../services/generated'
 import { StudioScriptsApi } from '../../../services/studioScripts'
 import {
   StudioAssetGenerationApi,
@@ -31,16 +33,26 @@ import type {
 } from '../../../services/studioScripts'
 import { StudioStylesApi } from '../../../services/studioStyles'
 import type { StudioStyleOption } from '../../../services/studioStyles'
+import {
+  STUDIO_EPISODE_IMPORT_TEXT_MAX_LENGTH,
+  STUDIO_EPISODE_TEXT_MAX_LENGTH,
+  STUDIO_SCRIPT_TEXT_MAX_LENGTH,
+  clampStudioEpisodeImportText,
+  clampStudioEpisodeText,
+  clampStudioScriptText,
+} from '../../../services/studioScriptTextContract'
 import { useAppStore } from '../../../store/useAppStore'
 import { useBilingualText } from '../../../i18n/useBilingualText'
 import { useStudioStyleOptions } from './useStudioStyleOptions'
 import CustomStyleModal from './CustomStyleModal'
 import type { CustomStyleDraft } from './CustomStyleModal'
-import ProjectAssetsStep from './ProjectAssetsStep'
-import ProjectClipEditingStep, { type ClipDraft } from './ProjectClipEditingStep'
+import LongTextEditor, { type LongTextEditorHandle } from './LongTextEditor'
+import type { ClipDraft } from './ProjectClipEditingStep'
+import { schedulePollWhenVisible, type PollTimerCancel } from './assetBatchGenerationPolling'
 import { resolveAssetUrl } from '../assets/utils'
 import {
   PROJECT_CREATION_DRAFT_KEYS,
+  PROJECT_CREATION_DRAFT_DELAY_MS,
   clearProjectCreationDrafts,
   holdProjectCreationDraftWrites,
   readFullProjectCreationDraft,
@@ -58,9 +70,12 @@ import {
 } from './scriptImportResumeCache'
 import './ProjectCreatePage.css'
 
+const loadProjectAssetsStep = () => import('./ProjectAssetsStep')
+const loadProjectClipEditingStep = () => import('./ProjectClipEditingStep')
+const ProjectAssetsStep = lazy(loadProjectAssetsStep)
+const ProjectClipEditingStep = lazy(loadProjectClipEditingStep)
+
 const MAX_NAME_LENGTH = 100
-const MAX_SCRIPT_LENGTH = 200_000
-const MAX_EPISODE_LENGTH = 50_000
 const RECOMMENDED_SCRIPT_LENGTH = 50
 const FALLBACK_RATIOS = ['9:16', '4:3', '16:9', '3:4', '1:1', '21:9']
 const SCRIPT_IMPORT_ACCEPT = '.txt,.md,.doc,.docx'
@@ -74,6 +89,7 @@ type EpisodeDraft = {
   id: string
   title: string
   rawText: string
+  canEdit?: boolean
 }
 type ProjectCreateDraft = {
   currentStep: number
@@ -225,16 +241,51 @@ const toEpisodeDrafts = (
   getFallbackTitle: (episodeNumber: number) => string,
 ): EpisodeDraft[] => chapters.map((chapter, index) => ({
   id: String(chapter.id ?? createId(`script_import_chapter_${index + 1}`)),
-  title: chapter.title?.trim()
+  title: (chapter.title?.trim()
     || chapter.chapterTitle?.trim()
     || chapter.chapter_title?.trim()
-    || getFallbackTitle(index + 1),
-  rawText: chapter.rawText
+    || getFallbackTitle(index + 1)).slice(0, MAX_NAME_LENGTH),
+  rawText: clampStudioEpisodeText(chapter.rawText
     ?? chapter.raw_text
     ?? chapter.content
     ?? chapter.text
-    ?? '',
+    ?? ''),
+  ...(typeof (chapter.canEdit ?? chapter.can_edit) === 'boolean'
+    ? { canEdit: chapter.canEdit ?? chapter.can_edit ?? undefined }
+    : {}),
 }))
+
+const normalizeRestoredEpisodeDrafts = (
+  source: unknown,
+  getFallbackTitle: (episodeNumber: number) => string,
+): EpisodeDraft[] => {
+  if (!Array.isArray(source)) return []
+  return source.flatMap((candidate, index) => {
+    if (!candidate || typeof candidate !== 'object') return []
+    const episode = candidate as Partial<EpisodeDraft>
+    const title = typeof episode.title === 'string' && episode.title.trim()
+      ? episode.title
+      : getFallbackTitle(index + 1)
+    return [{
+      id: typeof episode.id === 'string' && episode.id
+        ? episode.id
+        : createId(`restored_episode_${index + 1}`),
+      title: title.slice(0, MAX_NAME_LENGTH),
+      rawText: clampStudioEpisodeText(
+        typeof episode.rawText === 'string' ? episode.rawText : '',
+      ),
+      ...(typeof episode.canEdit === 'boolean' ? { canEdit: episode.canEdit } : {}),
+    }]
+  })
+}
+
+const getEpisodeSaveSignature = (episode: Pick<EpisodeDraft, 'title' | 'rawText'>) => (
+  `${episode.title}\n${episode.rawText}`
+)
+
+const createEpisodeSaveSignatures = (episodes: EpisodeDraft[]) => new Map(
+  episodes.map((episode) => [episode.id, getEpisodeSaveSignature(episode)]),
+)
 
 const toManualScriptFileName = (title: string) => {
   const safeTitle = title.trim().replace(/[\\/:*?"<>|]+/g, '_').slice(0, 60)
@@ -517,27 +568,33 @@ const clearStoryboardRestorePointSnapshot = () => {
 const mergeStoryboardSegment = (
   current: StudioEpisodeStoryboardEditorResult['segments'][number],
   next: StudioEpisodeStoryboardEditorResult['segments'][number],
-) => ({
-  ...current,
-  ...next,
-  title: next.title.trim() ? next.title : current.title,
-  editorDescription: next.editorDescription.trim() ? next.editorDescription : current.editorDescription,
-  status: next.status ?? current.status,
-  statusName: next.statusName ?? current.statusName,
-  progress: next.progress ?? current.progress,
-  taskId: next.taskId ?? current.taskId,
-  shouldPoll: next.shouldPoll ?? current.shouldPoll,
-  canEdit: next.canEdit ?? current.canEdit,
-  error: next.error ?? current.error,
-  durationSeconds: next.durationSeconds ?? current.durationSeconds,
-  manuallyEdited: next.manuallyEdited ?? current.manuallyEdited,
-  manuallyAdded: next.manuallyAdded ?? current.manuallyAdded,
-  revisionNo: next.revisionNo ?? current.revisionNo,
-  primaryImageId: next.primaryImageId ?? current.primaryImageId,
-  coverFileId: next.coverFileId ?? current.coverFileId,
-  coverUrl: next.coverUrl ?? current.coverUrl,
-  shots: next.shots.length > 0 ? next.shots : current.shots,
-})
+) => {
+  const sourceType = next.sourceType ?? current.sourceType
+  return {
+    ...current,
+    ...next,
+    title: next.title.trim() ? next.title : current.title,
+    editorDescription: next.editorDescription.trim() ? next.editorDescription : current.editorDescription,
+    status: next.status ?? current.status,
+    statusName: next.statusName ?? current.statusName,
+    progress: next.progress ?? current.progress,
+    taskId: next.taskId ?? current.taskId,
+    shouldPoll: next.shouldPoll ?? current.shouldPoll,
+    canEdit: next.canEdit ?? current.canEdit,
+    sourceType,
+    error: next.error ?? current.error,
+    durationSeconds: next.durationSeconds ?? current.durationSeconds,
+    manuallyEdited: next.manuallyEdited ?? current.manuallyEdited,
+    manuallyAdded: sourceType === null || sourceType === undefined
+      ? next.manuallyAdded ?? current.manuallyAdded
+      : sourceType === 2,
+    revisionNo: next.revisionNo ?? current.revisionNo,
+    primaryImageId: next.primaryImageId ?? current.primaryImageId,
+    coverFileId: next.coverFileId ?? current.coverFileId,
+    coverUrl: next.coverUrl ?? current.coverUrl,
+    shots: next.shots.length > 0 ? next.shots : current.shots,
+  }
+}
 
 const mergeStoryboardSegments = (
   previous: StudioEpisodeStoryboardEditorResult['segments'],
@@ -590,7 +647,10 @@ const storyboardSegmentsToClipDrafts = (result: StudioEpisodeStoryboardEditorRes
       prompt: description,
       imageUrl: resolveAssetUrl(coverSource) ?? '',
       revisionNo: segment.revisionNo ?? null,
-      manuallyAdded: segment.manuallyAdded ?? false,
+      sourceType: segment.sourceType ?? null,
+      manuallyAdded: segment.sourceType === null || segment.sourceType === undefined
+        ? segment.manuallyAdded
+        : segment.sourceType === 2,
     }
   })
 }
@@ -606,6 +666,8 @@ const ProjectCreatePage: React.FC = () => {
   const apiQuotaText = hasUnlimitedApiQuota ? '∞' : apiQuota.toLocaleString()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const episodeImportInputRef = useRef<HTMLInputElement>(null)
+  const scriptEditorRef = useRef<LongTextEditorHandle>(null)
+  const episodeImportEditorRef = useRef<LongTextEditorHandle>(null)
   const persistDraftOnUnmountRef = useRef(true)
   const projectDraftPersistEnabledRef = useRef(false)
   const basicInfoSubmissionRef = useRef(false)
@@ -617,7 +679,7 @@ const ProjectCreatePage: React.FC = () => {
   const workflowNavigationRevisionRef = useRef(0)
   const storyboardEditorRequestRef = useRef<StudioAssetImageTaskRequest<StudioEpisodeStoryboardEditorResult> | null>(null)
   const storyboardDetailRequestsRef = useRef(new Map<string, StudioAssetImageTaskRequest<StudioEpisodeStoryboardEditorResult>>())
-  const storyboardDetailTimerRef = useRef<number | null>(null)
+  const storyboardDetailTimerRef = useRef<PollTimerCancel | null>(null)
   const assetConfirmRequestRef = useRef<StudioAssetImageTaskRequest<StudioEpisodeAssetsConfirmResult> | null>(null)
   const [resumePayload] = useState<ProjectCreateRouteState | null>(() => {
     const candidate = location.state as ProjectCreateRouteState | null
@@ -670,7 +732,10 @@ const ProjectCreatePage: React.FC = () => {
       ?? persistedStoryboardRestorePoint?.runId
       ?? resumeStoryboardRestorePoint.runId,
   }
-  const restoredDraftExpectedScriptLength = Math.max(0, Number(restoredDraft?.scriptLength) || 0)
+  const restoredDraftExpectedScriptLength = Math.min(
+    STUDIO_SCRIPT_TEXT_MAX_LENGTH,
+    Math.max(0, Number(restoredDraft?.scriptLength) || 0),
+  )
   const restoredDraftExpectedEpisodeCount = Math.max(
     0,
     Number(restoredDraft?.episodeCount) || (
@@ -690,7 +755,12 @@ const ProjectCreatePage: React.FC = () => {
       resumeChapters,
       (episodeNumber) => l(`第${episodeNumber}集`, `Episode ${episodeNumber}`),
     )
-    : shouldRestoreProjectDraft && Array.isArray(restoredDraft?.episodes) ? restoredDraft.episodes : []
+    : shouldRestoreProjectDraft
+      ? normalizeRestoredEpisodeDrafts(
+        restoredDraft?.episodes,
+        (episodeNumber) => l(`第${episodeNumber}集`, `Episode ${episodeNumber}`),
+      )
+      : []
   const restoredStep = Math.min(3, Math.max(0, Number(restoredDraft?.currentStep) || 0))
   const [currentStep, setCurrentStep] = useState(() => resumeSnapshot
     ? Math.max(
@@ -716,7 +786,7 @@ const ProjectCreatePage: React.FC = () => {
   const assetCompletionRequestRef = useRef<StudioAssetImageTaskRequest<StudioEpisodeAssetsGenerateStatusResult> | null>(null)
   const cancelStoryboardDetailPolling = useCallback(() => {
     if (storyboardDetailTimerRef.current !== null) {
-      window.clearTimeout(storyboardDetailTimerRef.current)
+      storyboardDetailTimerRef.current()
       storyboardDetailTimerRef.current = null
     }
     storyboardDetailRequestsRef.current.forEach((request) => request.cancel())
@@ -740,6 +810,11 @@ const ProjectCreatePage: React.FC = () => {
   useEffect(() => {
     if (currentStep !== 3 && stepsExpanded) setStepsExpanded(false)
   }, [currentStep, stepsExpanded])
+  useEffect(() => {
+    // 在用户停留于上一阶段时预取下一阶段代码，避免把大组件塞进第一步首屏包。
+    if (currentStep === 1) void loadProjectAssetsStep()
+    if (currentStep === 2) void loadProjectClipEditingStep()
+  }, [currentStep])
   const [scriptImportId, setScriptImportId] = useState<StudioScriptImportId | null>(
     resumeSnapshot?.id ?? resumeImportId ?? (shouldRestoreProjectDraft ? restoredDraft?.scriptImportId : null) ?? null,
   )
@@ -749,17 +824,23 @@ const ProjectCreatePage: React.FC = () => {
       ?? null,
   )
   const [name, setName] = useState(
-    resumeSnapshot ? resumeSnapshot.title ?? '' : shouldRestoreProjectDraft ? restoredDraft?.name ?? '' : '',
+    (resumeSnapshot ? resumeSnapshot.title ?? '' : shouldRestoreProjectDraft ? restoredDraft?.name ?? '' : '')
+      .slice(0, MAX_NAME_LENGTH),
   )
-  const [script, setScript] = useState(
+  const [script, setScript] = useState(() => clampStudioScriptText(
     resumeSnapshot ? resumeSnapshot.rawText ?? '' : shouldRestoreProjectDraft ? restoredDraft?.script ?? '' : '',
-  )
+  ))
+  const episodeSavedSignaturesRef = useRef(createEpisodeSaveSignatures(restoredEpisodes))
   const [episodes, setEpisodes] = useState<EpisodeDraft[]>(restoredEpisodes)
   const [activeEpisodeIndex, setActiveEpisodeIndex] = useState(() =>
     Math.min(
       Math.max(0, shouldRestoreProjectDraft ? restoredDraft?.activeEpisodeIndex ?? 0 : 0),
       Math.max(0, restoredEpisodes.length - 1),
     ))
+  const [savingEpisodeId, setSavingEpisodeId] = useState<string | null>(null)
+  const rememberSavedEpisodes = useCallback((nextEpisodes: EpisodeDraft[]) => {
+    episodeSavedSignaturesRef.current = createEpisodeSaveSignatures(nextEpisodes)
+  }, [])
   const [ratio, setRatio] = useState(
     resumeSnapshot ? resumeSnapshot.videoRatio ?? '9:16' : shouldRestoreProjectDraft ? restoredDraft?.ratio ?? '9:16' : '9:16',
   )
@@ -946,11 +1027,41 @@ const ProjectCreatePage: React.FC = () => {
   const flushProjectDraft = useProjectCreationDraft(
     PROJECT_CREATION_DRAFT_KEYS.project,
     projectDraft,
-    350,
+    PROJECT_CREATION_DRAFT_DELAY_MS,
     projectDraftPersistEnabledRef,
     compactProjectDraft,
     handleFullDraftWriteSettled,
   )
+  const flushProjectDraftAfterScriptCommitRef = useRef(false)
+  const previousWorkflowStepRef = useRef(currentStep)
+  const commitScriptEditorValue = useCallback((nextValue: string) => {
+    const normalizedValue = clampStudioScriptText(nextValue)
+    setScript((current) => current === normalizedValue ? current : normalizedValue)
+  }, [])
+  const handleScriptEditorFlush = useCallback((nextValue: string) => {
+    const normalizedValue = clampStudioScriptText(nextValue)
+    if (latestProjectDraftRef.current.script === normalizedValue) {
+      flushProjectDraft()
+      return
+    }
+    flushProjectDraftAfterScriptCommitRef.current = true
+    setScript(normalizedValue)
+  }, [flushProjectDraft])
+  const flushScriptEditor = useCallback(() => (
+    scriptEditorRef.current?.flush() ?? clampStudioScriptText(script)
+  ), [script])
+
+  useEffect(() => {
+    if (!flushProjectDraftAfterScriptCommitRef.current) return
+    flushProjectDraftAfterScriptCommitRef.current = false
+    flushProjectDraft()
+  }, [flushProjectDraft, script])
+
+  useEffect(() => {
+    if (previousWorkflowStepRef.current === currentStep) return
+    previousWorkflowStepRef.current = currentStep
+    flushProjectDraft()
+  }, [currentStep, flushProjectDraft])
 
   useEffect(() => {
     if (
@@ -1003,23 +1114,10 @@ const ProjectCreatePage: React.FC = () => {
           return
         }
 
-        const nextEpisodes = Array.isArray(fullDraft.episodes)
-          ? fullDraft.episodes.flatMap((episode, index) => {
-            if (!episode || typeof episode !== 'object') return []
-            const id = typeof episode.id === 'string' && episode.id
-              ? episode.id
-              : createId(`restored_episode_${index + 1}`)
-            return [{
-              id,
-              title: typeof episode.title === 'string'
-                ? episode.title.slice(0, MAX_NAME_LENGTH)
-                : `第${index + 1}集`,
-              rawText: typeof episode.rawText === 'string'
-                ? episode.rawText.slice(0, MAX_EPISODE_LENGTH)
-                : '',
-            }]
-          })
-          : []
+        const nextEpisodes = normalizeRestoredEpisodeDrafts(
+          fullDraft.episodes,
+          (episodeNumber) => `第${episodeNumber}集`,
+        )
         const nextScriptImportId = (
           typeof fullDraft.scriptImportId === 'number' && Number.isFinite(fullDraft.scriptImportId)
         ) || (
@@ -1037,9 +1135,9 @@ const ProjectCreatePage: React.FC = () => {
         const nextName = typeof fullDraft.name === 'string'
           ? fullDraft.name.slice(0, MAX_NAME_LENGTH)
           : ''
-        const nextScript = typeof fullDraft.script === 'string'
-          ? fullDraft.script.slice(0, MAX_SCRIPT_LENGTH)
-          : ''
+        const nextScript = clampStudioScriptText(
+          typeof fullDraft.script === 'string' ? fullDraft.script : '',
+        )
         const nextImportedFileName = typeof fullDraft.importedFileName === 'string'
           ? fullDraft.importedFileName
           : ''
@@ -1079,6 +1177,7 @@ const ProjectCreatePage: React.FC = () => {
         setAiModelId(nextAiModelId)
         setName(nextName)
         setScript(nextScript)
+        rememberSavedEpisodes(nextEpisodes)
         setEpisodes(nextEpisodes)
         setActiveEpisodeIndex(nextActiveEpisodeIndex)
         setRatio(typeof fullDraft.ratio === 'string' && FALLBACK_RATIOS.includes(fullDraft.ratio)
@@ -1115,6 +1214,7 @@ const ProjectCreatePage: React.FC = () => {
     restoredDraftExpectedEpisodeCount,
     restoredDraftExpectedScriptLength,
     restoredDraftNeedsFullHydration,
+    rememberSavedEpisodes,
     shouldRestoreProjectDraft,
   ])
 
@@ -1254,7 +1354,7 @@ const ProjectCreatePage: React.FC = () => {
       .then((detail) => {
         if (!active) return
         const restoredImportId = detail.id ?? resumeImportId
-        const restoredScript = (detail.rawText ?? '').slice(0, MAX_SCRIPT_LENGTH)
+        const restoredScript = clampStudioScriptText(detail.rawText ?? '')
         const restoredFileName = detail.fileName?.trim() || resumeImport?.sourceFileName?.trim() || ''
         const restoredFileType = detail.fileType?.trim() || getScriptFileType(restoredFileName)
         const restoredCreationStep = Math.max(
@@ -1357,6 +1457,7 @@ const ProjectCreatePage: React.FC = () => {
           chapters,
           (episodeNumber) => l(`第${episodeNumber}集`, `Episode ${episodeNumber}`),
         )
+        rememberSavedEpisodes(nextEpisodes)
         setEpisodes(nextEpisodes)
         setActiveEpisodeIndex(0)
         if (!nextEpisodes.length) {
@@ -1378,6 +1479,7 @@ const ProjectCreatePage: React.FC = () => {
     currentStep,
     episodes.length,
     l,
+    rememberSavedEpisodes,
     restoringBasicInfo,
     restoringLocalDraft,
     scriptImportId,
@@ -1489,12 +1591,15 @@ const ProjectCreatePage: React.FC = () => {
     scriptImportId,
   ])
 
-  const scriptLength = script.length
   const activeEpisode = episodes[activeEpisodeIndex]
+  const activeEpisodeCanEdit = activeEpisode?.canEdit === true
+  const activeEpisodeLocked = Boolean(activeEpisode && !activeEpisodeCanEdit)
+  const activeEpisodeSaving = activeEpisode ? savingEpisodeId === activeEpisode.id : false
   const assetStepEpisodes = useMemo(() => (assetEpisodes ?? []).map((assetEpisode, index) => {
     const sourceEpisode = episodes[assetEpisode.index - 1]
       ?? episodes.find((episode) => String(episode.id) === String(assetEpisode.id))
       ?? episodes[index]
+    const canEdit = sourceEpisode?.canEdit ?? assetEpisode.canEdit ?? assetEpisode.can_edit
     return {
       id: String(assetEpisode.id),
       index: assetEpisode.index,
@@ -1502,6 +1607,7 @@ const ProjectCreatePage: React.FC = () => {
         || sourceEpisode?.title
         || l(`第${assetEpisode.index}集`, `Episode ${assetEpisode.index}`),
       rawText: sourceEpisode?.rawText ?? '',
+      ...(typeof canEdit === 'boolean' ? { canEdit } : {}),
     }
   }), [assetEpisodes, episodes, l])
   const selectedAssetEpisodeId = assetStepScope && assetStepScope !== 'overview'
@@ -1526,6 +1632,7 @@ const ProjectCreatePage: React.FC = () => {
           ? l(`第${storyboardEpisodeIndex}集`, `Episode ${storyboardEpisodeIndex}`)
           : l('第1集', 'Episode 1')),
       rawText: sourceEpisode?.rawText ?? activeEpisode?.rawText ?? '',
+      ...(typeof sourceEpisode?.canEdit === 'boolean' ? { canEdit: sourceEpisode.canEdit } : {}),
     }]
   }, [
     activeEpisode,
@@ -1537,6 +1644,124 @@ const ProjectCreatePage: React.FC = () => {
     storyboardTargetEpisodeId,
   ])
   const storyboardClips = useMemo(() => storyboardSegmentsToClipDrafts(storyboardEditor), [storyboardEditor])
+
+  const markEpisodeContentChanged = useCallback((changedScriptImportId: StudioScriptImportId) => {
+    chapterMutationRevisionRef.current += 1
+    assetExtractionStartedRef.current = false
+    assetEstimateRequestRevisionRef.current += 1
+    clearStoryboardRestorePoint()
+    StudioScriptsApi.invalidateAssetExtractEstimate(changedScriptImportId)
+    setAssetExtractEstimate(null)
+    setAssetExtractEstimateLoading(false)
+    setAssetExtractEstimateError(undefined)
+    setAssetExtractEstimateRetryToken((current) => current + 1)
+    setAssetEpisodes(null)
+    setAssetEpisodesError(undefined)
+  }, [clearStoryboardRestorePoint])
+
+  const primeSavedEpisode = useCallback((
+    changedScriptImportId: StudioScriptImportId,
+    savedEpisode: EpisodeDraft,
+  ) => {
+    const cachedDetail = readCachedScriptImportDetail(changedScriptImportId)
+    const sourceChapters = readCachedScriptImportChapters(changedScriptImportId)
+      ?? cachedDetail?.chapters
+    const nextChapters = Array.isArray(sourceChapters)
+      ? sourceChapters.map((chapter) => (
+        String(chapter.id ?? '') === savedEpisode.id
+          ? {
+            ...chapter,
+            title: savedEpisode.title,
+            rawText: savedEpisode.rawText,
+            raw_text: savedEpisode.rawText,
+            canEdit: savedEpisode.canEdit,
+          }
+          : chapter
+      ))
+      : undefined
+    if (nextChapters) {
+      primeScriptImportChapters(changedScriptImportId, nextChapters)
+    }
+    if (cachedDetail) {
+      primeScriptImportDetail(changedScriptImportId, {
+        ...cachedDetail,
+        chapters: nextChapters ?? cachedDetail.chapters,
+      })
+    }
+  }, [])
+
+  const saveEpisodeDraft = useCallback(async (episode?: EpisodeDraft | null) => {
+    if (!episode || episode.canEdit !== true) return true
+
+    const savedEpisode: EpisodeDraft = {
+      ...episode,
+      title: episode.title.trim().slice(0, MAX_NAME_LENGTH),
+      rawText: clampStudioEpisodeText(episode.rawText),
+    }
+    if (!savedEpisode.title) {
+      message.warning(l('请输入分集标题', 'Enter the episode title'))
+      return false
+    }
+    if (!savedEpisode.rawText.trim()) {
+      message.warning(l('请输入本集剧本内容', 'Enter this episode script'))
+      return false
+    }
+
+    const requestSignature = getEpisodeSaveSignature(episode)
+    const signature = getEpisodeSaveSignature(savedEpisode)
+    if (episodeSavedSignaturesRef.current.get(savedEpisode.id) === signature) return true
+
+    setSavingEpisodeId(savedEpisode.id)
+    try {
+      await StudioChaptersService.updateChapterApiV1StudioChaptersChapterIdPatch({
+        chapterId: savedEpisode.id,
+        requestBody: {
+          title: savedEpisode.title,
+          raw_text: savedEpisode.rawText,
+        },
+      })
+      episodeSavedSignaturesRef.current.set(savedEpisode.id, signature)
+      setEpisodes((current) => current.map((item) => {
+        if (item.id !== savedEpisode.id) return item
+        const currentSignature = getEpisodeSaveSignature(item)
+        return currentSignature === requestSignature || currentSignature === signature
+          ? { ...item, title: savedEpisode.title, rawText: savedEpisode.rawText }
+          : item
+      }))
+      if (scriptImportId !== null) {
+        primeSavedEpisode(scriptImportId, savedEpisode)
+        markEpisodeContentChanged(scriptImportId)
+      }
+      message.success(l('分集已保存', 'Episode saved'))
+      return true
+    } catch (error) {
+      message.error(getApiErrorMessage(error, l('分集保存失败', 'Failed to save episode')))
+      return false
+    } finally {
+      setSavingEpisodeId((current) => current === savedEpisode.id ? null : current)
+    }
+  }, [l, markEpisodeContentChanged, primeSavedEpisode, scriptImportId])
+
+  const saveActiveEpisode = useCallback(() => saveEpisodeDraft(activeEpisode), [
+    activeEpisode,
+    saveEpisodeDraft,
+  ])
+
+  const handleActiveEpisodeTitleChange = useCallback((value: string) => {
+    setEpisodes((current) => current.map((episode, index) => {
+      if (index !== activeEpisodeIndex || episode.canEdit !== true) return episode
+      const title = value.slice(0, MAX_NAME_LENGTH)
+      return episode.title === title ? episode : { ...episode, title }
+    }))
+  }, [activeEpisodeIndex])
+
+  const handleActiveEpisodeTextChange = useCallback((value: string) => {
+    setEpisodes((current) => current.map((episode, index) => {
+      if (index !== activeEpisodeIndex || episode.canEdit !== true) return episode
+      const rawText = clampStudioEpisodeText(value)
+      return episode.rawText === rawText ? episode : { ...episode, rawText }
+    }))
+  }, [activeEpisodeIndex])
 
   useEffect(() => {
     setAssetCompletionCheckPending(false)
@@ -1643,7 +1868,7 @@ const ProjectCreatePage: React.FC = () => {
     const pollStoryboardRunDetail = () => {
       if (!active) return
       if (storyboardDetailTimerRef.current !== null) {
-        window.clearTimeout(storyboardDetailTimerRef.current)
+        storyboardDetailTimerRef.current()
         storyboardDetailTimerRef.current = null
       }
       const requestKey = `run:${String(storyboardRunId)}`
@@ -1663,7 +1888,8 @@ const ProjectCreatePage: React.FC = () => {
             return
           }
           if (shouldPollStoryboardRun(detail)) {
-            storyboardDetailTimerRef.current = window.setTimeout(() => {
+            storyboardDetailTimerRef.current = schedulePollWhenVisible(() => {
+              storyboardDetailTimerRef.current = null
               pollStoryboardRunDetail()
             }, STORYBOARD_POLL_INTERVAL_MS)
             return
@@ -1730,7 +1956,8 @@ const ProjectCreatePage: React.FC = () => {
       const parsedFileType = parsed.fileType?.trim() || getScriptFileType(parsedFileName)
       setImportedFileName(parsedFileName)
       setImportedFileType(parsedFileType)
-      setScript(parsedText.slice(0, MAX_SCRIPT_LENGTH))
+      const normalizedScript = clampStudioScriptText(parsedText)
+      setScript(normalizedScript)
       setScriptImportId(parsed.id ?? null)
       setAiModelId(getScriptAiModelId(parsed))
       clearStoryboardRestorePoint()
@@ -1744,7 +1971,7 @@ const ProjectCreatePage: React.FC = () => {
           id: parsed.id,
           fileName: parsedFileName,
           fileType: parsedFileType,
-          rawText: parsedText.slice(0, MAX_SCRIPT_LENGTH),
+          rawText: normalizedScript,
         })
         invalidateScriptImportChapters(parsed.id)
       }
@@ -1790,16 +2017,17 @@ const ProjectCreatePage: React.FC = () => {
 
   const basicInfoFileName = importedFileName.trim() || toManualScriptFileName(name)
   const basicInfoFileType = importedFileType.trim() || getScriptFileType(basicInfoFileName)
-  const hasBasicInfoContent = Boolean(
-    name.trim()
-    || script.length
-    || importedFileName.trim()
-    || scriptImportId !== null
-  )
-  const hasUnsavedBasicInfo = (hasBasicInfoContent && basicInfoTouched)
+  const hasUnsavedBasicInfo = (scriptText: string) => (
+    (Boolean(
+      name.trim()
+      || scriptText.length
+      || importedFileName.trim()
+      || scriptImportId !== null
+    ) && (basicInfoTouched || basicInfoTouchedRef.current))
     || (restoredDraftNeedsFullHydration && (restoringLocalDraft || localDraftRestoreFailed))
+  )
 
-  const validateBasicInfo = () => {
+  const validateBasicInfo = (scriptText: string) => {
     if (restoringLocalDraft) {
       message.info(l('正在恢复本地草稿，请稍候', 'The local draft is still being restored'))
       return false
@@ -1824,7 +2052,7 @@ const ProjectCreatePage: React.FC = () => {
       message.warning(l('请输入作品名称', 'Enter a project name'))
       return false
     }
-    if (!script.trim()) {
+    if (!scriptText.trim()) {
       message.warning(l('请输入剧本原文', 'Enter the script'))
       return false
     }
@@ -1843,27 +2071,27 @@ const ProjectCreatePage: React.FC = () => {
     return true
   }
 
-  const buildBasicInfoConfirmRequest = () => {
+  const buildBasicInfoConfirmRequest = (scriptText: string) => {
     return {
       id: scriptImportId,
       fileName: basicInfoFileName,
       fileType: basicInfoFileType,
       title: name.trim(),
       videoRatio: ratio,
-      rawText: script,
+      rawText: clampStudioScriptText(scriptText),
       targetMarket,
       visualStyleId: selectedVisualStyleId,
       toneStyleId: selectedToneStyleId,
     }
   }
 
-  const buildBasicInfoSaveRequest = () => {
+  const buildBasicInfoSaveRequest = (scriptText: string) => {
     return {
       id: scriptImportId,
       sourceFileName: basicInfoFileName,
       fileType: basicInfoFileType,
       title: name.trim(),
-      rawText: script,
+      rawText: clampStudioScriptText(scriptText),
       videoRatio: ratio,
       targetMarket,
       visualStyleId: selectedVisualStyleId,
@@ -1872,7 +2100,9 @@ const ProjectCreatePage: React.FC = () => {
   }
 
   const handleEnterEpisodes = async () => {
-    if (basicInfoSubmissionRef.current || !validateBasicInfo()) return
+    if (basicInfoSubmissionRef.current) return
+    const latestScriptText = flushScriptEditor()
+    if (!validateBasicInfo(latestScriptText)) return
 
     basicInfoSubmissionRef.current = true
     setSubmitting(true)
@@ -1880,7 +2110,7 @@ const ProjectCreatePage: React.FC = () => {
     let requestStage: 'confirm' | 'chapters' = 'confirm'
     try {
       const submissionEditRevision = basicInfoEditRevisionRef.current
-      const requestBody = buildBasicInfoConfirmRequest()
+      const requestBody = buildBasicInfoConfirmRequest(latestScriptText)
       const reusableConfirmation = confirmedBasicInfoRef.current?.editRevision === submissionEditRevision
         ? confirmedBasicInfoRef.current
         : null
@@ -1905,7 +2135,7 @@ const ProjectCreatePage: React.FC = () => {
           fileName: confirmed.fileName?.trim() || requestBody.fileName,
           fileType: confirmed.fileType?.trim() || requestBody.fileType,
           title: confirmed.title ?? requestBody.title,
-          rawText: (confirmed.rawText ?? requestBody.rawText).slice(0, MAX_SCRIPT_LENGTH),
+          rawText: clampStudioScriptText(confirmed.rawText ?? requestBody.rawText),
           videoRatio: confirmed.videoRatio ?? requestBody.videoRatio,
           targetMarket: confirmed.targetMarket ?? requestBody.targetMarket,
           visualStyleId: hasOwnNullableField(confirmed, 'visualStyleId')
@@ -1975,6 +2205,7 @@ const ProjectCreatePage: React.FC = () => {
         chapters,
         (episodeNumber) => l(`第${episodeNumber}集`, `Episode ${episodeNumber}`),
       )
+      rememberSavedEpisodes(nextEpisodes)
       setEpisodes(nextEpisodes)
       setActiveEpisodeIndex(0)
       setRestoringImport(false)
@@ -2046,13 +2277,15 @@ const ProjectCreatePage: React.FC = () => {
   }
 
   const handleSaveAndExit = async () => {
-    if (basicInfoSubmissionRef.current || !validateBasicInfo()) return
+    if (basicInfoSubmissionRef.current) return
+    const latestScriptText = flushScriptEditor()
+    if (!validateBasicInfo(latestScriptText)) return
 
     basicInfoSubmissionRef.current = true
     setSubmitting(true)
     clearStoryboardRestorePoint()
     try {
-      const requestBody = buildBasicInfoSaveRequest()
+      const requestBody = buildBasicInfoSaveRequest(latestScriptText)
       const saved = await StudioScriptsApi.saveBasicInfo(requestBody)
       const persistedId = saved?.id ?? scriptImportId
       if (persistedId === null || persistedId === undefined) {
@@ -2070,7 +2303,7 @@ const ProjectCreatePage: React.FC = () => {
         fileName: saved?.fileName?.trim() || requestBody.sourceFileName,
         fileType: saved?.fileType ?? requestBody.fileType,
         title: saved?.title ?? requestBody.title,
-        rawText: (saved?.rawText ?? requestBody.rawText).slice(0, MAX_SCRIPT_LENGTH),
+        rawText: clampStudioScriptText(saved?.rawText ?? requestBody.rawText),
         videoRatio: saved?.videoRatio ?? requestBody.videoRatio,
         targetMarket: saved?.targetMarket ?? requestBody.targetMarket,
         visualStyleId: hasOwnNullableField(saved, 'visualStyleId')
@@ -2134,7 +2367,7 @@ const ProjectCreatePage: React.FC = () => {
       const parsedText = parsed.rawText ?? ''
       setEpisodeImportFileName(parsed.fileName?.trim() || file.name)
       episodeImportEditRevisionRef.current += 1
-      setEpisodeImportText(parsedText.slice(0, MAX_SCRIPT_LENGTH))
+      setEpisodeImportText(clampStudioEpisodeImportText(parsedText))
       if (!parsedText.trim()) {
         message.warning(l('解析完成，但未返回剧本内容', 'Parsing completed, but no script content was returned'))
         return
@@ -2161,11 +2394,13 @@ const ProjectCreatePage: React.FC = () => {
       message.warning(l('缺少剧本导入 ID，请重新解析剧本', 'Missing script import ID. Parse the script again.'))
       return
     }
+    const latestEpisodeImportText = episodeImportEditorRef.current?.flush()
+      ?? clampStudioEpisodeImportText(episodeImportText)
     const importKey = String(scriptImportId)
     const currentPendingCreation = pendingChapterCreationRef.current?.scriptImportId === importKey
       ? pendingChapterCreationRef.current
       : null
-    if (!episodeImportText.trim() && !currentPendingCreation) {
+    if (!latestEpisodeImportText.trim() && !currentPendingCreation) {
       message.warning(l('请输入剧集内容', 'Enter episode content'))
       return
     }
@@ -2212,6 +2447,7 @@ const ProjectCreatePage: React.FC = () => {
         createdChapterIds.has(episode.id))
       const appendedEpisodeIndex = nextEpisodes.findIndex((episode) =>
         !previousEpisodeIds.has(episode.id))
+      rememberSavedEpisodes(nextEpisodes)
       setEpisodes(nextEpisodes)
       setActiveEpisodeIndex(createdEpisodeIndex >= 0
         ? createdEpisodeIndex
@@ -2241,7 +2477,7 @@ const ProjectCreatePage: React.FC = () => {
       const previousEpisodeIds = new Set(baseEpisodes.map((episode) => episode.id))
       const createdChapters = await StudioScriptsApi.createChapter({
         scriptImportId,
-        rawText: episodeImportText,
+        rawText: clampStudioEpisodeImportText(latestEpisodeImportText),
       })
       const createdChapterIds = createdChapters
         .map((chapter) => chapter.id)
@@ -2290,6 +2526,10 @@ const ProjectCreatePage: React.FC = () => {
 
   const handleExtractAssets = async () => {
     if (assetSubmissionRef.current) return
+    if (savingEpisodeId !== null) {
+      message.info(l('分集正在保存，请稍候', 'The episode is being saved. Please wait.'))
+      return
+    }
     if (chapterSubmissionRef.current || creatingEpisode) {
       message.info(l('新增剧集正在提交，请稍候', 'New episodes are being submitted. Please wait.'))
       return
@@ -2306,6 +2546,8 @@ const ProjectCreatePage: React.FC = () => {
       message.warning(l('请填写每一集的剧本内容', 'Enter script content for every episode'))
       return
     }
+    const activeEpisodeSaved = await saveActiveEpisode()
+    if (!activeEpisodeSaved) return
     const extractScriptImportId = scriptImportId
     if (extractScriptImportId === null) {
       message.warning(l(
@@ -2347,7 +2589,7 @@ const ProjectCreatePage: React.FC = () => {
         fileName: importedFileName.trim() || toManualScriptFileName(name),
         fileType: importedFileType.trim() || getScriptFileType(importedFileName),
         title: name,
-        rawText: script,
+        rawText: clampStudioScriptText(script),
         videoRatio: ratio,
         targetMarket,
         visualStyleId: selectedVisualStyleId,
@@ -2488,6 +2730,7 @@ const ProjectCreatePage: React.FC = () => {
         : currentStep === 1
           ? !restoringImport
             && !chapterRefreshPending
+            && savingEpisodeId === null
             && episodes.length > 0
             && episodes.every((episode) => episode.title.trim() && episode.rawText.trim())
           : currentStep === 3
@@ -2584,9 +2827,8 @@ const ProjectCreatePage: React.FC = () => {
   }
 
   const handleReturnToAssets = () => {
-    setAssetEpisodes(null)
+    // 分集元数据在片段编辑阶段不会改变，返回时直接复用，避免重复查询 episodes/list。
     setAssetEpisodesError(undefined)
-    setAssetEpisodesRetryToken((current) => current + 1)
     clearStoryboardRestorePoint()
     navigateToWorkflowStep(2)
   }
@@ -2786,6 +3028,12 @@ const ProjectCreatePage: React.FC = () => {
       </div>
     )
   }
+  const workflowChunkFallback = (
+    <div className="project-create-page__restore-state" role="status">
+      <Spin />
+      <span>{l('正在加载当前步骤...', 'Loading this step...')}</span>
+    </div>
+  )
 
   return (
     <div
@@ -2816,7 +3064,7 @@ const ProjectCreatePage: React.FC = () => {
                 confirmDiscardFailedLocalDraft()
                 return
               }
-              if (currentStep === 0 && hasUnsavedBasicInfo) {
+              if (currentStep === 0 && hasUnsavedBasicInfo(flushScriptEditor())) {
                 setExitConfirmOpen(true)
                 return
               }
@@ -3011,21 +3259,23 @@ const ProjectCreatePage: React.FC = () => {
                 onChange={handleFileImport}
               />
             </div>
-            <textarea
+            <LongTextEditor
+              ref={scriptEditorRef}
               id="project-create-script"
               value={script}
-              maxLength={MAX_SCRIPT_LENGTH}
+              maxLength={STUDIO_SCRIPT_TEXT_MAX_LENGTH}
               disabled={basicInfoInteractionLocked}
               placeholder={l('请输入剧本内容，需用“第X集”进行集数标注', 'Enter the script and mark episodes with “Episode X” headings')}
-              onChange={(event) => {
-                markBasicInfoTouched()
-                setScript(event.target.value)
+              onEdit={markBasicInfoTouched}
+              onCommit={commitScriptEditorValue}
+              onFlush={handleScriptEditorFlush}
+              counter={{
+                className: 'project-create-page__script-counter',
+                suffix: (
+                  <span>{l(`（建议至少${RECOMMENDED_SCRIPT_LENGTH}字）`, ` (${RECOMMENDED_SCRIPT_LENGTH}+ characters recommended)`)}</span>
+                ),
               }}
             />
-            <div className="project-create-page__script-counter">
-              {scriptLength.toLocaleString()} / {MAX_SCRIPT_LENGTH.toLocaleString()}
-              <span>{l(`（建议至少${RECOMMENDED_SCRIPT_LENGTH}字）`, ` (${RECOMMENDED_SCRIPT_LENGTH}+ characters recommended)`)}</span>
-            </div>
           </div>
         </section>
 
@@ -3111,6 +3361,8 @@ const ProjectCreatePage: React.FC = () => {
                         src={item.coverUrl}
                         alt=""
                         aria-hidden="true"
+                        loading="lazy"
+                        decoding="async"
                         className="project-create-page__style-cover"
                       />
                     ) : item.preview === 'empty' ? <StopOutlined /> : null}
@@ -3162,71 +3414,98 @@ const ProjectCreatePage: React.FC = () => {
               <PlusOutlined />
             </button>
             <div className="project-create-page__episode-list">
-              {episodes.map((episode, index) => (
-                <button
-                  key={episode.id}
-                  type="button"
-                  className={index === activeEpisodeIndex ? 'is-selected' : ''}
-                  aria-label={episode.title}
-                  aria-pressed={index === activeEpisodeIndex}
-                  onClick={() => setActiveEpisodeIndex(index)}
-                >
-                  {index + 1}
-                </button>
-              ))}
+              {episodes.map((episode, index) => {
+                const episodeLocked = episode.canEdit !== true
+                const episodeLabel = episodeLocked
+                  ? l(`${episode.title}，不可修改`, `${episode.title}, read-only`)
+                  : episode.title
+                return (
+                  <button
+                    key={episode.id}
+                    type="button"
+                    className={`${index === activeEpisodeIndex ? 'is-selected' : ''}${episodeLocked ? ' is-locked' : ''}`}
+                    aria-label={episodeLabel}
+                    aria-pressed={index === activeEpisodeIndex}
+                    title={episodeLabel}
+                    onClick={() => setActiveEpisodeIndex(index)}
+                  >
+                    <span>{index + 1}</span>
+                    {episodeLocked ? <LockOutlined className="project-create-page__episode-lock" aria-hidden="true" /> : null}
+                  </button>
+                )
+              })}
             </div>
           </aside>
 
           <section className="project-create-page__episode-workspace" aria-label={l('分集编辑', 'Episode editor')}>
             {activeEpisode && !workflowDataUnavailable ? (
-              <div className="project-create-page__episode-editor">
+              <div className={`project-create-page__episode-editor${activeEpisodeLocked ? ' is-locked' : ''}${activeEpisodeCanEdit ? ' is-editable' : ''}`}>
                 <Input
                   className="project-create-page__episode-title"
                   value={activeEpisode.title}
                   maxLength={MAX_NAME_LENGTH}
-                  readOnly
+                  readOnly={!activeEpisodeCanEdit}
                   aria-label={l('分集标题', 'Episode title')}
+                  onChange={(event) => handleActiveEpisodeTitleChange(event.target.value)}
+                  onBlur={() => { void saveActiveEpisode() }}
                 />
                 <textarea
                   value={activeEpisode.rawText}
-                  maxLength={MAX_EPISODE_LENGTH}
-                  readOnly
+                  maxLength={STUDIO_EPISODE_TEXT_MAX_LENGTH}
+                  readOnly={!activeEpisodeCanEdit}
                   aria-label={l('分集剧本', 'Episode script')}
                   placeholder={l('请输入本集剧本内容', 'Enter this episode script')}
+                  onChange={(event) => handleActiveEpisodeTextChange(event.target.value)}
+                  onBlur={() => { void saveActiveEpisode() }}
                 />
                 <footer>
-                  {activeEpisode.rawText.length.toLocaleString()} / {MAX_EPISODE_LENGTH.toLocaleString()}
+                  <span>{activeEpisode.rawText.length.toLocaleString()} / {STUDIO_EPISODE_TEXT_MAX_LENGTH.toLocaleString()}</span>
+                  {activeEpisodeSaving ? (
+                    <span className="project-create-page__episode-saving">
+                      <Spin size="small" />
+                      {l('正在保存...', 'Saving...')}
+                    </span>
+                  ) : activeEpisodeLocked ? (
+                    <span className="project-create-page__episode-readonly">
+                      <LockOutlined />
+                      {l('此集暂不可修改', 'This episode is read-only')}
+                    </span>
+                  ) : null}
                 </footer>
               </div>
             ) : renderWorkflowRestoreState()}
           </section>
         </main>
       ) : currentStep === 2 ? (
-        <ProjectAssetsStep
-          key={`asset-import:${scriptImportId ?? 'local'}`}
-          scriptImportId={scriptImportId}
-          episodes={assetStepEpisodes}
-          ratio={ratio}
-          styleName={visualStyleName}
-          visualStyleNames={visualStyleNames}
-          visualStyleOptions={assetVisualStyleOptions}
-          onImageSubmissionStateChange={setAssetImageSubmissionPending}
-          onScopeChange={handleAssetScopeChange}
-        />
+        <Suspense fallback={workflowChunkFallback}>
+          <ProjectAssetsStep
+            key={`asset-import:${scriptImportId ?? 'local'}`}
+            scriptImportId={scriptImportId}
+            episodes={assetStepEpisodes}
+            ratio={ratio}
+            styleName={visualStyleName}
+            visualStyleNames={visualStyleNames}
+            visualStyleOptions={assetVisualStyleOptions}
+            onImageSubmissionStateChange={setAssetImageSubmissionPending}
+            onScopeChange={handleAssetScopeChange}
+          />
+        </Suspense>
       ) : (
-        <ProjectClipEditingStep
-          episodes={clipEditingEpisodes}
-          initialClips={storyboardClips}
-          ratio={ratio}
-          styleName={visualStyleName}
-          toneStyleName={toneStyleName}
-          visualStyleOptions={assetVisualStyleOptions}
-          toneStyleOptions={assetToneStyleOptions}
-          onStoryboardEditorRefresh={() => {
-            setStoryboardEditorError(undefined)
-            setStoryboardEditorRetryToken((current) => current + 1)
-          }}
-        />
+        <Suspense fallback={workflowChunkFallback}>
+          <ProjectClipEditingStep
+            episodes={clipEditingEpisodes}
+            initialClips={storyboardClips}
+            ratio={ratio}
+            styleName={visualStyleName}
+            toneStyleName={toneStyleName}
+            visualStyleOptions={assetVisualStyleOptions}
+            toneStyleOptions={assetToneStyleOptions}
+            onStoryboardEditorRefresh={() => {
+              setStoryboardEditorError(undefined)
+              setStoryboardEditorRetryToken((current) => current + 1)
+            }}
+          />
+        </Suspense>
       )}
 
       <CustomStyleModal
@@ -3307,15 +3586,16 @@ const ProjectCreatePage: React.FC = () => {
               onChange={handleEpisodeFileImport}
             />
           </div>
-          <textarea
+          <LongTextEditor
+            ref={episodeImportEditorRef}
             value={episodeImportText}
             disabled={submitting || creatingEpisode || parsingEpisodeFile || chapterRefreshPending}
-            maxLength={MAX_SCRIPT_LENGTH}
+            maxLength={STUDIO_EPISODE_IMPORT_TEXT_MAX_LENGTH}
             placeholder={l('请输入剧集内容...', 'Enter episode content...')}
-            onChange={(event) => {
+            onEdit={() => {
               episodeImportEditRevisionRef.current += 1
-              setEpisodeImportText(event.target.value)
             }}
+            onCommit={(nextValue) => setEpisodeImportText(clampStudioEpisodeImportText(nextValue))}
           />
         </div>
         <footer className="project-create-page__episode-import-footer">

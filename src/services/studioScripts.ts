@@ -2,6 +2,11 @@ import { OpenAPI } from './generated'
 import type { CancelablePromise } from './generated'
 import { request as __request } from './generated/core/request'
 import { unwrapApiData } from './generatedResponse'
+import {
+  clampStudioEpisodeImportText,
+  clampStudioEpisodeText,
+  clampStudioScriptText,
+} from './studioScriptTextContract'
 
 type ApiEnvelope<T> = {
   code?: number
@@ -49,12 +54,19 @@ export type StudioScriptImportListParams = {
   keyword?: string
 }
 
+export type StudioScriptImportListRequest = {
+  promise: Promise<StudioScriptImportList>
+  cancel: () => void
+}
+
 export type StudioScriptParseChapter = {
   id?: StudioScriptImportId | null
   index?: number | null
   title?: string | null
   chapterTitle?: string | null
   chapter_title?: string | null
+  canEdit?: boolean | null
+  can_edit?: boolean | null
   rawText?: string | null
   raw_text?: string | null
   content?: string | null
@@ -146,6 +158,55 @@ export type StudioScriptChapterCreateRequest = {
   rawText: string
 }
 
+const normalizeBooleanField = (value: unknown): boolean | undefined => {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') {
+    if (value === 1) return true
+    if (value === 0) return false
+    return undefined
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (['true', '1', 'yes', 'y'].includes(normalized)) return true
+    if (['false', '0', 'no', 'n'].includes(normalized)) return false
+  }
+  return undefined
+}
+
+const normalizeChapterText = (
+  chapter: StudioScriptParseChapter,
+): StudioScriptParseChapter => {
+  const canEdit = normalizeBooleanField(chapter.canEdit ?? chapter.can_edit)
+  return {
+    ...chapter,
+    ...(canEdit !== undefined ? { canEdit } : {}),
+    ...(typeof chapter.rawText === 'string'
+      ? { rawText: clampStudioEpisodeText(chapter.rawText) }
+      : {}),
+    ...(typeof chapter.raw_text === 'string'
+      ? { raw_text: clampStudioEpisodeText(chapter.raw_text) }
+      : {}),
+    ...(typeof chapter.content === 'string'
+      ? { content: clampStudioEpisodeText(chapter.content) }
+      : {}),
+    ...(typeof chapter.text === 'string'
+      ? { text: clampStudioEpisodeText(chapter.text) }
+      : {}),
+  }
+}
+
+const normalizeScriptResultText = (
+  result: StudioScriptParseResult,
+): StudioScriptParseResult => ({
+  ...result,
+  ...(typeof result.rawText === 'string'
+    ? { rawText: clampStudioScriptText(result.rawText) }
+    : {}),
+  ...(Array.isArray(result.chapters)
+    ? { chapters: result.chapters.map(normalizeChapterText) }
+    : {}),
+})
+
 export type StudioScriptAssetExtractEstimateParams = {
   scriptImportId: StudioScriptImportId
 }
@@ -162,6 +223,8 @@ export type StudioScriptAssetEpisode = {
   id: StudioScriptImportId
   index: number
   title: string
+  canEdit?: boolean | null
+  can_edit?: boolean | null
 }
 
 export type StudioScriptAssetType = 1 | 2 | 3
@@ -229,6 +292,12 @@ export type StudioScriptAssetEpisodeListRequest = {
 }
 
 const assetExtractEstimateRequests = new Map<string, Promise<StudioScriptAssetExtractEstimate>>()
+const assetExtractEstimateCache = new Map<string, {
+  estimate: StudioScriptAssetExtractEstimate
+  expiresAt: number
+}>()
+const ASSET_EXTRACT_ESTIMATE_CACHE_TTL_MS = 15_000
+const ASSET_EXTRACT_ESTIMATE_CACHE_MAX_ENTRIES = 24
 
 function parseScriptFile(file: File): CancelablePromise<ApiEnvelope<StudioScriptParseResult>> {
   return __request(OpenAPI, {
@@ -429,6 +498,16 @@ function deleteScriptImport(
 }
 
 export const StudioScriptsApi = {
+  requestImports(params: StudioScriptImportListParams): StudioScriptImportListRequest {
+    const request = getScriptImports(params)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => (
+        unwrapApiData<StudioScriptImportList>(response, 'Script imports loading failed')
+      )),
+    }
+  },
+
   async getImports(params: StudioScriptImportListParams): Promise<StudioScriptImportList> {
     const response = await getScriptImports(params)
     return unwrapApiData<StudioScriptImportList>(response, 'Script imports loading failed')
@@ -436,29 +515,43 @@ export const StudioScriptsApi = {
 
   async parse(file: File): Promise<StudioScriptParseResult> {
     const response = await parseScriptFile(file)
-    return unwrapApiData<StudioScriptParseResult>(response, 'Script parsing failed')
+    return normalizeScriptResultText(
+      unwrapApiData<StudioScriptParseResult>(response, 'Script parsing failed'),
+    )
   },
 
   async confirmBasicInfo(
     requestBody: StudioScriptBasicInfoConfirmRequest,
   ): Promise<StudioScriptParseResult> {
-    const response = await confirmScriptBasicInfo(requestBody)
-    return unwrapApiData<StudioScriptParseResult>(response, 'Script basic information confirmation failed')
+    const response = await confirmScriptBasicInfo({
+      ...requestBody,
+      rawText: clampStudioScriptText(requestBody.rawText),
+    })
+    return normalizeScriptResultText(unwrapApiData<StudioScriptParseResult>(
+      response,
+      'Script basic information confirmation failed',
+    ))
   },
 
   async saveBasicInfo(
     requestBody: StudioScriptBasicInfoSaveRequest,
   ): Promise<StudioScriptParseResult | null> {
-    const response = await saveScriptBasicInfo(requestBody)
+    const response = await saveScriptBasicInfo({
+      ...requestBody,
+      rawText: clampStudioScriptText(requestBody.rawText),
+    })
     if ((response.code ?? 200) >= 400) {
       throw new Error(response.message || 'Script basic information saving failed')
     }
-    return response.data ?? null
+    return response.data ? normalizeScriptResultText(response.data) : null
   },
 
   async getBasicInfoDetail(id: StudioScriptImportId): Promise<StudioScriptParseResult> {
     const response = await getScriptBasicInfoDetail(id)
-    return unwrapApiData<StudioScriptParseResult>(response, 'Script basic information loading failed')
+    return normalizeScriptResultText(unwrapApiData<StudioScriptParseResult>(
+      response,
+      'Script basic information loading failed',
+    ))
   },
 
   async renameImport(requestBody: StudioScriptImportRenameRequest): Promise<void> {
@@ -477,23 +570,32 @@ export const StudioScriptsApi = {
 
   async parseChapterFile(file: File): Promise<StudioScriptChapterFileParseResult> {
     const response = await parseScriptImportChapterFile(file)
-    return unwrapApiData<StudioScriptChapterFileParseResult>(response, 'Script chapter file parsing failed')
+    const parsed = unwrapApiData<StudioScriptChapterFileParseResult>(
+      response,
+      'Script chapter file parsing failed',
+    )
+    return typeof parsed.rawText === 'string'
+      ? { ...parsed, rawText: clampStudioEpisodeImportText(parsed.rawText) }
+      : parsed
   },
 
   async createChapter(
     requestBody: StudioScriptChapterCreateRequest,
   ): Promise<StudioScriptParseChapter[]> {
-    const response = await createScriptImportChapter(requestBody)
+    const response = await createScriptImportChapter({
+      ...requestBody,
+      rawText: clampStudioEpisodeImportText(requestBody.rawText),
+    })
     if ((response.code ?? 200) >= 400) {
       throw new Error(response.message || 'Script chapter creation failed')
     }
-    return Array.isArray(response.data) ? response.data : []
+    return Array.isArray(response.data) ? response.data.map(normalizeChapterText) : []
   },
 
   async getChapters(scriptImportId: StudioScriptImportId): Promise<StudioScriptParseChapter[]> {
     const response = await getScriptImportChapters(scriptImportId)
     const chapters = unwrapApiData<StudioScriptParseChapter[]>(response, 'Script chapters loading failed')
-    return [...chapters].sort((left, right) =>
+    return chapters.map(normalizeChapterText).sort((left, right) =>
       (left.index ?? Number.MAX_SAFE_INTEGER) - (right.index ?? Number.MAX_SAFE_INTEGER))
   },
 
@@ -501,6 +603,13 @@ export const StudioScriptsApi = {
     params: StudioScriptAssetExtractEstimateParams,
   ): Promise<StudioScriptAssetExtractEstimate> {
     const cacheKey = String(params.scriptImportId)
+    const cached = assetExtractEstimateCache.get(cacheKey)
+    if (cached && cached.expiresAt > Date.now()) {
+      assetExtractEstimateCache.delete(cacheKey)
+      assetExtractEstimateCache.set(cacheKey, cached)
+      return Promise.resolve(cached.estimate)
+    }
+    if (cached) assetExtractEstimateCache.delete(cacheKey)
     const pendingRequest = assetExtractEstimateRequests.get(cacheKey)
     if (pendingRequest) return pendingRequest
 
@@ -514,7 +623,17 @@ export const StudioScriptsApi = {
         if (!Number.isFinite(requiredCredits)) {
           throw new Error('Asset extraction credit estimate returned an invalid requiredCredits value')
         }
-        return { requiredCredits }
+        const normalizedEstimate = { requiredCredits }
+        assetExtractEstimateCache.set(cacheKey, {
+          estimate: normalizedEstimate,
+          expiresAt: Date.now() + ASSET_EXTRACT_ESTIMATE_CACHE_TTL_MS,
+        })
+        while (assetExtractEstimateCache.size > ASSET_EXTRACT_ESTIMATE_CACHE_MAX_ENTRIES) {
+          const oldestKey = assetExtractEstimateCache.keys().next().value as string | undefined
+          if (oldestKey === undefined) break
+          assetExtractEstimateCache.delete(oldestKey)
+        }
+        return normalizedEstimate
       })
       .finally(() => {
         if (assetExtractEstimateRequests.get(cacheKey) === request) {
@@ -527,7 +646,9 @@ export const StudioScriptsApi = {
 
   /** 分集发生变化时丢弃旧的在途去重入口，确保下一次估算发起新请求。 */
   invalidateAssetExtractEstimate(scriptImportId: StudioScriptImportId): void {
-    assetExtractEstimateRequests.delete(String(scriptImportId))
+    const cacheKey = String(scriptImportId)
+    assetExtractEstimateRequests.delete(cacheKey)
+    assetExtractEstimateCache.delete(cacheKey)
   },
 
   async extractAssets(requestBody: StudioScriptAssetExtractRequest): Promise<void> {

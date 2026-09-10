@@ -5,6 +5,14 @@ const LARGE_DATA_URL_LENGTH = 350_000
 const DRAFT_DATABASE_NAME = 'jellyfish-project-creation'
 const DRAFT_DATABASE_VERSION = 1
 const DRAFT_STORE_NAME = 'drafts'
+// 长文本组件先缓冲 200ms，再在 800ms 后排入空闲队列，总写入窗口约为 1–1.5 秒。
+export const PROJECT_CREATION_DRAFT_DELAY_MS = 800
+const PROJECT_CREATION_DRAFT_IDLE_TIMEOUT_MS = 500
+
+type DraftIdleWindow = Window & {
+  requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number
+  cancelIdleCallback?: (handle: number) => void
+}
 
 type DraftEnvelope<T> = {
   version: number
@@ -372,7 +380,7 @@ export const readFullProjectCreationDraft = async <T,>(key: string): Promise<T |
 export const useProjectCreationDraft = <T,>(
   key: string,
   value: T,
-  delay = 350,
+  delay = PROJECT_CREATION_DRAFT_DELAY_MS,
   persistOnUnmountRef?: { current: boolean },
   compactValue?: unknown,
   onFullDraftWriteSettled?: FullDraftWriteSettled,
@@ -404,6 +412,8 @@ export const useProjectCreationDraft = <T,>(
   const latestWriteSettledRef = useRef(onFullDraftWriteSettled)
   latestWriteSettledRef.current = onFullDraftWriteSettled
   const lastPersistedRef = useRef<{ key: string; value: T } | undefined>(undefined)
+  const scheduledTimerRef = useRef<number | null>(null)
+  const scheduledIdleCallbackRef = useRef<number | null>(null)
   const flushLatestDraftRef = useRef<() => void>(() => undefined)
   flushLatestDraftRef.current = () => {
     if (persistOnUnmountRef?.current === false) return
@@ -429,33 +439,52 @@ export const useProjectCreationDraft = <T,>(
     )
     if (queued) lastPersistedRef.current = { key, value: latestValue }
   }
-  const flushLatestDraft = useCallback(() => {
-    flushLatestDraftRef.current()
-  }, [])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return undefined
-
-    const timer = window.setTimeout(() => {
-      flushLatestDraftRef.current()
-    }, delay)
-
-    return () => window.clearTimeout(timer)
-  }, [delay, key, persistOnUnmountRef, stableValue])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return undefined
-
-    const flushLatestDraft = () => {
-      flushLatestDraftRef.current()
+  const cancelScheduledDraft = useCallback(() => {
+    if (scheduledTimerRef.current !== null) {
+      window.clearTimeout(scheduledTimerRef.current)
+      scheduledTimerRef.current = null
     }
+    if (scheduledIdleCallbackRef.current !== null) {
+      const idleWindow = window as DraftIdleWindow
+      idleWindow.cancelIdleCallback?.(scheduledIdleCallbackRef.current)
+      scheduledIdleCallbackRef.current = null
+    }
+  }, [])
+  const flushLatestDraft = useCallback(() => {
+    if (typeof window !== 'undefined') cancelScheduledDraft()
+    flushLatestDraftRef.current()
+  }, [cancelScheduledDraft])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+
+    cancelScheduledDraft()
+    scheduledTimerRef.current = window.setTimeout(() => {
+      scheduledTimerRef.current = null
+      const idleWindow = window as DraftIdleWindow
+      if (typeof idleWindow.requestIdleCallback === 'function') {
+        scheduledIdleCallbackRef.current = idleWindow.requestIdleCallback(() => {
+          scheduledIdleCallbackRef.current = null
+          flushLatestDraftRef.current()
+        }, { timeout: PROJECT_CREATION_DRAFT_IDLE_TIMEOUT_MS })
+        return
+      }
+      flushLatestDraftRef.current()
+    }, Math.max(0, delay))
+
+    return cancelScheduledDraft
+  }, [cancelScheduledDraft, delay, key, persistOnUnmountRef, stableValue])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+
     window.addEventListener('pagehide', flushLatestDraft)
 
     return () => {
       window.removeEventListener('pagehide', flushLatestDraft)
       flushLatestDraft()
     }
-  }, [persistOnUnmountRef])
+  }, [flushLatestDraft, persistOnUnmountRef])
 
   return flushLatestDraft
 }

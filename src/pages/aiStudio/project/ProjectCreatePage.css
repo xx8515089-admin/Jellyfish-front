@@ -797,11 +797,16 @@
 }
 
 .project-create-page__episode-list button {
+  position: relative;
   border: 1px solid transparent;
   background: #e4e8ed;
   color: #687587;
   font-size: 13px;
   font-weight: 600;
+}
+
+.project-create-page__episode-list button > span:first-child {
+  line-height: 1;
 }
 
 .project-create-page__episode-list button:hover {
@@ -814,6 +819,27 @@
   background: #fff;
   color: var(--project-create-primary);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--project-create-primary) 10%, transparent);
+}
+
+.project-create-page__episode-list button.is-locked {
+  background: #f2eee6;
+  color: #8f631d;
+}
+
+.project-create-page__episode-list button.is-locked:hover,
+.project-create-page__episode-list button.is-locked.is-selected {
+  border-color: #d69e2e;
+  background: #fff7e6;
+  color: #8f631d;
+}
+
+.project-create-page__episode-lock {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  font-size: 9px;
+  line-height: 1;
+  opacity: 0.85;
 }
 
 .project-create-page__episode-workspace {
@@ -870,6 +896,10 @@
   box-shadow: 0 4px 14px rgba(16, 24, 40, 0.04);
 }
 
+.project-create-page__episode-editor.is-locked {
+  border-color: #ead4a8;
+}
+
 .project-create-page__episode-title.ant-input {
   height: 58px;
   padding: 16px 20px 6px;
@@ -881,6 +911,10 @@
   line-height: 28px;
   box-shadow: none;
   cursor: default;
+}
+
+.project-create-page__episode-editor.is-editable .project-create-page__episode-title.ant-input {
+  cursor: text;
 }
 
 .project-create-page__episode-title.ant-input:hover,
@@ -905,6 +939,10 @@
   cursor: default;
 }
 
+.project-create-page__episode-editor.is-editable textarea {
+  cursor: text;
+}
+
 .project-create-page__episode-editor textarea::placeholder {
   color: #98a4b3;
 }
@@ -912,11 +950,32 @@
 .project-create-page__episode-editor footer {
   min-height: 36px;
   padding: 8px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
   border-top: 1px solid #e8edf3;
   background: #fbfcfe;
   color: #7f8b9b;
   font-size: 11px;
   line-height: 19px;
+}
+
+.project-create-page__episode-readonly {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #9a6a25;
+  font-weight: 600;
+}
+
+.project-create-page__episode-saving {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #526071;
+  font-weight: 600;
 }
 
 .project-create-page__episode-import-modal .ant-modal-content {

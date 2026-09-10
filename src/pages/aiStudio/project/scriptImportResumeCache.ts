@@ -1,3 +1,4 @@
+import { getStoredAuthUser } from '../../../auth'
 import { StudioScriptsApi } from '../../../services/studioScripts'
 import type {
   StudioScriptImportId,
@@ -16,6 +17,7 @@ type DetailCacheEntry = {
 }
 
 const RESUME_CACHE_TTL = 30_000
+const RESUME_CACHE_MAX_ENTRIES = 12
 const chapterCache = new Map<string, ChapterCacheEntry>()
 const chapterRequests = new Map<string, Promise<StudioScriptParseChapter[]>>()
 const chapterRevisions = new Map<string, number>()
@@ -23,7 +25,11 @@ const detailCache = new Map<string, DetailCacheEntry>()
 const detailRequests = new Map<string, Promise<StudioScriptParseResult>>()
 const detailRevisions = new Map<string, number>()
 
-const toCacheKey = (scriptImportId: StudioScriptImportId) => String(scriptImportId)
+const toCacheKey = (scriptImportId: StudioScriptImportId) => {
+  const user = getStoredAuthUser()
+  const userScope = user?.id ?? user?.username ?? 'anonymous'
+  return `${String(userScope)}:${String(scriptImportId)}`
+}
 const getRevision = (revisions: Map<string, number>, cacheKey: string) => revisions.get(cacheKey) ?? 0
 const bumpRevision = (revisions: Map<string, number>, cacheKey: string) => {
   const nextRevision = getRevision(revisions, cacheKey) + 1
@@ -56,6 +62,31 @@ const syncCachedDetailChapters = (
   })
 }
 
+const writeDetailCache = (cacheKey: string, entry: DetailCacheEntry) => {
+  detailCache.delete(cacheKey)
+  detailCache.set(cacheKey, entry)
+  while (detailCache.size > RESUME_CACHE_MAX_ENTRIES) {
+    const oldestKey = detailCache.keys().next().value as string | undefined
+    if (oldestKey === undefined) break
+    bumpRevision(detailRevisions, oldestKey)
+    detailCache.delete(oldestKey)
+    detailRequests.delete(oldestKey)
+  }
+}
+
+const writeChapterCache = (cacheKey: string, entry: ChapterCacheEntry) => {
+  chapterCache.delete(cacheKey)
+  chapterCache.set(cacheKey, entry)
+  while (chapterCache.size > RESUME_CACHE_MAX_ENTRIES) {
+    const oldestKey = chapterCache.keys().next().value as string | undefined
+    if (oldestKey === undefined) break
+    bumpRevision(chapterRevisions, oldestKey)
+    chapterCache.delete(oldestKey)
+    chapterRequests.delete(oldestKey)
+    syncCachedDetailChapters(oldestKey)
+  }
+}
+
 /** 用权威响应更新详情缓存，并使更早发出的详情请求失去回写资格。 */
 export const primeScriptImportDetail = (
   scriptImportId: StudioScriptImportId,
@@ -64,7 +95,7 @@ export const primeScriptImportDetail = (
   const cacheKey = toCacheKey(scriptImportId)
   bumpRevision(detailRevisions, cacheKey)
   detailRequests.delete(cacheKey)
-  detailCache.set(cacheKey, {
+  writeDetailCache(cacheKey, {
     detail,
     expiresAt: Date.now() + RESUME_CACHE_TTL,
   })
@@ -83,7 +114,7 @@ export const primeScriptImportChapters = (
     syncCachedDetailChapters(cacheKey)
     return
   }
-  chapterCache.set(cacheKey, {
+  writeChapterCache(cacheKey, {
     chapters,
     expiresAt: Date.now() + RESUME_CACHE_TTL,
   })
@@ -127,6 +158,8 @@ export const readCachedScriptImportChapters = (
     syncCachedDetailChapters(cacheKey)
     return undefined
   }
+  chapterCache.delete(cacheKey)
+  chapterCache.set(cacheKey, entry)
   return entry.chapters
 }
 
@@ -151,7 +184,11 @@ export const readCachedScriptImportDetail = (
     chapterRequests.delete(cacheKey)
     syncCachedDetailChapters(cacheKey)
   }
-  return detailCache.get(cacheKey)?.detail
+  const currentEntry = detailCache.get(cacheKey)
+  if (!currentEntry) return undefined
+  detailCache.delete(cacheKey)
+  detailCache.set(cacheKey, currentEntry)
+  return currentEntry.detail
 }
 
 /** 合并第一步详情的预取与页面请求，避免点击项目后重复等待同一个接口。 */
@@ -186,7 +223,7 @@ export const loadScriptImportDetail = (
         : chaptersChanged || chaptersPending
           ? withDetailChapters(detail)
           : detail
-      detailCache.set(cacheKey, {
+      writeDetailCache(cacheKey, {
         detail: nextDetail,
         expiresAt: Date.now() + RESUME_CACHE_TTL,
       })
@@ -224,7 +261,7 @@ export const loadScriptImportChapters = (
 
       bumpRevision(chapterRevisions, cacheKey)
       if (chapters.length > 0) {
-        chapterCache.set(cacheKey, {
+        writeChapterCache(cacheKey, {
           chapters,
           expiresAt: Date.now() + RESUME_CACHE_TTL,
         })

@@ -66,6 +66,75 @@ function harness() {
   }
 }
 
+function visibilityHarness(initialVisibility = 'visible') {
+  let timerId = 0
+  const timers = new Map()
+  const visibilityListeners = new Set()
+  const visibilityDocument = {
+    visibilityState: initialVisibility,
+    addEventListener: (type, listener) => {
+      if (type === 'visibilitychange') visibilityListeners.add(listener)
+    },
+    removeEventListener: (type, listener) => {
+      if (type === 'visibilitychange') visibilityListeners.delete(listener)
+    },
+  }
+  const exports = {}
+  vm.runInNewContext(compiled, {
+    exports,
+    document: visibilityDocument,
+    window: {
+      setTimeout: (callback, delay) => {
+        const id = ++timerId
+        timers.set(id, { callback, delay })
+        return id
+      },
+      clearTimeout: (id) => timers.delete(id),
+    },
+  }, { filename: 'assetBatchGenerationPolling.js' })
+
+  return {
+    timers,
+    visibilityListeners,
+    schedule: exports.schedulePollWhenVisible,
+    setVisibility: (visibilityState) => {
+      visibilityDocument.visibilityState = visibilityState
+      for (const listener of [...visibilityListeners]) listener()
+    },
+    tick: () => {
+      assert.equal(timers.size, 1)
+      const [id, timer] = [...timers.entries()][0]
+      timers.delete(id)
+      timer.callback()
+      return timer.delay
+    },
+  }
+}
+
+test('visibility-aware timers pause in the background and resume immediately when visible', () => {
+  const hidden = visibilityHarness('hidden')
+  let calls = 0
+  hidden.schedule(() => { calls += 1 }, 3000)
+  assert.equal(hidden.timers.size, 0)
+  assert.equal(hidden.visibilityListeners.size, 1)
+  hidden.setVisibility('visible')
+  assert.equal(hidden.tick(), 0)
+  assert.equal(calls, 1)
+  assert.equal(hidden.visibilityListeners.size, 0)
+
+  const visible = visibilityHarness()
+  const cancel = visible.schedule(() => { calls += 1 }, 3000)
+  assert.equal(visible.timers.size, 1)
+  visible.setVisibility('hidden')
+  assert.equal(visible.timers.size, 0)
+  visible.setVisibility('visible')
+  assert.equal(visible.timers.size, 1)
+  cancel()
+  assert.equal(visible.timers.size, 0)
+  assert.equal(visible.visibilityListeners.size, 0)
+  assert.equal(calls, 1)
+})
+
 test('the selected scope has one in-flight query and schedules the next only after its response', async () => {
   const env = harness()
   const stop = env.start('episode-2571')
