@@ -1,0 +1,48 @@
+.image-to-video-modal .ant-modal-content {
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--jf-border, #323237);
+  border-radius: 14px;
+  background: var(--jf-panel, #171718);
+  color: var(--jf-text, #eee);
+}
+.image-to-video-modal .ant-modal-header {
+  margin: 0;
+  padding: 20px 24px;
+  background: transparent;
+  border-bottom: 1px solid var(--jf-border, #323237);
+}
+.image-to-video-modal .ant-modal-title { color: inherit; }
+.image-to-video-modal__body { display: grid; gap: 12px; padding: 24px; }
+.image-to-video-modal__body { max-height: calc(100dvh - 160px); overflow-y: auto; }
+.image-to-video-modal__panel-controls { display: flex; align-items: center; gap: 8px; }
+.image-to-video-modal__panel-controls .studio-select { flex: 1; min-width: 0; }
+.image-to-video-modal__panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; max-height: 170px; overflow-y: auto; }
+.image-to-video-modal__panels button { padding: 10px; border: 1px solid var(--jf-border, #323237); border-radius: 8px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.image-to-video-modal__panels button.is-selected { border-color: var(--jf-text, #eee); background: rgba(255, 255, 255, 0.06); }
+.image-to-video-modal__panels button:disabled { cursor: default; }
+.image-to-video-modal__panels span { display: block; margin-top: 4px; font-size: 12px; line-height: 1.5; }
+.image-to-video-modal__crop { position: relative; width: 72px; max-height: 100px; overflow: hidden; border-radius: 4px; flex: 0 0 auto; }
+.image-to-video-modal__editor { padding: 12px; border: 1px solid var(--jf-border, #323237); border-radius: 8px; }
+.image-to-video-modal__reference { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.image-to-video-modal__reference img { width: 32px; height: 32px; object-fit: cover; border-radius: 4px; }
+.image-to-video-modal__editor textarea.ant-input {
+  height: clamp(160px, 28vh, 280px); margin: 8px 0; padding: 0; resize: none; border: 0; box-shadow: none; background: transparent; color: inherit;
+}
+/* Override the global dark input fill in every state so the editor reads as one panel. */
+.image-to-video-modal .image-to-video-modal__editor textarea.ant-input,
+.image-to-video-modal .image-to-video-modal__editor textarea.ant-input:hover,
+.image-to-video-modal .image-to-video-modal__editor textarea.ant-input:focus,
+.image-to-video-modal .image-to-video-modal__editor textarea.ant-input:disabled {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.image-to-video-modal__styles { display: flex; align-items: center; gap: 8px; }
+.image-to-video-modal__styles .studio-select { width: 145px; min-width: 0; }
+.image-to-video-modal__styles small { margin-left: auto; color: #8b8b91; white-space: nowrap; }
+.image-to-video-modal__settings { display: grid; grid-template-columns: minmax(0, 1fr) 104px 80px; gap: 8px; margin-top: 20px; }
+.image-to-video-modal__settings .studio-select { min-width: 0; width: 100%; }
+@media (max-width: 520px) {
+  .image-to-video-modal__body { padding: 16px; }
+  .image-to-video-modal__styles { flex-wrap: wrap; }
+}

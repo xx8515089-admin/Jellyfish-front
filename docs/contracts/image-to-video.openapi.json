@@ -1,0 +1,666 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Document-derived image-to-video subset; verify against backend OpenAPI",
+    "version": "2026-09-14"
+  },
+  "paths": {
+    "/api/v1/studio/storyboards/imagetovideo/models": {
+      "get": {
+        "tags": [
+          "ImageToVideo"
+        ],
+        "operationId": "getModels",
+        "responses": {
+          "200": {
+            "description": "Business envelope; code must equal 200",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ImageToVideoModel"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/storyboards/imagetovideo/estimate": {
+      "get": {
+        "tags": [
+          "ImageToVideo"
+        ],
+        "operationId": "getEstimate",
+        "parameters": [
+          {
+            "name": "modelId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "resolution",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "durationSeconds",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Business envelope; code must equal 200",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ImageToVideoEstimate"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/storyboards/imagetovideo/generate": {
+      "post": {
+        "tags": [
+          "ImageToVideo"
+        ],
+        "operationId": "generate",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageToVideoGenerate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Business envelope; code must equal 200",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ImageToVideoDetail"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/storyboards/videos/detail": {
+      "get": {
+        "tags": [
+          "ImageToVideo"
+        ],
+        "operationId": "getDetail",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Business envelope; code must equal 200",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ImageToVideoDetail"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/storyboards/videos/sync": {
+      "post": {
+        "tags": [
+          "ImageToVideo"
+        ],
+        "operationId": "sync",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Business envelope; code must equal 200",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ImageToVideoDetail"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/storyboards/images/detail": {
+      "get": {
+        "tags": [
+          "ImageToVideo"
+        ],
+        "operationId": "getPanelImage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Business envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/StoryboardPanelImage"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/storyboards/imagetovideo/prompts/generate": {
+      "post": {
+        "tags": [
+          "ImageToVideo"
+        ],
+        "operationId": "generatePanelPrompt",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PanelVideoPromptRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Business envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/PanelVideoPrompt"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ImageToVideoModel": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "modelCode",
+          "resolutions",
+          "durationSeconds",
+          "maxPromptCharacters"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "modelCode": {
+            "type": "string"
+          },
+          "defaultModel": {
+            "type": "boolean"
+          },
+          "resolutions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "durationSeconds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "maxPromptCharacters": {
+            "type": "integer"
+          },
+          "minImageWidth": {
+            "type": "integer"
+          },
+          "minImageHeight": {
+            "type": "integer"
+          },
+          "maxImageBytes": {
+            "type": "integer"
+          }
+        }
+      },
+      "ImageToVideoDetail": {
+        "type": "object",
+        "required": [
+          "id",
+          "segmentId",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "segmentId": {
+            "type": "integer"
+          },
+          "generationRecordId": {
+            "type": "integer"
+          },
+          "taskId": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "statusName": {
+            "type": "string"
+          },
+          "progress": {
+            "type": "integer"
+          },
+          "outputUrl": {
+            "type": "string"
+          },
+          "outputFileId": {
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          },
+          "providerTaskId": {
+            "type": "string"
+          },
+          "generationMode": {
+            "type": "string"
+          }
+        }
+      },
+      "ImageToVideoEstimate": {
+        "type": "object",
+        "required": [
+          "modelId",
+          "creditCost"
+        ],
+        "properties": {
+          "modelId": {
+            "type": "integer"
+          },
+          "creditCost": {
+            "type": "number"
+          },
+          "priceValidUntil": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ImageToVideoGenerate": {
+        "type": "object",
+        "required": [
+          "imageGenerationId",
+          "prompt"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "imageGenerationId": {
+            "type": "integer"
+          },
+          "modelId": {
+            "type": "integer"
+          },
+          "resolution": {
+            "type": "string"
+          },
+          "durationSeconds": {
+            "type": "integer"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "visualStyleId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "toneStyleId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "single_panel",
+              "all_panels"
+            ]
+          },
+          "panelId": {
+            "type": "string"
+          },
+          "panelRevision": {
+            "type": "integer"
+          }
+        }
+      },
+      "StoryboardPanel": {
+        "type": "object",
+        "required": [
+          "panelId",
+          "panelIndex",
+          "description",
+          "bounds"
+        ],
+        "properties": {
+          "panelId": {
+            "type": "string"
+          },
+          "panelIndex": {
+            "type": "integer"
+          },
+          "sourceShotNumber": {
+            "type": "integer",
+            "nullable": true
+          },
+          "description": {
+            "type": "string"
+          },
+          "bounds": {
+            "type": "object",
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height"
+            ],
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "width": {
+                "type": "number"
+              },
+              "height": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      },
+      "StoryboardPanelImage": {
+        "type": "object",
+        "required": [
+          "id",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "outputUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "panelStatus": {
+            "type": "string"
+          },
+          "panelRevision": {
+            "type": "integer"
+          },
+          "panels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StoryboardPanel"
+            }
+          }
+        }
+      },
+      "PanelVideoPromptRequest": {
+        "type": "object",
+        "required": [
+          "imageGenerationId",
+          "scope",
+          "panelRevision"
+        ],
+        "properties": {
+          "imageGenerationId": {
+            "type": "integer"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "single_panel",
+              "all_panels"
+            ]
+          },
+          "panelId": {
+            "type": "string"
+          },
+          "panelRevision": {
+            "type": "integer"
+          },
+          "modelId": {
+            "type": "integer"
+          },
+          "resolution": {
+            "type": "string"
+          },
+          "durationSeconds": {
+            "type": "integer"
+          }
+        }
+      },
+      "PanelVideoPrompt": {
+        "type": "object",
+        "required": [
+          "imageGenerationId",
+          "scope",
+          "panelRevision",
+          "modelId",
+          "resolution",
+          "durationSeconds",
+          "prompt",
+          "firstFramePanel"
+        ],
+        "properties": {
+          "imageGenerationId": {
+            "type": "integer"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "single_panel",
+              "all_panels"
+            ]
+          },
+          "panelId": {
+            "type": "string"
+          },
+          "panelRevision": {
+            "type": "integer"
+          },
+          "modelId": {
+            "type": "integer"
+          },
+          "resolution": {
+            "type": "string"
+          },
+          "durationSeconds": {
+            "type": "integer"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "generationMethod": {
+            "type": "string"
+          },
+          "panels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StoryboardPanel"
+            }
+          },
+          "firstFramePanel": {
+            "$ref": "#/components/schemas/StoryboardPanel"
+          }
+        }
+      }
+    }
+  }
+}

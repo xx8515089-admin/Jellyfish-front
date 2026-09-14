@@ -119,3 +119,48 @@
   font-weight: 600;
   background: #e9eef3;
 }
+
+/* Portal-safe studio appearance shared by dialogs outside the editor's CSS scope. */
+.studio-select.studio-select.studio-select--dark.ant-select-single .ant-select-selector {
+  background: var(--jf-panel-2, #202023) !important;
+  border-color: var(--jf-border, #323237) !important;
+}
+
+.studio-select.studio-select.studio-select--dark.ant-select-single .ant-select-selection-item {
+  color: var(--jf-text-soft, #d5d5d8) !important;
+}
+
+.studio-select.studio-select--dark .ant-select-selection-placeholder,
+.studio-select.studio-select--dark .ant-select-arrow {
+  color: var(--jf-muted, #909090) !important;
+}
+
+.studio-select.studio-select.studio-select--dark.ant-select-single:not(.ant-select-disabled):hover .ant-select-selector,
+.studio-select.studio-select.studio-select--dark.ant-select-single.ant-select-focused .ant-select-selector,
+.studio-select.studio-select.studio-select--dark.ant-select-single.ant-select-open .ant-select-selector {
+  background: var(--jf-panel-3, #29292d) !important;
+  border-color: var(--jf-accent-border, rgba(255, 255, 255, 0.18)) !important;
+}
+
+.studio-select.studio-select.studio-select--dark.ant-select-disabled .ant-select-selection-item {
+  color: var(--jf-muted, #909090) !important;
+}
+
+.studio-select__popup.studio-select__popup--dark.ant-select-dropdown {
+  background: var(--jf-panel-2, #202023);
+  border-color: var(--jf-border, #323237);
+}
+
+.studio-select__popup--dark .ant-select-item {
+  color: var(--jf-text-soft, #d5d5d8);
+}
+
+.studio-select__popup--dark .ant-select-item-option-active:not(.ant-select-item-option-disabled),
+.studio-select__popup--dark .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+  color: var(--jf-text, #f2f2f2);
+  background: var(--jf-panel-3, #29292d);
+}
+
+.studio-select__popup--dark .ant-select-item-option-disabled {
+  color: var(--jf-muted, #909090);
+}

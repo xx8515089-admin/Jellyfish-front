@@ -1,0 +1,893 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Workflow document-derived subset",
+    "version": "2026-09-14"
+  },
+  "paths": {
+    "/api/v1/studio/scripts/imports/chapters/detail": {
+      "get": {
+        "tags": [
+          "Workflow"
+        ],
+        "operationId": "chapterDetail",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Business envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/WorkflowChapter"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/scripts/imports/chapters/update": {
+      "post": {
+        "tags": [
+          "Workflow"
+        ],
+        "operationId": "updateChapter",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "integer"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "rawText": {
+                    "type": "string"
+                  },
+                  "expectedRevisionNo": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "id",
+                  "title",
+                  "rawText",
+                  "expectedRevisionNo"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Business envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/WorkflowChapter"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/storyboards/images/generate": {
+      "post": {
+        "tags": [
+          "Workflow"
+        ],
+        "operationId": "generateImage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowImageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Business envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/WorkflowMedia"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "language",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/studio/storyboards/images/generate/estimate": {
+      "post": {
+        "tags": [
+          "Workflow"
+        ],
+        "operationId": "estimateImage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowImageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Business envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/WorkflowQuote"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/storyboards/images/detail": {
+      "get": {
+        "tags": [
+          "Workflow"
+        ],
+        "operationId": "imageDetail",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Business envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/WorkflowMedia"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/storyboards/videos/generate": {
+      "post": {
+        "tags": [
+          "Workflow"
+        ],
+        "operationId": "generateVideo",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowVideoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Business envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/WorkflowMedia"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "language",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/studio/storyboards/videos/generate/estimate": {
+      "post": {
+        "tags": [
+          "Workflow"
+        ],
+        "operationId": "estimateVideo",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowVideoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Business envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/WorkflowQuote"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/storyboards/videos/detail": {
+      "get": {
+        "tags": [
+          "Workflow"
+        ],
+        "operationId": "videoDetail",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Business envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/WorkflowMedia"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/storyboards/media/submission": {
+      "get": {
+        "tags": [
+          "Workflow"
+        ],
+        "operationId": "submission",
+        "parameters": [
+          {
+            "name": "generationType",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "clientRequestId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Business envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/WorkflowSubmission"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/storyboards/media/activeTasks": {
+      "get": {
+        "tags": [
+          "Workflow"
+        ],
+        "operationId": "activeTasks",
+        "parameters": [
+          {
+            "name": "segmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Business envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WorkflowMedia"
+                      }
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/storyboards/media/historyPage": {
+      "get": {
+        "tags": [
+          "Workflow"
+        ],
+        "operationId": "historyPage",
+        "parameters": [
+          {
+            "name": "segmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Business envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/WorkflowPage"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "WorkflowChapter": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "index": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "rawText": {
+            "type": "string"
+          },
+          "canEdit": {
+            "type": "boolean"
+          },
+          "revisionNo": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "rawText",
+          "canEdit",
+          "revisionNo"
+        ]
+      },
+      "WorkflowMedia": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "generationRecordId": {
+            "type": "integer"
+          },
+          "mediaType": {
+            "type": "string",
+            "enum": [
+              "image",
+              "video"
+            ]
+          },
+          "itemKey": {
+            "type": "string"
+          },
+          "segmentId": {
+            "type": "integer"
+          },
+          "taskId": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "statusName": {
+            "type": "string"
+          },
+          "progress": {
+            "type": "integer"
+          },
+          "errorMessage": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "terminal": {
+            "type": "boolean"
+          },
+          "shouldPoll": {
+            "type": "boolean"
+          },
+          "pollAfterSeconds": {
+            "type": "integer"
+          },
+          "outputReady": {
+            "type": "boolean"
+          },
+          "outputFileId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "outputUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "contentUrl": {
+            "type": "string"
+          },
+          "thumbnailUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "thumbnailStatus": {
+            "type": "string"
+          },
+          "versionNo": {
+            "type": "integer"
+          },
+          "modelName": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "aspectRatio": {
+            "type": "string"
+          },
+          "resolution": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "durationSeconds": {
+            "type": "integer"
+          },
+          "visualStyleId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "visualStyleName": {
+            "type": "string",
+            "nullable": true
+          },
+          "toneStyleId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "toneStyleName": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "finishedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "segmentId",
+          "status"
+        ]
+      },
+      "WorkflowPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowMedia"
+            }
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "items",
+          "hasMore"
+        ]
+      },
+      "WorkflowQuote": {
+        "type": "object",
+        "properties": {
+          "modelId": {
+            "type": "integer"
+          },
+          "creditCost": {
+            "type": "number"
+          },
+          "sufficient": {
+            "type": "boolean"
+          },
+          "unlimited": {
+            "type": "boolean"
+          },
+          "priceValidUntil": {
+            "type": "string",
+            "nullable": true
+          },
+          "qualitySupported": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "creditCost"
+        ]
+      },
+      "WorkflowSubmission": {
+        "type": "object",
+        "properties": {
+          "generationRecordId": {
+            "type": "integer"
+          },
+          "segmentId": {
+            "type": "integer"
+          },
+          "taskId": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "generationRecordId",
+          "segmentId"
+        ]
+      },
+      "WorkflowImageRequest": {
+        "type": "object",
+        "properties": {
+          "clientRequestId": {
+            "type": "string"
+          },
+          "segmentId": {
+            "type": "integer"
+          },
+          "modelId": {
+            "type": "integer"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "aspectRatio": {
+            "type": "string"
+          },
+          "resolution": {
+            "type": "integer"
+          },
+          "quality": {
+            "type": "integer",
+            "nullable": true
+          },
+          "visualStyleId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "toneStyleId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "referenceFileIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "skillCode": {
+            "type": "string",
+            "enum": [
+              "storyboard-master"
+            ]
+          }
+        },
+        "required": [
+          "segmentId"
+        ]
+      },
+      "WorkflowVideoRequest": {
+        "type": "object",
+        "properties": {
+          "clientRequestId": {
+            "type": "string"
+          },
+          "segmentId": {
+            "type": "integer"
+          },
+          "modelId": {
+            "type": "integer"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "aspectRatio": {
+            "type": "string"
+          },
+          "resolution": {
+            "type": "string"
+          },
+          "quality": {
+            "type": "integer",
+            "nullable": true
+          },
+          "visualStyleId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "toneStyleId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "referenceFileIds": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "durationSeconds": {
+            "type": "integer"
+          },
+          "generateAudio": {
+            "type": "boolean"
+          },
+          "inheritPreviousVideo": {
+            "type": "boolean"
+          },
+          "referenceVideoDurationSeconds": {
+            "type": "integer"
+          },
+          "directorPromptRunId": {
+            "type": "integer",
+            "nullable": true
+          }
+        },
+        "required": [
+          "segmentId"
+        ]
+      }
+    }
+  }
+}

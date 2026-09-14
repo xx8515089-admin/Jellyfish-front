@@ -37,20 +37,12 @@ function loadConfiguredEnv() {
   }
 }
 
-/** 规范化 URL，避免默认拼接 /v3/api-docs 时出现重复斜杠。 */
-function trimTrailingSlash(value) {
-  return (value ?? '').trim().replace(/\/+$/, '')
-}
-
-/** 解析 OpenAPI 文档地址，优先使用显式配置，其次使用 Java 后端默认文档路径。 */
+/** 只使用显式配置的文档地址，避免根据业务地址请求已废弃的接口。 */
 function resolveOpenApiUrl(env) {
   const explicitUrl = env.OPENAPI_URL || env.VITE_OPENAPI_URL
   if (explicitUrl?.trim()) return explicitUrl.trim()
 
-  const backendUrl = trimTrailingSlash(env.VITE_BACKEND_URL || env.BACKEND_URL)
-  if (backendUrl) return `${backendUrl}/v3/api-docs`
-
-  throw new Error('未配置 OpenAPI 地址。请设置 OPENAPI_URL，或设置 VITE_BACKEND_URL 后使用默认 /v3/api-docs 路径。')
+  throw new Error('未配置 OpenAPI 地址。请通过 OPENAPI_URL 或 VITE_OPENAPI_URL 显式设置当前有效的文档地址；不会根据后端地址自动推导。')
 }
 
 const openApiUrl = resolveOpenApiUrl(loadConfiguredEnv())
