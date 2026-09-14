@@ -1,3 +1,4 @@
+import CreditIcon from '../../../components/CreditIcon'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type React from 'react'
 import { Button, Input, Popover, Spin, message } from 'antd'
@@ -10,7 +11,6 @@ import {
   FlagOutlined,
   FullscreenExitOutlined,
   FullscreenOutlined,
-  StarFilled,
   PictureOutlined,
   PlusOutlined,
   SafetyCertificateOutlined,
@@ -2458,7 +2458,7 @@ export default function AssetGenerationWorkspace({
               disabled={!canGenerate}
               onClick={() => void submitGeneration()}
             >
-              {generationButtonLabel} <span><StarFilled /> {generationCreditCostText}</span>
+              {generationButtonLabel} <span><CreditIcon /> {generationCreditCostText}</span>
             </Button>
           </footer>
           </aside>

@@ -544,6 +544,7 @@
 }
 
 .project-clip-editor__preview-stage {
+  container-type: size;
   box-sizing: border-box;
   min-width: 0;
   min-height: 0;
@@ -556,6 +557,8 @@
 }
 
 .project-clip-editor__preview-content {
+  /* Reserve the history strip and gap inside the actual preview area. */
+  width: min(100%, calc(max(0px, 100cqh - 110px) * var(--preview-aspect-ratio, 0.5625)), 980px);
   min-width: 0;
   max-width: 100%;
   max-height: 100%;
@@ -565,6 +568,7 @@
 }
 
 .project-clip-editor__preview-frame {
+  box-sizing: border-box;
   position: relative;
   width: 100%;
   max-width: 100%;
@@ -716,6 +720,37 @@
 .project-clip-editor__preview-toolbar button.is-video {
   width: auto;
   padding-inline: 7px;
+}
+
+/* Media actions remain available above the player without covering playback controls. */
+.project-clip-editor__preview-toolbar.is-media-actions {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+
+.project-clip-editor__preview-toolbar.is-media-actions button {
+  width: auto;
+  padding-inline: 8px;
+}
+
+.project-clip-editor__preview-toolbar.is-media-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.project-clip-editor__video-details {
+  width: min(360px, calc(100vw - 64px));
+  display: grid;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+
+.project-clip-editor__video-details-prompt {
+  max-height: 220px;
+  overflow-y: auto;
+  white-space: pre-wrap;
 }
 
 .project-clip-editor__preview-tool {
@@ -898,26 +933,23 @@
 .project-clip-editor__history-list {
   display: flex;
   gap: 8px;
+  overflow-x: auto;
+  padding: 2px 0 8px;
 }
 
 .project-clip-editor__history-list button {
   position: relative;
+  flex: 0 0 58px;
   width: 58px;
   height: 58px;
   padding: 1px;
   overflow: hidden;
-  border: 1px solid #d8dee7;
+  border: 1px solid transparent;
   border-radius: 7px;
   background: transparent;
   cursor: pointer;
   box-shadow: none;
-  transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
-}
-
-.project-clip-editor__history-list button:hover {
-  border-color: #98a2b3;
-  box-shadow: 0 5px 14px rgba(16, 24, 40, 0.1);
-  transform: translateY(-1px);
+  transition: border-color 150ms ease;
 }
 
 .project-clip-editor__history-list button.is-selected {
@@ -926,6 +958,7 @@
 }
 
 .project-clip-editor__history-list img,
+.project-clip-editor__history-list video,
 .project-clip-editor__history-list .project-clip-editor__cover-placeholder {
   width: 100%;
   height: 100%;
@@ -935,6 +968,12 @@
 
 .project-clip-editor__history-list img {
   display: block;
+}
+
+.project-clip-editor__history-list video {
+  display: block;
+  pointer-events: none;
+  background: #000;
 }
 
 .project-clip-editor__history-list .project-clip-editor__cover-placeholder {
@@ -1220,8 +1259,8 @@
   min-width: 0;
   flex: 1;
   display: flex;
-  gap: 8px;
-  padding: 0 1px 7px;
+  gap: 14px;
+  padding: 10px 10px 7px 1px;
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
@@ -1256,6 +1295,12 @@
   cursor: pointer;
   transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
+
+/* Reserve scroll-container space for the corner control without clipping the image corners. */
+.project-clip-editor__reference-add { margin-top: 10px; }
+.project-clip-editor__reference { overflow: visible; }
+.project-clip-editor__reference .ant-image { overflow: hidden; border-radius: 6px; }
+.project-clip-editor__reference > span:not(.anticon) { border-radius: 0 0 6px 6px; }
 
 .project-clip-editor__reference-add:hover,
 .project-clip-editor__reference-add.is-open,
@@ -1345,6 +1390,36 @@
   }
 }
 
+.project-clip-editor__generating {
+  width: 100%; height: 100%; min-height: 220px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; padding: 24px; background: var(--jf-panel, #171718); color: var(--jf-text, #eee);
+}
+
+/* Replace only the reference strip while dragging, keeping the prompt and settings in place. */
+.project-clip-editor__reference-drop {
+  min-height: 80px;
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  border: 1px dashed var(--jf-border, #505055);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--jf-text, #eee);
+  font-size: 13px;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+.project-clip-editor__reference-drop.is-over {
+  border-color: var(--jf-text, #eee);
+  background: rgba(255, 255, 255, 0.09);
+}
+.project-clip-editor__generating-icon { display: grid; place-items: center; width: 60px; height: 60px; border-radius: 16px; background: rgba(255, 255, 255, 0.05); font-size: 26px; }
+.project-clip-editor__generating > span, .project-clip-editor__generating small { color: var(--jf-text-secondary, #999); text-align: center; }
+.project-clip-editor__generating .ant-progress { width: min(260px, 100%); }
+
 .project-clip-editor__reference-loading {
   height: 62px;
   padding: 0 8px;
@@ -1389,66 +1464,71 @@
   white-space: nowrap;
 }
 
-.project-clip-editor__reference-remove {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
+/* Keep preview and removal as separate click targets on the reference card. */
+.project-clip-editor__reference .ant-image {
+  display: block;
   width: 100%;
   height: 100%;
+  cursor: zoom-in;
+}
+
+.project-clip-editor__reference > span:not(.anticon) {
+  pointer-events: none;
+  border-radius: 0 0 6px 6px;
+}
+
+.project-clip-editor__reference-video {
+  position: relative; display: block; width: 100%; height: 100%; padding: 0;
+  overflow: hidden; border: 0; border-radius: 6px; background: #202023; cursor: pointer;
+}
+.project-clip-editor__reference-video video { display: block; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.project-clip-editor__reference-video:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
+
+.project-clip-editor__reference-remove {
+  position: absolute;
+  top: -9px;
+  right: -9px;
+  z-index: 2;
+  width: 18px;
+  height: 18px;
   padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 0;
-  border-radius: inherit;
-  background: rgba(255, 255, 255, 0.12);
-  color: #ff6b6b;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  background: rgba(24, 24, 28, 0.82);
+  color: rgba(255, 255, 255, 0.9);
   cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
   opacity: 0;
-  outline: 0;
-  box-shadow: none;
-  backdrop-filter: blur(8px) saturate(1.35);
-  -webkit-backdrop-filter: blur(8px) saturate(1.35);
-  transition: opacity 150ms ease, background-color 150ms ease;
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition: opacity 140ms ease, transform 140ms ease, background-color 140ms ease, border-color 140ms ease;
 }
 
-.project-clip-editor__reference-remove::before {
-  content: none;
-}
-
-.project-clip-editor__reference-remove .anticon {
-  position: relative;
-  z-index: 1;
-  width: 22px;
-  height: 22px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.22);
-  color: #ff5a5f;
-  font-size: 13px;
-  line-height: 1;
-  box-shadow: inset 0 0 0 1px rgba(255, 77, 79, 0.42), 0 4px 10px rgba(0, 0, 0, 0.18);
-}
-
+.project-clip-editor__reference-remove .anticon { font-size: 10px; }
 .project-clip-editor__reference:hover .project-clip-editor__reference-remove,
-.project-clip-editor__reference.is-deleting .project-clip-editor__reference-remove,
-.project-clip-editor__reference-remove:focus-visible {
+.project-clip-editor__reference:focus-within .project-clip-editor__reference-remove {
   opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
 }
-
 .project-clip-editor__reference-remove:hover {
-  background: rgba(255, 255, 255, 0.16);
+  background: #b83e45;
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #fff;
+}
+.project-clip-editor__reference-remove:active { transform: scale(0.94); }
+.project-clip-editor__reference-remove:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+.project-clip-editor__reference-remove:disabled { cursor: wait; }
+
+@media (hover: none) {
+  .project-clip-editor__reference-remove { opacity: 1; pointer-events: auto; transform: none; }
 }
 
-.project-clip-editor__reference-remove:hover .anticon {
-  background: rgba(255, 255, 255, 0.3);
-  color: #ff4d4f;
-}
-
-.project-clip-editor__reference-remove:disabled {
-  cursor: wait;
+@media (prefers-reduced-motion: reduce) {
+  .project-clip-editor__reference-remove { transition: none; }
 }
 
 .project-clip-editor__prompt-section {
@@ -4392,7 +4472,6 @@
   border-color: var(--jf-accent-border, rgba(255, 255, 255, 0.18));
 }
 
-.project-clip-editor .project-clip-editor__reference-remove,
 .project-clip-character-modal .project-clip-character-modal__selected-delete {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.08)) !important;
   box-shadow:
@@ -4402,12 +4481,8 @@
   -webkit-backdrop-filter: blur(10px) saturate(1.45) !important;
 }
 
-.project-clip-editor .project-clip-editor__reference-remove:hover,
-.project-clip-editor .project-clip-editor__reference-remove:focus-visible {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.1)) !important;
-}
 
-.project-clip-editor .project-clip-editor__reference-remove .anticon,
+
 .project-clip-character-modal .project-clip-character-modal__selected-delete .anticon {
   width: 20px !important;
   height: 20px !important;
@@ -4431,7 +4506,6 @@
   pointer-events: auto;
 }
 
-.project-clip-editor .project-clip-editor__reference-remove:not(:disabled) .anticon:hover,
 .project-clip-character-modal .project-clip-character-modal__selected-delete .anticon:hover {
   transform: scale(1.12);
   border-color: rgba(239, 68, 68, 0.82) !important;
@@ -4440,7 +4514,6 @@
   box-shadow: 0 6px 16px rgba(239, 68, 68, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.28) !important;
 }
 
-.project-clip-editor .project-clip-editor__reference-remove:not(:disabled) .anticon:active,
 .project-clip-character-modal .project-clip-character-modal__selected-delete .anticon:active {
   transform: scale(0.96);
 }

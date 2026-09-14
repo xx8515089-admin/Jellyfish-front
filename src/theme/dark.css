@@ -1105,7 +1105,7 @@ code {
   color: var(--jf-text-soft) !important;
 }
 
-.project-create-page__balance-value .anticon {
+.project-create-page__balance-value .anticon:not(.credit-icon) {
   color: #c8b58a !important;
 }
 

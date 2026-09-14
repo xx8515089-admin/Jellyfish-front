@@ -1,3 +1,4 @@
+import CreditIcon from '../../../components/CreditIcon'
 import type React from 'react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Input, message, Modal, Spin, theme, Tooltip } from 'antd'
@@ -6,14 +7,13 @@ import {
   CloseOutlined,
   FileAddOutlined,
   LockOutlined,
-  StarFilled,
   PlusOutlined,
   StopOutlined,
 } from '@ant-design/icons'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { getStoredAuthUser } from '../../../auth'
 import { getApiErrorMessage } from '../../../services/apiErrors'
-import { StudioChaptersService } from '../../../services/generated'
+import { WorkflowService } from '../../../services/generated/services/WorkflowService'
 import { StudioScriptsApi } from '../../../services/studioScripts'
 import {
   StudioAssetGenerationApi,
@@ -87,6 +87,7 @@ const STORYBOARD_POLL_INTERVAL_MS = 3000
 type StyleCategoryKey = 'visual' | 'tone'
 type StylePreview = 'empty' | 'online'
 type EpisodeDraft = {
+  revisionNo?: number | null
   id: string
   title: string
   rawText: string
@@ -242,6 +243,7 @@ const toEpisodeDrafts = (
   getFallbackTitle: (episodeNumber: number) => string,
 ): EpisodeDraft[] => chapters.map((chapter, index) => ({
   id: String(chapter.id ?? createId(`script_import_chapter_${index + 1}`)),
+  revisionNo: chapter.revisionNo,
   title: (chapter.title?.trim()
     || chapter.chapterTitle?.trim()
     || chapter.chapter_title?.trim()
@@ -1596,10 +1598,8 @@ const ProjectCreatePage: React.FC = () => {
   const activeEpisodeCanEdit = activeEpisode?.canEdit === true
   const activeEpisodeLocked = Boolean(activeEpisode && !activeEpisodeCanEdit)
   const activeEpisodeSaving = activeEpisode ? savingEpisodeId === activeEpisode.id : false
-  const assetStepEpisodes = useMemo(() => (assetEpisodes ?? []).map((assetEpisode, index) => {
-    const sourceEpisode = episodes[assetEpisode.index - 1]
-      ?? episodes.find((episode) => String(episode.id) === String(assetEpisode.id))
-      ?? episodes[index]
+  const assetStepEpisodes = useMemo(() => (assetEpisodes ?? []).map((assetEpisode) => {
+    const sourceEpisode = episodes.find((episode) => String(episode.id) === String(assetEpisode.id))
     const canEdit = sourceEpisode?.canEdit ?? assetEpisode.canEdit ?? assetEpisode.can_edit
     return {
       id: String(assetEpisode.id),
@@ -1676,6 +1676,7 @@ const ProjectCreatePage: React.FC = () => {
             rawText: savedEpisode.rawText,
             raw_text: savedEpisode.rawText,
             canEdit: savedEpisode.canEdit,
+            revisionNo: savedEpisode.revisionNo,
           }
           : chapter
       ))
@@ -1691,7 +1692,13 @@ const ProjectCreatePage: React.FC = () => {
     }
   }, [])
 
-  const saveEpisodeDraft = useCallback(async (episode?: EpisodeDraft | null) => {
+  const episodeSaveQueuesRef = useRef(new Map<string, Promise<boolean>>())
+  const episodeRevisionsRef = useRef(new Map<string, number>())
+  const latestEpisodesRef = useRef(episodes)
+  latestEpisodesRef.current = episodes
+
+  // Save one complete revision at a time; a conflict preserves the local draft for manual merging.
+  const persistEpisodeDraft = useCallback(async (episode?: EpisodeDraft | null) => {
     if (!episode || episode.canEdit !== true) return true
 
     const savedEpisode: EpisodeDraft = {
@@ -1703,10 +1710,6 @@ const ProjectCreatePage: React.FC = () => {
       message.warning(l('请输入分集标题', 'Enter the episode title'))
       return false
     }
-    if (!savedEpisode.rawText.trim()) {
-      message.warning(l('请输入本集剧本内容', 'Enter this episode script'))
-      return false
-    }
 
     const requestSignature = getEpisodeSaveSignature(episode)
     const signature = getEpisodeSaveSignature(savedEpisode)
@@ -1714,20 +1717,30 @@ const ProjectCreatePage: React.FC = () => {
 
     setSavingEpisodeId(savedEpisode.id)
     try {
-      await StudioChaptersService.updateChapterApiV1StudioChaptersChapterIdPatch({
-        chapterId: savedEpisode.id,
-        requestBody: {
-          title: savedEpisode.title,
-          raw_text: savedEpisode.rawText,
-        },
-      })
+      let revision = episodeRevisionsRef.current.get(savedEpisode.id) ?? savedEpisode.revisionNo
+      if (!revision) {
+        const detail = await WorkflowService.chapterDetail({ id: Number(savedEpisode.id) })
+        if (detail.code !== 200 || !detail.data) throw new Error(detail.message || '读取分集失败')
+        const remoteSignature = getEpisodeSaveSignature({ title: detail.data.title, rawText: detail.data.rawText })
+        if (remoteSignature !== episodeSavedSignaturesRef.current.get(savedEpisode.id)) {
+          throw { body: { data: { errorCode: 'REVISION_CONFLICT' } } }
+        }
+        revision = detail.data.revisionNo
+      }
+      const response = await WorkflowService.updateChapter({ requestBody: {
+        id: Number(savedEpisode.id), title: savedEpisode.title, rawText: savedEpisode.rawText, expectedRevisionNo: revision,
+      } })
+      if (response.code !== 200 || !response.data) throw new Error(response.message || '保存分集失败')
+      savedEpisode.revisionNo = response.data.revisionNo
+      savedEpisode.canEdit = response.data.canEdit
+      episodeRevisionsRef.current.set(savedEpisode.id, response.data.revisionNo)
       episodeSavedSignaturesRef.current.set(savedEpisode.id, signature)
       setEpisodes((current) => current.map((item) => {
         if (item.id !== savedEpisode.id) return item
         const currentSignature = getEpisodeSaveSignature(item)
         return currentSignature === requestSignature || currentSignature === signature
-          ? { ...item, title: savedEpisode.title, rawText: savedEpisode.rawText }
-          : item
+          ? { ...item, ...savedEpisode }
+          : { ...item, revisionNo: savedEpisode.revisionNo, canEdit: savedEpisode.canEdit }
       }))
       if (scriptImportId !== null) {
         primeSavedEpisode(scriptImportId, savedEpisode)
@@ -1736,12 +1749,43 @@ const ProjectCreatePage: React.FC = () => {
       message.success(l('分集已保存', 'Episode saved'))
       return true
     } catch (error) {
-      message.error(getApiErrorMessage(error, l('分集保存失败', 'Failed to save episode')))
+      const errorCode = (error as { body?: { data?: { errorCode?: string } } })?.body?.data?.errorCode
+      if (errorCode === 'REVISION_CONFLICT' || errorCode === 'CHAPTER_NOT_EDITABLE') {
+        try {
+          const response = await WorkflowService.chapterDetail({ id: Number(savedEpisode.id) })
+          if (response.code !== 200 || !response.data) throw new Error(response.message)
+          const remote = response.data
+          let merged = latestEpisodesRef.current.find((item) => item.id === savedEpisode.id)?.rawText ?? savedEpisode.rawText
+          let mergedTitle = latestEpisodesRef.current.find((item) => item.id === savedEpisode.id)?.title ?? savedEpisode.title
+          Modal.confirm({ title: l('分集内容冲突，请核对后合并', 'Review and merge episode changes'), width: 760,
+            content: <div><p>{l('服务器标题', 'Server title')}: {remote.title}</p><Input value={remote.title} readOnly />
+              <p>{l('本地标题', 'Local title')}</p><Input defaultValue={mergedTitle} onChange={(event) => { mergedTitle = event.target.value }} />
+              <p>{l('服务器正文', 'Server content')}</p><Input.TextArea value={remote.rawText} readOnly rows={7} />
+              <p>{l('本地正文（可编辑，确认后仍需保存）', 'Local content (edit and save after confirming)')}</p><Input.TextArea defaultValue={merged} rows={7} onChange={(event) => { merged = event.target.value }} />
+              {!remote.canEdit && <p>{l('该分集已锁定，请复制保留本地内容。', 'This episode is locked. Copy your local changes to retain them.')}</p>}</div>,
+            okText: l('确认合并到本地', 'Use merged draft'),
+            onOk: () => {
+              episodeRevisionsRef.current.set(savedEpisode.id, remote.revisionNo)
+              setEpisodes((current) => current.map((item) => item.id === savedEpisode.id ? { ...item, title: mergedTitle, rawText: merged, revisionNo: remote.revisionNo, canEdit: remote.canEdit } : item))
+            },
+          })
+        } catch (reason) { message.error(getApiErrorMessage(reason)) }
+      } else message.error(getApiErrorMessage(error, l('分集保存失败', 'Failed to save episode')))
       return false
     } finally {
       setSavingEpisodeId((current) => current === savedEpisode.id ? null : current)
     }
   }, [l, markEpisodeContentChanged, primeSavedEpisode, scriptImportId])
+
+  // A failed earlier write blocks queued writes until the user explicitly retries or merges.
+  const saveEpisodeDraft = useCallback((episode?: EpisodeDraft | null): Promise<boolean> => {
+    if (!episode) return Promise.resolve(true)
+    const previous = episodeSaveQueuesRef.current.get(episode.id)
+    const work = (previous ?? Promise.resolve(true)).then((ok) => ok ? persistEpisodeDraft(episode) : false)
+    episodeSaveQueuesRef.current.set(episode.id, work)
+    void work.finally(() => { if (episodeSaveQueuesRef.current.get(episode.id) === work) episodeSaveQueuesRef.current.delete(episode.id) })
+    return work
+  }, [persistEpisodeDraft])
 
   const saveActiveEpisode = useCallback(() => saveEpisodeDraft(activeEpisode), [
     activeEpisode,
@@ -2547,8 +2591,13 @@ const ProjectCreatePage: React.FC = () => {
       message.warning(l('请填写每一集的剧本内容', 'Enter script content for every episode'))
       return
     }
-    const activeEpisodeSaved = await saveActiveEpisode()
-    if (!activeEpisodeSaved) return
+    for (const episode of latestEpisodesRef.current) {
+      if (!await saveEpisodeDraft(episode)) return
+    }
+    if (latestEpisodesRef.current.some((episode) => episode.canEdit === true && episodeSavedSignaturesRef.current.get(episode.id) !== getEpisodeSaveSignature(episode))) {
+      message.info(l('保存期间内容发生变化，请再次确认保存', 'Content changed during saving; save again'))
+      return
+    }
     const extractScriptImportId = scriptImportId
     if (extractScriptImportId === null) {
       message.warning(l(
@@ -3127,7 +3176,7 @@ const ProjectCreatePage: React.FC = () => {
           >
             <span className="project-create-page__balance-label">{l('余额', 'Balance')}</span>
             <span className="project-create-page__balance-value">
-              <StarFilled />
+              <CreditIcon />
               <strong>{apiQuotaText}</strong>
             </span>
           </div>
@@ -3160,7 +3209,7 @@ const ProjectCreatePage: React.FC = () => {
                     <span className="project-create-page__next-with-cost">
                       <span>{l('下一步', 'Next')}</span>
                       <span className="project-create-page__next-cost">
-                        {l('预计', 'Est.')} <StarFilled /> {requiredCreditsText}
+                        {l('预计', 'Est.')} <CreditIcon /> {requiredCreditsText}
                       </span>
                     </span>
                   )

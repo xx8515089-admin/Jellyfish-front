@@ -107,7 +107,7 @@ export type StudioStoryboardVideoGenerateEstimateResult = {
   priceValidUntil?: string | null
 }
 
-export type StudioStoryboardVideoReferenceOptionSource = 'character' | 'scene' | 'prop' | 'dubbing'
+export type StudioStoryboardVideoReferenceOptionSource = 'character' | 'scene' | 'prop' | 'dubbing' | 'history'
 
 export type StudioStoryboardVideoReferenceOptionsRequest = {
   segmentId: string | number
@@ -436,6 +436,8 @@ export type StudioStoryboardVideoPromptDetailResult = {
 export type StudioStoryboardMediaType = 'image' | 'video'
 
 export type StudioStoryboardMediaHistoryItem = {
+  outputReady?: boolean
+  generationRecordId?: string
   mediaType: StudioStoryboardMediaType
   id: string
   segmentId?: string | number | null
@@ -1680,7 +1682,7 @@ function normalizeStoryboardVideoReferenceOptionSource(
   fallback: StudioStoryboardVideoReferenceOptionSource,
 ): StudioStoryboardVideoReferenceOptionSource {
   const source = normalizeHistoryValue(value)
-  if (source === 'character' || source === 'scene' || source === 'prop' || source === 'dubbing') {
+  if (source === 'character' || source === 'scene' || source === 'prop' || source === 'dubbing' || source === 'history') {
     return source
   }
   return fallback
@@ -2129,6 +2131,7 @@ function normalizeStoryboardMediaHistory(data: unknown): StudioStoryboardMediaHi
     return [{
       mediaType: normalizeStoryboardMediaType(item.mediaType ?? item.media_type ?? item.type, outputUrl),
       id,
+      generationRecordId: normalizeHistoryValue(item.id),
       segmentId: normalizeHistoryValue(item.segmentId ?? item.segment_id) ?? null,
       taskId: normalizeHistoryValue(item.taskId ?? item.task_id) ?? null,
       versionNo: normalizeNumberOrNull(item.versionNo ?? item.version_no),

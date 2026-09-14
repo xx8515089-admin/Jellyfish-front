@@ -1,3 +1,4 @@
+import CreditIcon from '../../../components/CreditIcon'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type React from 'react'
 import { Button, Dropdown, Empty, Input, Modal, Pagination, Spin, message } from 'antd'
@@ -16,7 +17,6 @@ import {
   PlusOutlined,
   SearchOutlined,
   SwapOutlined,
-  StarFilled,
   UploadOutlined,
 } from '@ant-design/icons'
 import { useBilingualText } from '../../../i18n/useBilingualText'
@@ -4481,7 +4481,7 @@ export default function ProjectAssetsStep({
             >
               <span>{scope === 'overview' ? l('一键生成全剧资产', 'Generate all assets') : l('一键生成本集资产', 'Generate episode assets')}</span>
               {!currentScopeGenerationCompleted && (
-                <span className="project-assets-step__generation-cost"><StarFilled />{generationTotalCostText}</span>
+                <span className="project-assets-step__generation-cost"><CreditIcon />{generationTotalCostText}</span>
               )}
             </Button>
           </div>
@@ -4589,7 +4589,7 @@ export default function ProjectAssetsStep({
                             void generateAssetFromCard(asset)
                           }}
                         >
-                          {l('生成', 'Generate')} <StarFilled /> {generationUnitCostText}
+                          {l('生成', 'Generate')} <CreditIcon /> {generationUnitCostText}
                         </Button>
                       </div>
                     )}

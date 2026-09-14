@@ -60,6 +60,7 @@ export type StudioScriptImportListRequest = {
 }
 
 export type StudioScriptParseChapter = {
+  revisionNo?: number | null
   id?: StudioScriptImportId | null
   index?: number | null
   title?: string | null
