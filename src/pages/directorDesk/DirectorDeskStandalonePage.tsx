@@ -9,6 +9,9 @@ import {
   unregisterDirectorDeskDom,
 } from './runtime/editor/io/directorDeskDom'
 import directorDeskStyles from './runtime/styles/index.css?inline'
+import DirectorDeskCloudPanel from './DirectorDeskCloudPanel'
+import type { DirectorDesk } from '../../services/studioDirectorDesks'
+import { Modal } from 'antd'
 
 interface DirectorDeskStandalonePageProps {
   embeddedHome?: boolean
@@ -20,6 +23,11 @@ export default function DirectorDeskStandalonePage({ embeddedHome = false }: Dir
   const [searchParams] = useSearchParams()
   const hostRef = useRef<HTMLDivElement>(null)
   const [mountNode, setMountNode] = useState<HTMLDivElement | null>(null)
+  const [cloudDesk, setCloudDesk] = useState<DirectorDesk>()
+  const [cloudLoad, setCloudLoad] = useState(0)
+  const [cloudReady, setCloudReady] = useState(0)
+  const [panelKey, setPanelKey] = useState(0)
+  const dirtyRef = useRef(false)
   const initialInstanceId = projectId && chapterId
     ? `project:${projectId}:chapter:${chapterId}`
     : deskId
@@ -52,15 +60,37 @@ export default function DirectorDeskStandalonePage({ embeddedHome = false }: Dir
   }
 
   const handleClose = () => {
+    if (dirtyRef.current) {
+      Modal.confirm({ title: '当前云工程有未保存修改', content: '离开前请确认已保存需要的修改。', okText: '离开', cancelText: '继续编辑', onOk: leave })
+      return
+    }
+    leave()
+  }
+
+  const leave = () => {
+    const returnTo = searchParams.get('returnTo')
+    if (returnTo?.startsWith('/') && !returnTo.startsWith('//')) { navigate(returnTo); return }
     if (projectId && chapterId) {
       navigate(`/projects/${projectId}/chapters/${chapterId}/studio`)
       return
     }
+    setCloudDesk(undefined)
+    setCloudReady(0)
+    setPanelKey((value) => value + 1)
+    dirtyRef.current = false
     navigate('/director-desk')
   }
 
   return (
-    <>
+    <div style={{ display: 'flex', flexDirection: 'column', height: embeddedHome ? '100%' : '100dvh', minHeight: 0 }}>
+      <DirectorDeskCloudPanel
+        key={panelKey}
+        editorRoot={hostRef}
+        initialSegmentId={searchParams.get('segmentId') || undefined}
+        cloudReady={cloudReady}
+        onDirtyChange={(value) => { dirtyRef.current = value }}
+        onOpen={(detail) => { setCloudDesk(detail); setCloudLoad((value) => value + 1) }}
+      />
       <div
         ref={hostRef}
         className="director-desk-host"
@@ -68,7 +98,7 @@ export default function DirectorDeskStandalonePage({ embeddedHome = false }: Dir
         style={{
           display: 'block',
           width: '100%',
-          height: embeddedHome ? '100%' : '100dvh',
+          flex: 1,
           minHeight: 0,
           overflow: 'hidden',
           background: '#090909',
@@ -76,9 +106,11 @@ export default function DirectorDeskStandalonePage({ embeddedHome = false }: Dir
       >
         {mountNode ? createPortal(
           <DirectorDeskApp
-            key={initialInstanceId ?? 'standalone'}
-            initialInstanceId={initialInstanceId}
-            initialInstanceName={projectId && chapterId ? '当前章节导演台' : undefined}
+            key={cloudDesk ? `cloud-${cloudLoad}` : initialInstanceId ?? 'standalone'}
+            cloudDesk={cloudDesk}
+            onCloudReady={() => setCloudReady((value) => value + 1)}
+            initialInstanceId={cloudDesk?.instanceId ?? initialInstanceId}
+            initialInstanceName={cloudDesk?.name ?? (projectId && chapterId ? '当前章节导演台' : undefined)}
             onBackHome={handleClose}
             onClose={handleClose}
             onOpenDesk={embeddedHome ? handleOpenDesk : undefined}
@@ -86,11 +118,11 @@ export default function DirectorDeskStandalonePage({ embeddedHome = false }: Dir
           mountNode,
         ) : null}
       </div>
-      <DirectorDeskCaptureBridge
+      {!cloudDesk && <DirectorDeskCaptureBridge
         chapterId={chapterId}
         initialShotId={searchParams.get('shotId') || undefined}
         projectId={projectId}
-      />
-    </>
+      />}
+    </div>
   )
 }

@@ -47,6 +47,7 @@ import {
   type StudioEpisodeStoryboardSegmentDetailResult,
   type StudioEpisodeStoryboardSegmentSourceType,
   type StudioStoryboardMediaHistoryItem,
+  type StudioStoryboardImageSkillResult,
   type StudioStoryboardVideoDetailResult,
   type StudioStoryboardVideoPromptDetailResult,
   type StudioStoryboardVideoPromptRegenerateResult,
@@ -168,9 +169,22 @@ type VideoGenerationState = {
   error?: unknown
 }
 
+type StoryboardImageSkillAction = 'apply' | 'undo'
+
+type StoryboardImageSkillState = {
+  loading: boolean
+  action?: StoryboardImageSkillAction
+  enabled?: boolean
+  error?: unknown
+}
+
+const STORYBOARD_MASTER_SKILL_CODE = 'storyboard-master'
+const STORYBOARD_IMAGE_SKILL_MESSAGE_KEY_PREFIX = 'project-clip-editor-storyboard-image-skill'
 const VIDEO_DURATION_MIN = 4
 const VIDEO_DURATION_MAX = 30
 const DEFAULT_VIDEO_DURATION = 10
+const DEFAULT_IMAGE_RESOLUTION = '2k'
+const FALLBACK_IMAGE_RESOLUTIONS = ['2k', '4k']
 const DEFAULT_VIDEO_RESOLUTION = '720p'
 const FALLBACK_VIDEO_RESOLUTIONS = ['480p', '720p']
 const PROMPT_REGENERATION_POLL_INTERVAL_MS = 3000
@@ -252,6 +266,10 @@ const isGenerationMode = (value: unknown): value is GenerationMode => (
   value === 'video' || value === 'image' || value === 'voice'
 )
 
+const getPromptDraftKey = (clipId: string, mode: GenerationMode) => (
+  mode === 'image' ? `image:${clipId}` : clipId
+)
+
 const toStoryboardSegmentRequestId = (clipId: string): string | number => (
   /^\d+$/.test(clipId) ? Number(clipId) : clipId
 )
@@ -308,6 +326,16 @@ const formatCreditCost = (value: number | undefined) => {
   return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/\.?0+$/, '')
 }
 
+const normalizeImageResolutionValue = (value: unknown) => {
+  const text = String(value ?? '').trim()
+  if (!text) return ''
+  const normalized = text.toLocaleLowerCase()
+  if (/^\d+$/.test(normalized)) return `${normalized}k`
+  return /^\d+k$/.test(normalized) ? normalized : text
+}
+
+const formatImageResolutionLabel = (value: string) => normalizeImageResolutionValue(value).toLocaleUpperCase()
+
 const normalizeVideoResolutionValue = (value: unknown) => {
   const text = String(value ?? '').trim()
   if (!text) return ''
@@ -317,10 +345,47 @@ const normalizeVideoResolutionValue = (value: unknown) => {
 
 const formatVideoResolutionLabel = (value: string) => normalizeVideoResolutionValue(value).toLocaleUpperCase()
 
+const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+
+const normalizePositiveInteger = (value: unknown, fallback: number) => {
+  const numberValue = Math.floor(Number(value))
+  return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : fallback
+}
+
+const normalizePositiveIntegerOrNull = (value: unknown) => {
+  const numberValue = Math.floor(Number(value))
+  return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : null
+}
+
+const getVideoDurationRange = (
+  capabilities?: StudioGenerationModel['videoCapabilities'],
+) => {
+  const min = normalizePositiveInteger(capabilities?.minDurationSeconds, VIDEO_DURATION_MIN)
+  const max = Math.max(
+    min,
+    normalizePositiveInteger(capabilities?.maxDurationSeconds, VIDEO_DURATION_MAX),
+  )
+  return { min, max }
+}
+
 const normalizeVideoModelLookupKey = (value: unknown) => String(value ?? '')
   .trim()
   .toLocaleLowerCase()
   .replace(/[^a-z0-9]+/g, '')
+
+const findGenerationModelBySelection = (
+  models: StudioGenerationModel[],
+  selection: string,
+) => {
+  const selectedById = models.find((item) => String(item.id) === selection)
+  if (selectedById) return selectedById
+  const currentKey = normalizeVideoModelLookupKey(selection)
+  if (!currentKey) return undefined
+  return models.find((item) => (
+    normalizeVideoModelLookupKey(item.modelCode).includes(currentKey)
+    || normalizeVideoModelLookupKey(item.name).includes(currentKey)
+  ))
+}
 
 const isStoryboardVideoPromptFinished = (detail: StudioStoryboardVideoPromptDetailResult) => {
   const prompt = detail.prompt?.trim()
@@ -427,23 +492,27 @@ const parsePromptReferenceIndex = (token?: string | null) => {
 
 const storyboardSegmentDetailToMentionAssets = (
   detail?: StudioEpisodeStoryboardSegmentDetailResult,
+  mode: GenerationMode = 'video',
 ): PromptMentionAsset[] => {
   const references = detail?.referenceSelection?.references.length
     ? detail.referenceSelection.references
-    : detail?.directorPrompt?.references ?? []
+    : mode === 'image'
+      ? detail?.imagePrompt?.references ?? detail?.directorPrompt?.references ?? []
+      : detail?.directorPrompt?.references ?? detail?.imagePrompt?.references ?? []
   const promptReferenceAssets = references.flatMap((reference, index): PromptMentionAsset[] => {
     const token = reference.referenceToken.trim()
     const name = reference.displayName.trim()
     if (!token || !name) return []
+    const referenceIdentity = reference.referenceKey ?? token
     return [{
-      id: `storyboard-reference:${detail?.id}:${token}`,
+      id: `storyboard-reference:${detail?.id}:${referenceIdentity}`,
       name,
       token,
       referenceIndex: reference.referenceIndex ?? parsePromptReferenceIndex(token) ?? index + 1,
       referenceSelectionRevisionNo: detail?.referenceSelection?.revisionNo ?? null,
       imageUrl: getStoryboardReferenceImageUrl(reference.fileUrl, reference.fileId),
       kind: getStoryboardReferenceKind(reference.referenceType),
-      aliases: [name],
+      aliases: [name, ...(reference.matchNames ?? [])],
     }]
   })
   if (promptReferenceAssets.length > 0) return promptReferenceAssets
@@ -1483,8 +1552,8 @@ export default function ProjectClipEditingStep({
   const [promptByClip, setPromptByClip] = useState<Record<string, string>>(
     canRestoreDraft ? restoredDraft.promptByClip : {},
   )
-  const [model, setModel] = useState(canRestoreDraft ? restoredDraft.model : 'gpt-image-2')
-  const [resolution, setResolution] = useState(canRestoreDraft ? restoredDraft.resolution : '2k')
+  const [model, setModel] = useState(canRestoreDraft ? restoredDraft.model : '')
+  const [resolution, setResolution] = useState(canRestoreDraft ? restoredDraft.resolution : DEFAULT_IMAGE_RESOLUTION)
   const [videoModel, setVideoModel] = useState(canRestoreDraft ? restoredDraft.videoModel : '')
   const [videoResolution, setVideoResolution] = useState(
     canRestoreDraft
@@ -1602,6 +1671,10 @@ export default function ProjectClipEditingStep({
   const [voiceBasicsExpanded, setVoiceBasicsExpanded] = useState(true)
   const [voiceVolume, setVoiceVolume] = useState(canRestoreDraft ? restoredDraft.voiceVolume : 1)
   const [voiceSpeed, setVoiceSpeed] = useState(canRestoreDraft ? restoredDraft.voiceSpeed : 1)
+  const [imageModels, setImageModels] = useState<StudioGenerationModel[]>([])
+  const [imageModelsLoading, setImageModelsLoading] = useState(true)
+  const [imageModelsError, setImageModelsError] = useState<unknown>()
+  const [imageModelsRetryToken, setImageModelsRetryToken] = useState(0)
   const [videoModels, setVideoModels] = useState<StudioGenerationModel[]>([])
   const [videoModelsLoading, setVideoModelsLoading] = useState(true)
   const [videoModelsError, setVideoModelsError] = useState<unknown>()
@@ -1611,6 +1684,7 @@ export default function ProjectClipEditingStep({
   const [videoGenerateEstimateError, setVideoGenerateEstimateError] = useState<unknown>()
   const [promptRegenerationByClipId, setPromptRegenerationByClipId] = useState<Record<string, PromptRegenerationState>>({})
   const [videoGenerationByClipId, setVideoGenerationByClipId] = useState<Record<string, VideoGenerationState>>({})
+  const [storyboardImageSkillByClipId, setStoryboardImageSkillByClipId] = useState<Record<string, StoryboardImageSkillState>>({})
   const initialVoiceLines = (
     canRestoreDraft && Array.isArray(restoredDraft.voiceLines)
       ? restoredDraft.voiceLines
@@ -1643,6 +1717,8 @@ export default function ProjectClipEditingStep({
   const promptRegenerateDetailRequestRef = useRef<StudioAssetImageTaskRequest<StudioStoryboardVideoPromptDetailResult> | null>(null)
   const promptRegenerateTimerRef = useRef<PollTimerCancel | null>(null)
   const promptRegenerateRunRef = useRef(0)
+  const storyboardImageSkillRequestRef = useRef<StudioAssetImageTaskRequest<StudioStoryboardImageSkillResult> | null>(null)
+  const storyboardImageSkillPendingClipIdRef = useRef<string | null>(null)
   const referenceOptionsRequestRef = useRef<StudioAssetImageTaskRequest<StudioStoryboardVideoReferenceOption[]> | null>(null)
   const referenceAddRequestRef = useRef<StudioAssetImageTaskRequest<StudioStoryboardVideoReferenceAddResult | null> | null>(null)
   const referenceDeleteRequestRefs = useRef(new Map<string, StudioAssetImageTaskRequest<StudioStoryboardVideoReferenceDeleteResult | null>>())
@@ -1702,10 +1778,30 @@ export default function ProjectClipEditingStep({
   const activeMediaHistoryState = activeClip ? mediaHistoryByClipId[activeClip.id] : undefined
   const activePromptRegenerationState = activeClip ? promptRegenerationByClipId[activeClip.id] : undefined
   const activeVideoGenerationState = activeClip ? videoGenerationByClipId[activeClip.id] : undefined
+  const activeStoryboardImageSkillState = activeClip ? storyboardImageSkillByClipId[activeClip.id] : undefined
+  const canUseRemoteStoryboardImageSkill = Boolean(
+    activeClip && hasRemoteInitialClips && !activeClip.id.startsWith('clip-'),
+  )
+  const storyboardMasterSkillEnabled = canUseRemoteStoryboardImageSkill
+    ? activeStoryboardImageSkillState?.enabled ?? Boolean(
+        activeSegmentDetail?.imagePrompt?.canUndoSkill
+        || activeSegmentDetail?.imagePrompt?.skillCode === STORYBOARD_MASTER_SKILL_CODE
+        || activeSegmentDetail?.directorPrompt?.canUndoSkill
+        || activeSegmentDetail?.directorPrompt?.skillCode === STORYBOARD_MASTER_SKILL_CODE,
+      )
+    : storyboardSkillEnabled
+  const storyboardImageSkillBusy = Boolean(activeStoryboardImageSkillState?.loading)
+  const storyboardImageSkillActionText = storyboardImageSkillBusy
+    ? activeStoryboardImageSkillState?.action === 'undo'
+      ? l('撤回中', 'Undoing')
+      : l('使用中', 'Applying')
+    : storyboardMasterSkillEnabled
+      ? l('点击撤回', 'Undo')
+      : l('点击使用', 'Use')
   const promptMentionAssets = useMemo(() => {
-    const storyboardAssets = storyboardSegmentDetailToMentionAssets(activeSegmentDetail)
+    const storyboardAssets = storyboardSegmentDetailToMentionAssets(activeSegmentDetail, mode)
     return hasRemoteInitialClips ? storyboardAssets : storyboardAssets.length > 0 ? storyboardAssets : fallbackPromptMentionAssets
-  }, [activeSegmentDetail, fallbackPromptMentionAssets, hasRemoteInitialClips])
+  }, [activeSegmentDetail, fallbackPromptMentionAssets, hasRemoteInitialClips, mode])
   const activeReferenceOptionsSegmentKey = activeClip && hasRemoteInitialClips && !activeClip.id.startsWith('clip-')
     ? String(toStoryboardSegmentRequestId(activeClip.id))
     : ''
@@ -1730,7 +1826,17 @@ export default function ProjectClipEditingStep({
   const propReferenceAssets = useMemo(() => (
     (propReferenceOptionsState?.items ?? []).map(referenceOptionToAsset)
   ), [propReferenceOptionsState?.items])
-  const prompt = activeClip ? (promptByClip[activeClip.id] ?? activeClip.prompt) : ''
+  const activePromptSource = mode === 'image'
+    ? activeSegmentDetail?.imagePrompt
+    : activeSegmentDetail?.directorPrompt
+  const activePromptDraftKey = activeClip ? getPromptDraftKey(activeClip.id, mode) : ''
+  const activePromptFromDetail = activePromptSource?.prompt.trim()
+  const prompt = activeClip
+    ? promptByClip[activePromptDraftKey]
+      ?? (mode === 'video' ? promptByClip[activeClip.id] : undefined)
+      ?? activePromptFromDetail
+      ?? activeClip.prompt
+    : ''
   const activeHistoryItems = (activeMediaHistoryState?.items ?? [])
     .filter((item) => item.mediaType === 'video' && getStoryboardMediaOutputUrl(item))
   const storedHistoryIndex = activeClip ? historyIndexByClip[activeClip.id] ?? 0 : 0
@@ -1753,6 +1859,21 @@ export default function ProjectClipEditingStep({
   const selectedToneStyleIdForGeneration = useMemo(() => (
     getGenerationStyleId(toneStyleOptions, selectedTone, NO_TONE_VALUE)
   ), [selectedTone, toneStyleOptions])
+  const imageModelOptions = useMemo(() => imageModels.map((item) => ({
+    value: String(item.id),
+    label: item.name,
+  })), [imageModels])
+  const selectedImageModelById = useMemo(() => imageModels.find(
+    (item) => String(item.id) === model,
+  ), [imageModels, model])
+  const selectedImageModel = selectedImageModelById ?? findGenerationModelBySelection(imageModels, model)
+  const imageResolutionOptions = useMemo(() => {
+    const capabilityResolutions = selectedImageModel?.imageCapabilities?.resolutions ?? []
+    const values = capabilityResolutions
+      .map(normalizeImageResolutionValue)
+      .filter(Boolean)
+    return [...new Set(values.length > 0 ? values : FALLBACK_IMAGE_RESOLUTIONS)]
+  }, [selectedImageModel])
   const videoModelOptions = useMemo(() => videoModels.map((item) => ({
     value: String(item.id),
     label: item.name,
@@ -1760,12 +1881,7 @@ export default function ProjectClipEditingStep({
   const selectedVideoModelById = useMemo(() => videoModels.find(
     (item) => String(item.id) === videoModel,
   ), [videoModel, videoModels])
-  const selectedVideoModel = selectedVideoModelById ?? videoModels.find((item) => {
-    const currentKey = normalizeVideoModelLookupKey(videoModel)
-    if (!currentKey) return false
-    return normalizeVideoModelLookupKey(item.modelCode).includes(currentKey)
-      || normalizeVideoModelLookupKey(item.name).includes(currentKey)
-  })
+  const selectedVideoModel = selectedVideoModelById ?? findGenerationModelBySelection(videoModels, videoModel)
   const characterReferenceLimit = Math.max(
     1,
     Math.floor(Number(selectedVideoModel?.videoCapabilities?.maxReferenceImages) || 30),
@@ -1849,19 +1965,21 @@ export default function ProjectClipEditingStep({
       .filter(Boolean)
     return [...new Set(values.length > 0 ? values : FALLBACK_VIDEO_RESOLUTIONS)]
   }, [selectedVideoModel])
-  const rawVideoDurationMin = Number(selectedVideoModel?.videoCapabilities?.minDurationSeconds)
-  const rawVideoDurationMax = Number(selectedVideoModel?.videoCapabilities?.maxDurationSeconds)
-  const videoDurationMin = Number.isFinite(rawVideoDurationMin) && rawVideoDurationMin > 0
-    ? Math.floor(rawVideoDurationMin)
-    : VIDEO_DURATION_MIN
-  const videoDurationMax = Math.max(
+  const videoDurationRange = getVideoDurationRange(selectedVideoModel?.videoCapabilities)
+  const videoDurationMin = videoDurationRange.min
+  const videoDurationMax = videoDurationRange.max
+  const suggestedVideoDuration = normalizePositiveIntegerOrNull(
+    activeSegmentDetail?.directorPrompt?.suggestedDurationSeconds
+      ?? activeSegmentDetail?.suggestedDurationSeconds,
+  )
+  const rawVideoDuration = Number(videoDuration)
+  const boundedVideoDuration = clampNumber(
+    Math.round(Number.isFinite(rawVideoDuration) ? rawVideoDuration : DEFAULT_VIDEO_DURATION),
     videoDurationMin,
-    Number.isFinite(rawVideoDurationMax) && rawVideoDurationMax > 0
-      ? Math.floor(rawVideoDurationMax)
-      : VIDEO_DURATION_MAX,
+    videoDurationMax,
   )
   const videoDurationProgress = videoDurationMax > videoDurationMin
-    ? ((videoDuration - videoDurationMin) / (videoDurationMax - videoDurationMin)) * 100
+    ? clampNumber(((boundedVideoDuration - videoDurationMin) / (videoDurationMax - videoDurationMin)) * 100, 0, 100)
     : 100
   const videoGenerateCreditCostText = videoGenerateEstimateLoading && !videoGenerateEstimate
     ? '…'
@@ -1873,6 +1991,7 @@ export default function ProjectClipEditingStep({
   const activeVideoGenerationStatusText = activeVideoGenerationState?.statusName
     || l('正在生成视频', 'Generating video')
   const isActiveVideoGenerating = Boolean(activeVideoGenerationState?.loading)
+  const selectedImageModelLabel = selectedImageModel?.name || l('图片模型', 'Image model')
   const selectedVideoModelLabel = selectedVideoModel?.name || l('视频模型', 'Video model')
   const getReferenceOptionLimit = (source: StudioStoryboardVideoReferenceOptionSource) => {
     if (source === 'scene') return sceneReferenceLimit
@@ -2153,6 +2272,12 @@ export default function ProjectClipEditingStep({
     ? `${activeVideoGenerationStatusText}${activeVideoGenerationProgressText}`
     : `${l('生视频', 'Generate video')} · ${videoGenerateCreditCostText}`
   const generationButtonDisabled = !prompt.trim()
+    || (mode === 'image' && (
+      !selectedImageModel
+      || !normalizeImageResolutionValue(resolution)
+      || Boolean(imageModelsError)
+      || (imageModelsLoading && imageModelOptions.length === 0)
+    ))
     || (mode === 'video' && (
       !activeClip
       || !hasRemoteInitialClips
@@ -2212,6 +2337,7 @@ export default function ProjectClipEditingStep({
     setMediaHistoryRefreshToken(0)
     setPromptRegenerationByClipId({})
     setVideoGenerationByClipId({})
+    setStoryboardImageSkillByClipId({})
     setReferenceAddMenuOpen(false)
     setCharacterReferenceModalOpen(false)
     setCharacterReferenceQuery('')
@@ -2268,6 +2394,9 @@ export default function ProjectClipEditingStep({
       promptRegenerateTimerRef.current = null
     }
     promptRegenerateRunRef.current += 1
+    storyboardImageSkillRequestRef.current?.cancel()
+    storyboardImageSkillRequestRef.current = null
+    storyboardImageSkillPendingClipIdRef.current = null
     referenceOptionsRequestRef.current?.cancel()
     referenceOptionsRequestRef.current = null
     referenceOptionsRunRef.current += 1
@@ -2311,6 +2440,9 @@ export default function ProjectClipEditingStep({
       promptRegenerateTimerRef.current = null
     }
     promptRegenerateRunRef.current += 1
+    storyboardImageSkillRequestRef.current?.cancel()
+    storyboardImageSkillRequestRef.current = null
+    storyboardImageSkillPendingClipIdRef.current = null
     referenceOptionsRequestRef.current?.cancel()
     referenceOptionsRequestRef.current = null
     referenceOptionsRunRef.current += 1
@@ -2319,6 +2451,54 @@ export default function ProjectClipEditingStep({
     referenceDeleteRequestRefs.current.forEach((request) => request.cancel())
     referenceDeleteRequestRefs.current.clear()
   }, [])
+
+  useEffect(() => {
+    let active = true
+    setImageModelsLoading(true)
+    setImageModelsError(undefined)
+    void StudioModelsApi.getImageModels(imageModelsRetryToken > 0)
+      .then((models) => {
+        if (!active) return
+        if (!models.length) {
+          throw new Error(l('暂无可用的图片生成模型', 'No image generation models are available'))
+        }
+        setImageModels(models)
+      })
+      .catch((error) => {
+        if (!active) return
+        setImageModelsError(error)
+        message.error(getApiErrorMessage(error, l('图片生成模型加载失败', 'Failed to load image generation models')))
+      })
+      .finally(() => {
+        if (active) setImageModelsLoading(false)
+      })
+    return () => { active = false }
+  }, [imageModelsRetryToken, l])
+
+  useEffect(() => {
+    if (imageModelsLoading || imageModelsError || !imageModels.length || selectedImageModelById) return
+    const defaultModel = selectedImageModel ?? imageModels.find((item) => item.defaultModel) ?? imageModels[0]
+    setModel(String(defaultModel.id))
+  }, [
+    imageModels,
+    imageModelsError,
+    imageModelsLoading,
+    selectedImageModel,
+    selectedImageModelById,
+  ])
+
+  useEffect(() => {
+    if (!selectedImageModel || imageResolutionOptions.length === 0) return
+    const normalizedResolution = normalizeImageResolutionValue(resolution)
+    if (imageResolutionOptions.includes(normalizedResolution)) {
+      if (normalizedResolution !== resolution) setResolution(normalizedResolution)
+      return
+    }
+    const nextResolution = imageResolutionOptions.includes(DEFAULT_IMAGE_RESOLUTION)
+      ? DEFAULT_IMAGE_RESOLUTION
+      : imageResolutionOptions[0]
+    setResolution(nextResolution)
+  }, [imageResolutionOptions, resolution, selectedImageModel])
 
   useEffect(() => {
     let active = true
@@ -2369,10 +2549,13 @@ export default function ProjectClipEditingStep({
   }, [selectedVideoModel, videoResolution, videoResolutionOptions])
 
   useEffect(() => {
-    if (!selectedVideoModel) return
-    const nextDuration = Math.min(videoDurationMax, Math.max(videoDurationMin, videoDuration))
-    if (nextDuration !== videoDuration) setVideoDuration(nextDuration)
-  }, [selectedVideoModel, videoDuration, videoDurationMax, videoDurationMin])
+    if (boundedVideoDuration !== videoDuration) setVideoDuration(boundedVideoDuration)
+  }, [boundedVideoDuration, videoDuration])
+
+  useEffect(() => {
+    if (!hasRemoteInitialClips || !activeClipId || suggestedVideoDuration === null) return
+    setVideoDuration(suggestedVideoDuration)
+  }, [activeClipId, hasRemoteInitialClips, suggestedVideoDuration])
 
   useEffect(() => {
     setSelectedCharacterReferenceIds((current) => {
@@ -2430,7 +2613,7 @@ export default function ProjectClipEditingStep({
 
     const modelId = Number(selectedVideoModel?.id)
     const resolutionValue = normalizeVideoResolutionValue(videoResolution)
-    const durationSeconds = Math.round(videoDuration)
+    const durationSeconds = boundedVideoDuration
     if (
       mode !== 'video'
       || !Number.isInteger(modelId)
@@ -2483,7 +2666,7 @@ export default function ProjectClipEditingStep({
         videoGenerateEstimateRequestRef.current = null
       }
     }
-  }, [mode, selectedVideoModel?.id, videoDuration, videoResolution])
+  }, [boundedVideoDuration, mode, selectedVideoModel?.id, videoResolution])
 
   useEffect(() => {
     segmentDetailRequestRef.current?.cancel()
@@ -2681,12 +2864,181 @@ export default function ProjectClipEditingStep({
     voicePreviewAudioRef.current = null
   }, [])
 
-  const activePromptClipId = activeClip?.id
   const updatePrompt = useCallback((value: string) => {
-    if (!activePromptClipId) return
-    manuallyEditedPromptClipIdsRef.current.add(activePromptClipId)
-    setPromptByClip((current) => ({ ...current, [activePromptClipId]: value }))
-  }, [activePromptClipId])
+    if (!activePromptDraftKey) return
+    manuallyEditedPromptClipIdsRef.current.add(activePromptDraftKey)
+    setPromptByClip((current) => ({ ...current, [activePromptDraftKey]: value }))
+  }, [activePromptDraftKey])
+
+  const mergeStoryboardImageSkillResult = (
+    clipId: string,
+    result: StudioStoryboardImageSkillResult,
+    action: StoryboardImageSkillAction,
+  ) => {
+    const promptValue = result.prompt.trim()
+    const promptDraftKey = getPromptDraftKey(clipId, 'image')
+    const skillEnabled = action === 'apply'
+    const clipIndex = clips.findIndex((item) => item.id === clipId)
+    const fallbackSegmentIndex = clipIndex >= 0 ? clipIndex + 1 : 1
+    const clip = clipIndex >= 0 ? clips[clipIndex] : undefined
+    manuallyEditedPromptClipIdsRef.current.delete(promptDraftKey)
+    setPromptByClip((current) => current[promptDraftKey] === promptValue
+      ? current
+      : { ...current, [promptDraftKey]: promptValue })
+    setClips((current) => current.map((item) => item.id === clipId
+      ? { ...item, prompt: promptValue || item.prompt }
+      : item))
+    setSegmentDetailsByClipId((current) => {
+      const currentState = current[clipId]
+      const currentDetail = currentState?.data
+      const previousPrompt = currentDetail?.imagePrompt ?? currentDetail?.directorPrompt
+      const nextImagePrompt = {
+        ...previousPrompt,
+        ...result,
+        prompt: promptValue,
+        promptCharacters: result.promptCharacters ?? previousPrompt?.promptCharacters,
+        maxPromptCharacters: result.maxPromptCharacters ?? previousPrompt?.maxPromptCharacters,
+        references: result.references,
+        mentions: result.mentions,
+        warnings: result.warnings,
+        canUndoSkill: skillEnabled,
+      }
+      const nextDetail: StudioEpisodeStoryboardSegmentDetailResult = currentDetail
+        ? {
+          ...currentDetail,
+          imagePrompt: nextImagePrompt,
+          referenceSelection: {
+            ...(currentDetail.referenceSelection ?? { references: [] }),
+            references: result.references,
+          },
+        }
+        : {
+          id: clipId,
+          segmentIndex: fallbackSegmentIndex,
+          title: clip?.title ?? `片段-${fallbackSegmentIndex}`,
+          editorDescription: clip?.description ?? '',
+          sourceType: clip?.sourceType ?? null,
+          revisionNo: clip?.revisionNo ?? null,
+          shots: [],
+          assetReferences: [],
+          referenceSelection: { references: result.references },
+          directorPrompt: null,
+          imagePrompt: nextImagePrompt,
+          runId: null,
+          episodeId: null,
+        }
+      return {
+        ...current,
+        [clipId]: {
+          ...currentState,
+          loading: false,
+          error: undefined,
+          data: nextDetail,
+        },
+      }
+    })
+  }
+
+  const toggleStoryboardImageSkill = () => {
+    if (!activeClip) {
+      message.warning(l('请先选择一个片段', 'Select a clip first'))
+      return
+    }
+
+    if (!canUseRemoteStoryboardImageSkill) {
+      setStoryboardSkillEnabled((current) => !current)
+      return
+    }
+
+    if (
+      storyboardImageSkillBusy
+      || storyboardImageSkillRequestRef.current
+      || storyboardImageSkillPendingClipIdRef.current
+    ) return
+
+    const clipId = activeClip.id
+    const segmentId = toStoryboardSegmentRequestId(clipId)
+    const action: StoryboardImageSkillAction = storyboardMasterSkillEnabled ? 'undo' : 'apply'
+    const nextSkillEnabled = action === 'apply'
+    const messageKey = `${STORYBOARD_IMAGE_SKILL_MESSAGE_KEY_PREFIX}:${clipId}`
+    const request = action === 'undo'
+      ? StudioAssetGenerationApi.requestStoryboardImageSkillUndo({ segmentId })
+      : StudioAssetGenerationApi.requestStoryboardImageSkillApply({ segmentId })
+
+    storyboardImageSkillRequestRef.current = request
+    storyboardImageSkillPendingClipIdRef.current = clipId
+    setStoryboardImageSkillByClipId((current) => ({
+      ...current,
+      [clipId]: {
+        ...current[clipId],
+        loading: true,
+        action,
+        error: undefined,
+      },
+    }))
+
+    void request.promise
+      .then((result) => {
+        if (storyboardImageSkillRequestRef.current !== request) return
+        mergeStoryboardImageSkillResult(clipId, result, action)
+        setStoryboardImageSkillByClipId((current) => ({
+          ...current,
+          [clipId]: {
+            ...current[clipId],
+            action,
+            enabled: nextSkillEnabled,
+            error: undefined,
+            loading: false,
+          },
+        }))
+        setSegmentDetailRefreshToken((current) => current + 1)
+        const refreshSource = getOpenReferenceOptionSource()
+        if (refreshSource) loadReferenceOptionsForSource(refreshSource)
+        message.open({
+          key: messageKey,
+          type: 'success',
+          content: action === 'undo'
+            ? l('已撤回分镜大师', 'Storyboard master undone')
+            : l('已使用分镜大师', 'Storyboard master applied'),
+        })
+      })
+      .catch((error) => {
+        if (storyboardImageSkillRequestRef.current !== request) return
+        setStoryboardImageSkillByClipId((current) => ({
+          ...current,
+          [clipId]: {
+            ...current[clipId],
+            loading: false,
+            action,
+            error,
+          },
+        }))
+        const content = getApiErrorMessage(
+          error,
+          action === 'undo'
+            ? l('撤回分镜大师失败，请重试', 'Failed to undo storyboard master; retry')
+            : l('使用分镜大师失败，请重试', 'Failed to apply storyboard master; retry'),
+        )
+        message.open({
+          key: messageKey,
+          type: 'error',
+          content,
+        })
+      })
+      .finally(() => {
+        if (storyboardImageSkillRequestRef.current !== request) return
+        storyboardImageSkillRequestRef.current = null
+        storyboardImageSkillPendingClipIdRef.current = null
+        setStoryboardImageSkillByClipId((current) => ({
+          ...current,
+          [clipId]: {
+            ...current[clipId],
+            action,
+            loading: false,
+          },
+        }))
+      })
+  }
 
   const getReferenceDeleteKey = (segmentId: string | number, referenceIndex: number) => (
     `${String(segmentId)}:${referenceIndex}`
@@ -3246,7 +3598,7 @@ export default function ProjectClipEditingStep({
       return
     }
 
-    const durationSeconds = Math.round(videoDuration)
+    const durationSeconds = boundedVideoDuration
     if (!Number.isInteger(durationSeconds) || durationSeconds <= 0) {
       message.warning(l('请选择视频时长', 'Select video duration'))
       return
@@ -3476,6 +3828,12 @@ export default function ProjectClipEditingStep({
       return next
     })
     setVideoGenerationByClipId((current) => {
+      if (!(clipId in current)) return current
+      const next = { ...current }
+      delete next[clipId]
+      return next
+    })
+    setStoryboardImageSkillByClipId((current) => {
       if (!(clipId in current)) return current
       const next = { ...current }
       delete next[clipId]
@@ -4276,10 +4634,10 @@ export default function ProjectClipEditingStep({
                       <span className="project-clip-editor__image-details">
                         <strong>{mode === 'video' ? l('视频详情', 'Video details') : l('图片详情', 'Image details')}</strong>
                         <span className="project-clip-editor__image-detail-tags">
-                          <span>{mode === 'video' ? selectedVideoModelLabel : model === 'gpt-image-2' ? 'GPT Image 2' : 'Nano Banana 2'}</span>
+                          <span>{mode === 'video' ? selectedVideoModelLabel : selectedImageModelLabel}</span>
                           <span>{mode === 'video' ? l('多参生视频', 'Multi-reference video') : l('多参生图', 'Multi-reference image')}</span>
                           <span>{l('风格', 'Style')} · {selectedStyleLabel}</span>
-                          {mode === 'image' && storyboardSkillEnabled && <span>{l('技能', 'Skill')} · {l('分镜大师', 'Storyboard master')}</span>}
+                          {mode === 'image' && storyboardMasterSkillEnabled && <span>{l('技能', 'Skill')} · {l('分镜大师', 'Storyboard master')}</span>}
                         </span>
                         <span className="project-clip-editor__image-detail-description">
                           <b>{l('【描述词】', '[Description]')}</b>
@@ -4821,7 +5179,7 @@ export default function ProjectClipEditingStep({
           <PromptMentionEditor
             value={prompt}
             assets={promptMentionAssets}
-            maxLength={activeSegmentDetail?.directorPrompt?.maxPromptCharacters ?? 10_000}
+            maxLength={activePromptSource?.maxPromptCharacters ?? 10_000}
             placeholder={l('描述画面主体、环境、动作、镜头与光线，输入 @ 引用素材', 'Describe the subject, setting, action, camera and lighting. Type @ to mention an asset')}
             menuTitle={l('可能 @ 的内容', 'Mentionable assets')}
             characterGroupLabel={l('角色', 'Characters')}
@@ -4860,27 +5218,29 @@ export default function ProjectClipEditingStep({
               <div className="project-clip-editor__skill-list">
                 <button
                   type="button"
-                  className={storyboardSkillEnabled ? 'is-selected' : ''}
-                  aria-pressed={storyboardSkillEnabled}
-                  onClick={() => setStoryboardSkillEnabled((current) => !current)}
+                  className={storyboardMasterSkillEnabled ? 'is-selected' : ''}
+                  aria-pressed={storyboardMasterSkillEnabled}
+                  disabled={storyboardImageSkillBusy}
+                  onClick={toggleStoryboardImageSkill}
                 >
                   <span className="project-clip-editor__skill-title">
                     <strong>{l('分镜大师', 'Storyboard master')}</strong>
                     <small>
-                      {storyboardSkillEnabled && <CheckOutlined />}
-                      {storyboardSkillEnabled ? l('已使用', 'Active') : l('点击使用', 'Use')}
+                      {storyboardImageSkillBusy ? <ClockCircleOutlined /> : storyboardMasterSkillEnabled && <CheckOutlined />}
+                      {storyboardImageSkillActionText}
                     </small>
                   </span>
-                  <span>{l('专业分镜呈现画面设计，搭配 GPT Image 2 效果最佳', 'Designed for storyboard composition and works best with GPT Image 2')}</span>
+                  <span>{l('专业分镜呈现画面设计，适合搭配当前图片模型使用', 'Designed for storyboard composition with the selected image model')}</span>
                 </button>
               </div>
             )}
           >
             <Button
-              className={`project-clip-editor__skill-trigger${storyboardSkillEnabled ? ' is-active' : ''}`}
+              className={`project-clip-editor__skill-trigger${storyboardMasterSkillEnabled ? ' is-active' : ''}`}
               icon={<BgColorsOutlined />}
+              loading={storyboardImageSkillBusy}
             >
-              {storyboardSkillEnabled ? l('分镜大师', 'Storyboard master') : l('使用技能', 'Skills')}
+              {storyboardMasterSkillEnabled ? l('分镜大师', 'Storyboard master') : l('使用技能', 'Skills')}
             </Button>
           </Popover>}
         </div>
@@ -4889,22 +5249,30 @@ export default function ProjectClipEditingStep({
           <div className={`project-clip-editor__generation-selects${mode === 'video' ? ' is-video' : ''}`}>
             <StudioSelect
               aria-label={mode === 'video' ? l('视频模型', 'Video model') : l('图片模型', 'Image model')}
-              value={mode === 'video' ? videoModel || undefined : model}
-              loading={mode === 'video' ? videoModelsLoading : undefined}
-              status={mode === 'video' && (videoModelsError || videoGenerateEstimateError) ? 'error' : undefined}
-              options={mode === 'video'
-                ? videoModelOptions
-                : [
-                    { value: 'gpt-image-2', label: 'GPT Image 2' },
-                    { value: 'nano-banana-2', label: 'Nano Banana 2' },
-                  ]}
-              placeholder={mode === 'video' && videoModelsLoading
-                ? l('加载视频模型中', 'Loading video models')
-                : undefined}
-              disabled={mode === 'video' && videoModelsLoading && videoModelOptions.length === 0}
+              value={mode === 'video'
+                ? videoModel || undefined
+                : selectedImageModel ? String(selectedImageModel.id) : undefined}
+              loading={mode === 'video' ? videoModelsLoading : imageModelsLoading}
+              status={mode === 'video'
+                ? (videoModelsError || videoGenerateEstimateError ? 'error' : undefined)
+                : imageModelsError ? 'error' : undefined}
+              options={mode === 'video' ? videoModelOptions : imageModelOptions}
+              placeholder={mode === 'video'
+                ? videoModelsLoading
+                  ? l('加载视频模型中', 'Loading video models')
+                  : l('选择视频模型', 'Select video model')
+                : imageModelsLoading
+                  ? l('加载图片模型中', 'Loading image models')
+                  : l('选择图片模型', 'Select image model')}
+              disabled={mode === 'video'
+                ? videoModelsLoading && videoModelOptions.length === 0
+                : imageModelsLoading && imageModelOptions.length === 0}
               onDropdownVisibleChange={(open) => {
                 if (mode === 'video' && open && videoModelsError) {
                   setVideoModelsRetryToken((current) => current + 1)
+                }
+                if (mode === 'image' && open && imageModelsError) {
+                  setImageModelsRetryToken((current) => current + 1)
                 }
               }}
               onChange={(value) => {
@@ -4951,13 +5319,13 @@ export default function ProjectClipEditingStep({
                             min={videoDurationMin}
                             max={videoDurationMax}
                             step={1}
-                            value={videoDuration}
+                            value={boundedVideoDuration}
                             tooltip={{ open: false }}
                             aria-label={l('视频时长', 'Video duration')}
                             onChange={setVideoDuration}
                           />
                         </div>
-                        <output>{videoDuration}s</output>
+                        <output>{boundedVideoDuration}s</output>
                       </div>
                     </section>
                   </div>
@@ -4969,7 +5337,7 @@ export default function ProjectClipEditingStep({
                   aria-label={l('视频规格', 'Video output')}
                   aria-expanded={videoSpecOpen}
                 >
-                  <span>{formatVideoResolutionLabel(videoResolution)} · {videoDuration}s</span>
+                  <span>{formatVideoResolutionLabel(videoResolution)} · {boundedVideoDuration}s</span>
                   <DownOutlined />
                 </button>
               </Popover>
@@ -4977,10 +5345,11 @@ export default function ProjectClipEditingStep({
               <StudioSelect
                 aria-label={l('图片清晰度', 'Image resolution')}
                 value={resolution}
-                options={[
-                  { value: '2k', label: '2K' },
-                  { value: '4k', label: '4K' },
-                ]}
+                options={imageResolutionOptions.map((value) => ({
+                  value,
+                  label: formatImageResolutionLabel(value),
+                }))}
+                disabled={!selectedImageModel || imageResolutionOptions.length === 0}
                 onChange={(value) => setResolution(String(value))}
               />
             )}
@@ -5002,6 +5371,15 @@ export default function ProjectClipEditingStep({
             {mode === 'video'
               ? videoGenerationButtonText
               : `${l('生成图片', 'Generate image')} · 6`}
+          </Button>
+          <Button disabled={!hasRemoteInitialClips || !activeClip || activeClip.id.startsWith('clip-')} onClick={() => {
+            if (!activeClip) return
+            const segmentId = String(toStoryboardSegmentRequestId(activeClip.id))
+            const params = new URLSearchParams({ segmentId, returnTo: `${window.location.pathname}${window.location.search}` })
+            window.open(`/director-desk/workspace/segment-${encodeURIComponent(segmentId)}?${params}`, '_blank', 'noopener')
+          }}>{l('3D 导演台', '3D Director Desk')}</Button>
+          <Button onClick={() => { setSegmentDetailRefreshToken((value) => value + 1); setMediaHistoryRefreshToken((value) => value + 1) }}>
+            {l('刷新参考与产物', 'Refresh references and media')}
           </Button>
         </footer>
           </>

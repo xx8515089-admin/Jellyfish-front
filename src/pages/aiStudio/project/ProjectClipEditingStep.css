@@ -2,7 +2,7 @@
   min-height: 0;
   flex: 1;
   display: grid;
-  grid-template-columns: 292px minmax(520px, 1fr) clamp(500px, 32vw, 680px);
+  grid-template-columns: 360px minmax(520px, 1fr) clamp(500px, 32vw, 680px);
   overflow: hidden;
   background: #eef2f6;
   color: #182230;
@@ -1754,6 +1754,11 @@
 .project-clip-editor__skill-list button:not(.is-selected):hover {
   border-color: #d6dee8;
   background: #f1f4f8;
+}
+
+.project-clip-editor__skill-list button:disabled {
+  cursor: wait;
+  opacity: 0.72;
 }
 
 .project-clip-editor__skill-list button.is-selected {
@@ -3917,7 +3922,7 @@
 
 @media (max-width: 1400px) {
   .project-clip-editor {
-    grid-template-columns: 270px minmax(420px, 1fr) clamp(400px, 32vw, 460px);
+    grid-template-columns: 320px minmax(420px, 1fr) clamp(400px, 32vw, 460px);
   }
 
   .project-clip-editor__preview-column {
@@ -3943,7 +3948,7 @@
 
 @media (max-width: 1040px) {
   .project-clip-editor {
-    grid-template-columns: 250px minmax(360px, 1fr) 340px;
+    grid-template-columns: 300px minmax(360px, 1fr) 340px;
   }
 
   .project-clip-editor__mode-tabs button span {

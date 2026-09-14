@@ -33,6 +33,8 @@ import { getBenchmarkPerformanceProfile } from "./editor/performance/performance
 import { PerformanceSettings } from "./editor/performance/PerformanceSettings";
 import { getDirectorDeskEventTarget } from "./editor/io/directorDeskDom";
 import { useDirectorDeskText } from "./useDirectorDeskText";
+import type { DirectorDesk } from '../../../services/studioDirectorDesks';
+import { restoreDirectorSnapshot } from '../directorCloudSnapshot';
 
 type AppScreen = "home" | "editor";
 
@@ -77,6 +79,8 @@ function createHomePaginationItems(currentPage: number, pageCount: number): Home
 }
 
 interface DirectorDeskAppProps {
+  cloudDesk?: DirectorDesk;
+  onCloudReady?: () => void;
   initialInstanceId?: string;
   initialInstanceName?: string;
   onBackHome?: () => void;
@@ -176,7 +180,7 @@ function isEditableShortcutTarget(target: EventTarget | null) {
   return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
 }
 
-export default function DirectorDeskApp({ initialInstanceId, initialInstanceName, onBackHome, onClose, onOpenDesk }: DirectorDeskAppProps) {
+export default function DirectorDeskApp({ initialInstanceId, initialInstanceName, onBackHome, onClose, onOpenDesk, cloudDesk, onCloudReady }: DirectorDeskAppProps) {
   const language = useAppStore((state) => state.language);
   const text = useDirectorDeskText();
   const homeCopy = directorHomeCopy[language];
@@ -186,7 +190,9 @@ export default function DirectorDeskApp({ initialInstanceId, initialInstanceName
   const motionStudioOpen = useDirectorStore((state) => state.motionStudioOpen);
   const setMotionStudioOpen = useDirectorStore((state) => state.setMotionStudioOpen);
   const [directorDeskView, setDirectorDeskView] = useState(() => (
-    createInitialDirectorDeskViewState(initialInstanceId, initialInstanceName, language)
+    cloudDesk
+      ? { records: [{ id: cloudDesk.instanceId, name: cloudDesk.name, createdAt: cloudDesk.createdAt, updatedAt: cloudDesk.updatedAt }], activeDeskId: cloudDesk.instanceId, screen: 'editor' as AppScreen }
+      : createInitialDirectorDeskViewState(initialInstanceId, initialInstanceName, language)
   ));
   const [deleteDeskCandidate, setDeleteDeskCandidate] = useState<DirectorDeskRecord | null>(null);
   const [homePage, setHomePage] = useState(1);
@@ -237,12 +243,13 @@ export default function DirectorDeskApp({ initialInstanceId, initialInstanceName
   }
 
   useEffect(() => {
-    initDirectorDeskHostBridge();
-    if (screen === "editor" && !benchmarkMode) {
+    if (!cloudDesk) initDirectorDeskHostBridge();
+    if (cloudDesk) { restoreDirectorSnapshot(cloudDesk); onCloudReady?.(); }
+    if (!cloudDesk && screen === "editor" && !benchmarkMode) {
       openDirectorDesk(activeDeskId, directorDesks);
     }
 
-    if (benchmarkMode) {
+    if (benchmarkMode && !cloudDesk) {
       const state = useDirectorStore.getState();
       const benchmarkProfile = getBenchmarkPerformanceProfile(window.location.search);
       const benchmarkPlayback = getPerformanceBenchmarkPlayback(window.location.search);
@@ -272,6 +279,7 @@ export default function DirectorDeskApp({ initialInstanceId, initialInstanceName
 
   useEffect(() => {
     function handleHostSessionOpened(event: Event) {
+      if (cloudDesk) return;
       const instanceId = (event as CustomEvent<{ instanceId?: string }>).detail?.instanceId;
       if (instanceId) {
         openDirectorDesk(instanceId, directorDesks, { loadScene: false });
@@ -658,7 +666,7 @@ export default function DirectorDeskApp({ initialInstanceId, initialInstanceName
             <House aria-hidden="true" size={14} strokeWidth={1.9} />
             {homeCopy.home}
           </button>
-          <div className="director-desk-switcher" aria-label={homeCopy.deskSelector} ref={deskSwitcherRef}>
+          {!cloudDesk && <div className="director-desk-switcher" aria-label={homeCopy.deskSelector} ref={deskSwitcherRef}>
             <div className="director-desk-select-shell">
               <button
               aria-expanded={deskSwitcherOpen}
@@ -710,7 +718,7 @@ export default function DirectorDeskApp({ initialInstanceId, initialInstanceName
               <Plus aria-hidden="true" size={14} strokeWidth={1.9} />
               {homeCopy.create}
             </button>
-          </div>
+          </div>}
         </div>
         <div className="top-bar-center">
           <div className="mode-toggle ui-segmented" role="group" aria-label={text("视角切换", "View switcher")}>
