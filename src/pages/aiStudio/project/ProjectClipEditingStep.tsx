@@ -1682,6 +1682,9 @@ export default function ProjectClipEditingStep({
   const [videoGenerateEstimate, setVideoGenerateEstimate] = useState<StudioStoryboardVideoGenerateEstimateResult>()
   const [videoGenerateEstimateLoading, setVideoGenerateEstimateLoading] = useState(false)
   const [videoGenerateEstimateError, setVideoGenerateEstimateError] = useState<unknown>()
+  const [imageGenerateCreditCost, setImageGenerateCreditCost] = useState<number>()
+  const [imageGenerateEstimateLoading, setImageGenerateEstimateLoading] = useState(false)
+  const [imageGenerateEstimateError, setImageGenerateEstimateError] = useState<unknown>()
   const [promptRegenerationByClipId, setPromptRegenerationByClipId] = useState<Record<string, PromptRegenerationState>>({})
   const [videoGenerationByClipId, setVideoGenerationByClipId] = useState<Record<string, VideoGenerationState>>({})
   const [storyboardImageSkillByClipId, setStoryboardImageSkillByClipId] = useState<Record<string, StoryboardImageSkillState>>({})
@@ -2606,6 +2609,46 @@ export default function ProjectClipEditingStep({
       return nextIds
     })
   }, [voiceReferenceItems, voiceReferenceLimit])
+
+  // Reuse asset image pricing, converting the display value (2k) to the API resolution (2).
+  useEffect(() => {
+    const modelId = Number(selectedImageModel?.id)
+    const resolutionValue = Number(normalizeImageResolutionValue(resolution).replace(/k$/i, ''))
+    setImageGenerateCreditCost(undefined)
+    setImageGenerateEstimateError(undefined)
+    if (mode !== 'image' || !Number.isInteger(modelId) || modelId <= 0
+      || !Number.isInteger(resolutionValue) || resolutionValue <= 0) {
+      setImageGenerateEstimateLoading(false)
+      return undefined
+    }
+
+    let active = true
+    let request: StudioAssetImageTaskRequest<{ creditCost: number }> | undefined
+    setImageGenerateEstimateLoading(true)
+    const timer = window.setTimeout(() => {
+      request = StudioAssetGenerationApi.requestGenerateEstimate({
+        modelId,
+        quality: null,
+        resolution: resolutionValue,
+      })
+      void request.promise
+        .then((estimate) => {
+          if (active) setImageGenerateCreditCost(estimate.creditCost)
+        })
+        .catch((error) => {
+          if (active) setImageGenerateEstimateError(error)
+        })
+        .finally(() => {
+          if (active) setImageGenerateEstimateLoading(false)
+        })
+    }, VIDEO_ESTIMATE_DEBOUNCE_MS)
+
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+      request?.cancel()
+    }
+  }, [mode, selectedImageModel?.id, resolution])
 
   useEffect(() => {
     videoGenerateEstimateRequestRef.current?.cancel()
@@ -5255,7 +5298,7 @@ export default function ProjectClipEditingStep({
               loading={mode === 'video' ? videoModelsLoading : imageModelsLoading}
               status={mode === 'video'
                 ? (videoModelsError || videoGenerateEstimateError ? 'error' : undefined)
-                : imageModelsError ? 'error' : undefined}
+                : imageModelsError || imageGenerateEstimateError ? 'error' : undefined}
               options={mode === 'video' ? videoModelOptions : imageModelOptions}
               placeholder={mode === 'video'
                 ? videoModelsLoading
@@ -5370,7 +5413,7 @@ export default function ProjectClipEditingStep({
           >
             {mode === 'video'
               ? videoGenerationButtonText
-              : `${l('生成图片', 'Generate image')} · 6`}
+              : `${l('生成图片', 'Generate image')} · ${imageGenerateEstimateLoading ? '…' : formatCreditCost(imageGenerateCreditCost)}`}
           </Button>
           <Button disabled={!hasRemoteInitialClips || !activeClip || activeClip.id.startsWith('clip-')} onClick={() => {
             if (!activeClip) return
