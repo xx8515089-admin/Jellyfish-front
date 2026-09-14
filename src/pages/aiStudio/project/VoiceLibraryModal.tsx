@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Empty, Input, Modal, Spin, message } from 'antd'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Button, Empty, Modal, Spin, message } from 'antd'
 import {
   CaretRightFilled,
   CheckOutlined,
   PauseOutlined,
   ReloadOutlined,
-  SearchOutlined,
 } from '@ant-design/icons'
 import { useBilingualText } from '../../../i18n/useBilingualText'
 import { getApiErrorMessage } from '../../../services/apiErrors'
@@ -47,7 +46,6 @@ export default function VoiceLibraryModal({
   const [gender, setGender] = useState<NumericFilter<SystemVoiceGender>>('all')
   const [ageGroup, setAgeGroup] = useState<NumericFilter<SystemVoiceAgeGroup>>('all')
   const [languageCode, setLanguageCode] = useState<LanguageFilter>('all')
-  const [nameKeyword, setNameKeyword] = useState('')
   const [voices, setVoices] = useState<SystemVoiceRead[]>([])
   const [voicesLoading, setVoicesLoading] = useState(false)
   const [voicesError, setVoicesError] = useState('')
@@ -125,12 +123,7 @@ export default function VoiceLibraryModal({
     }
   }, [ageGroup, gender, l, languageCode, retryToken, shouldLoad])
 
-  const visibleVoices = useMemo(() => {
-    const keyword = nameKeyword.trim().toLocaleLowerCase()
-    if (!keyword) return voices
-    return voices.filter((voice) => voice.name.toLocaleLowerCase().includes(keyword))
-  }, [nameKeyword, voices])
-  const selectedVoice = visibleVoices.find((voice) => voice.id === selectedVoiceId)
+  const selectedVoice = voices.find((voice) => voice.id === selectedVoiceId)
 
   const togglePreview = (voice: SystemVoiceRead) => {
     if (!voice.previewUrl) {
@@ -202,7 +195,7 @@ export default function VoiceLibraryModal({
       <div className="voice-library-modal__toolbar">
         <strong className="voice-library-modal__category">
           <span>{l('可用音色', 'Available voices')}</span>
-          <span className="voice-library-modal__count">{visibleVoices.length}</span>
+          <span className="voice-library-modal__count">{voices.length}</span>
         </strong>
         <div className="voice-library-modal__filters">
           <StudioSelect
@@ -238,15 +231,6 @@ export default function VoiceLibraryModal({
             ]}
             onChange={(value) => setLanguageCode(value as LanguageFilter)}
           />
-          <Input
-            allowClear
-            value={nameKeyword}
-            className="voice-library-modal__name-search"
-            aria-label={l('按名称搜索音色', 'Search voices by name')}
-            prefix={<SearchOutlined />}
-            placeholder={l('搜索名称', 'Search name')}
-            onChange={(event) => setNameKeyword(event.target.value)}
-          />
         </div>
       </div>
 
@@ -263,12 +247,12 @@ export default function VoiceLibraryModal({
               {l('重新加载', 'Retry')}
             </Button>
           </div>
-        ) : visibleVoices.length === 0 ? (
+        ) : voices.length === 0 ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
             description={l('没有符合筛选条件的音色', 'No voices match these filters')}
           />
-        ) : visibleVoices.map((voice) => {
+        ) : voices.map((voice) => {
           const languageName = getPrimaryLanguageName(voice)
           const metadata = [voice.genderName, voice.ageGroupName, languageName].filter(Boolean).join(' · ')
           const previewPlaying = playingVoiceId === voice.id

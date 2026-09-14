@@ -1355,7 +1355,6 @@ code {
 .custom-style-modal .ant-input,
 .custom-style-modal .ant-input-affix-wrapper:not(.ant-input-textarea-affix-wrapper),
 .custom-style-modal__uploader.ant-upload-wrapper .ant-upload-drag,
-.voice-library-modal .voice-library-modal__name-search,
 .voice-library-modal__filters .ant-select-selector,
 .studio-select.studio-select.ant-select-single .ant-select-selector,
 .studio-select__popup.ant-select-dropdown {
@@ -1368,7 +1367,6 @@ code {
 .custom-style-modal .ant-input:hover,
 .custom-style-modal .ant-input-affix-wrapper:hover,
 .custom-style-modal__uploader.ant-upload-wrapper .ant-upload-drag:hover,
-.voice-library-modal .voice-library-modal__name-search:hover,
 .studio-select.studio-select.ant-select-single:not(.ant-select-disabled):hover .ant-select-selector,
 .studio-select.studio-select.ant-select-single.ant-select-focused .ant-select-selector,
 .studio-select.studio-select.ant-select-single.ant-select-open .ant-select-selector {
@@ -1378,15 +1376,13 @@ code {
 
 .custom-style-modal .ant-input:focus,
 .custom-style-modal .ant-input-focused,
-.custom-style-modal .ant-input-affix-wrapper-focused,
-.voice-library-modal .voice-library-modal__name-search.ant-input-affix-wrapper-focused {
+.custom-style-modal .ant-input-affix-wrapper-focused {
   border-color: var(--jf-accent-border) !important;
   box-shadow: 0 0 0 2px var(--jf-accent-soft) !important;
 }
 
 .custom-style-modal .ant-input::placeholder,
-.custom-style-modal textarea.ant-input::placeholder,
-.voice-library-modal .voice-library-modal__name-search .ant-input::placeholder {
+.custom-style-modal textarea.ant-input::placeholder {
   color: var(--jf-subtle) !important;
 }
 
@@ -2281,10 +2277,7 @@ code {
   background: var(--jf-panel-2) !important;
   border-color: rgba(255, 255, 255, 0.72) !important;
   color: var(--jf-text) !important;
-  box-shadow:
-    0 0 0 2px rgba(13, 14, 18, 0.96),
-    0 0 0 3px rgba(255, 255, 255, 0.56),
-    0 10px 22px rgba(0, 0, 0, 0.32) !important;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.32) !important;
 }
 
 .asset-generation-workspace .asset-generation-workspace__look-main.is-selected:hover {

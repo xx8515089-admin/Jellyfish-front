@@ -90,21 +90,6 @@
   font-size: 12px;
 }
 
-.voice-library-modal__name-search {
-  width: 148px;
-  height: 32px;
-  border-color: #e2e7ed;
-  border-radius: 7px;
-  background: #f7f9fb;
-  box-shadow: none;
-  font-size: 12px;
-}
-
-.voice-library-modal__name-search:hover,
-.voice-library-modal__name-search.ant-input-affix-wrapper-focused {
-  border-color: color-mix(in srgb, var(--voice-library-primary) 48%, #e2e7ed);
-}
-
 .voice-library-modal__list {
   min-height: 0;
   height: clamp(240px, calc(100dvh - 220px), 520px);
@@ -331,12 +316,6 @@
     min-width: 110px;
   }
 
-  .voice-library-modal__name-search {
-    flex: 1;
-    min-width: 150px;
-    width: auto;
-  }
-
   .voice-library-modal__list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     height: clamp(120px, calc(100dvh - 290px), 420px);
@@ -358,10 +337,6 @@
 
   .voice-library-modal__filters .ant-select {
     flex-basis: calc(50% - 4px);
-  }
-
-  .voice-library-modal__name-search {
-    flex-basis: 100%;
   }
 
   .voice-library-modal__list {

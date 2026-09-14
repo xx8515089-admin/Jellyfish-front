@@ -573,16 +573,9 @@ export default function ProvidersTab() {
     modelForm.resetFields()
   }
 
-  const handleSaveModel = async () => {
+  const handleSaveModel = async (values: ModelFormValues) => {
     if (!selectedProvider) {
       message.warning(l('请先选择供应商', 'Select a provider first'))
-      return
-    }
-
-    let values: ModelFormValues
-    try {
-      values = await modelForm.validateFields()
-    } catch {
       return
     }
 
@@ -985,7 +978,7 @@ export default function ProvidersTab() {
         title={null}
         open={modelModalOpen}
         onCancel={() => setModelModalOpen(false)}
-        onOk={() => void handleSaveModel()}
+        onOk={() => modelForm.submit()}
         afterOpenChange={handleModelModalOpenChange}
         confirmLoading={modelSaving}
         width="min(960px, calc(100vw - 48px))"
@@ -1009,7 +1002,16 @@ export default function ProvidersTab() {
             </div>
           </div>
 
-          <Form form={modelForm} layout="vertical" className="menu-editor__form">
+          <Form
+            form={modelForm}
+            layout="vertical"
+            className="menu-editor__form"
+            onFinish={(values) => void handleSaveModel(values)}
+            onFinishFailed={() => {
+              message.warning(l('请检查并完善表单中的必填项', 'Check and complete the required fields'))
+            }}
+            scrollToFirstError={{ behavior: 'smooth', block: 'center' }}
+          >
             <div className="menu-editor__section">
               <div className="menu-editor__section-title">{l('基础信息', 'Basic information')}</div>
               <div className="menu-editor__grid">

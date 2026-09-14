@@ -5476,6 +5476,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         const useProxyResolver = options.useProxyResolver;
         const proxyBaseUrl = options.proxyBaseUrl;
         const files = [];
+        const failedItems = [];
         const nameCounters = new Map();
         const seenUrls = new Set();
         for (let i = 0; i < mediaItems.length; i++) {
@@ -5485,19 +5486,23 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
             if (seenUrls.has(url)) continue;
             seenUrls.add(url);
             try {
-                let content = url;
+                const resolvedUrl = await resolveSpecialUrl(url);
+                let content = resolvedUrl || url;
                 const baseProxy = typeof useProxyResolver === 'function' ? !!useProxyResolver(item) : false;
                 const useProxy = getProxyPreferenceForUrl(url, baseProxy);
-                if (!url.startsWith('data:')) {
-                    const { blob } = await fetchCacheSource(url, { useProxy, proxyBaseUrl, preferLocal: true });
+                if (content.startsWith('data:')) {
+                    content = normalizeDataUrl(content);
+                } else {
+                    const { blob } = await fetchCacheSource(content, { useProxy, proxyBaseUrl, preferLocal: true });
                     content = await new Promise((resolve) => {
                         const reader = new FileReader();
                         reader.onloadend = () => resolve(reader.result);
                         reader.readAsDataURL(blob);
                     });
                 }
-                const isVideo = item.type === 'video' || url.startsWith('data:video') || isVideoUrl(url);
-                const ext = getDataUrlExt(content, isVideo ? '.mp4' : '.png');
+                if (!content || typeof content !== 'string') throw new Error('资源内容为空');
+                const isVideo = item.type === 'video' || content.startsWith('data:video') || isVideoUrl(url) || isVideoUrl(content);
+                const ext = getDataUrlExt(content, getUrlExt(content, getUrlExt(url, isVideo ? '.mp4' : '.png')));
                 const resolvedProjectTitle = item.projectTitle || (projectName && projectName !== '未命名项目' ? projectName : '');
                 const baseLabel = [resolvedProjectTitle, item.prompt].filter(Boolean).join('-')
                     || getFilenameFromUrl(url)
@@ -5518,11 +5523,12 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                     type: isVideo ? 'video' : 'image'
                 });
             } catch (err) {
+                failedItems.push({ item, error: err });
                 console.warn('[保存到本地] 读取资源失败:', err);
             }
         }
-        return files;
-    }, [fetchCacheSource, getDataUrlExt, getFilenameFromUrl, sanitizeCacheId, projectName, getProxyPreferenceForUrl]);
+        return { files, failedItems };
+    }, [fetchCacheSource, getDataUrlExt, getFilenameFromUrl, getUrlExt, sanitizeCacheId, projectName, getProxyPreferenceForUrl, resolveSpecialUrl]);
 
     const getLocalSaveBaseUrl = useCallback((node) => {
         const raw = (node?.settings?.serverUrl || localServerUrl || '').trim();
@@ -5556,8 +5562,13 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
             return;
         }
 
-        const files = await buildLocalSaveFiles(dedupedItems, { useProxyResolver: getItemProxyPreference, proxyBaseUrl: baseUrl });
+        const { files, failedItems } = await buildLocalSaveFiles(dedupedItems, { useProxyResolver: getItemProxyPreference, proxyBaseUrl: baseUrl });
         if (files.length === 0) {
+            if (failedItems.length > 0) {
+                const firstError = failedItems[0]?.error;
+                const message = firstError?.message || String(firstError || '资源读取失败');
+                if (!silent) throw new Error(`资源读取失败: ${message}`);
+            }
             if (!silent) showToast('没有可保存的文件', 'warning');
             return;
         }
@@ -5573,30 +5584,51 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
                 })
             });
         } catch (err) {
-            if (!silent) showToast('连接失败，请检查本地服务地址', 'error');
-            throw err;
+            throw new Error(silent ? (err?.message || '连接失败，请检查本地服务地址') : '连接失败，请检查本地服务地址');
+        }
+
+        const responseText = await res.text().catch(() => '');
+        let result = {};
+        if (responseText) {
+            try {
+                result = JSON.parse(responseText);
+            } catch (err) {
+                result = res.ok ? { success: true, message: responseText } : { message: responseText };
+            }
         }
 
         if (!res.ok) {
-            const errText = await res.text();
-            throw new Error(errText || '保存失败');
+            throw new Error(result?.message || result?.error || responseText || `保存失败 (${res.status})`);
         }
 
-        const result = await res.json();
-        const results = result.results || [];
+        const results = Array.isArray(result.results)
+            ? result.results
+            : files.map(file => ({
+                success: result.success !== false,
+                path: result.path || file.filename
+            }));
+        if (result.success === false) {
+            throw new Error(result.message || '保存失败');
+        }
+        const isResultSuccess = (item) => item && item.success !== false;
+        const successCount = results.filter(isResultSuccess).length;
+        const failedResult = results.find((item) => item && item.success === false);
+        if (successCount === 0 && failedResult) {
+            throw new Error(failedResult.message || failedResult.error || result.message || '保存失败');
+        }
         const savedKeys = results
-            .map((item, idx) => item?.success ? (files[idx]?.scopedKey || dedupedItems[idx]?.scopedKey) : null)
+            .map((item, idx) => isResultSuccess(item) ? (files[idx]?.scopedKey || dedupedItems[idx]?.scopedKey) : null)
             .filter(Boolean);
         const mergedSavedUrls = Array.from(new Set([...(node.settings?.lastSavedUrls || []), ...savedKeys]));
         updateNodeSettings(node.id, {
             lastSavedUrls: mergedSavedUrls,
             lastSaved: new Date().toLocaleString(),
-            savedFiles: [...(node.settings?.savedFiles || []), ...results.map(r => r.path).filter(Boolean)]
+            savedFiles: [...(node.settings?.savedFiles || []), ...results.map((r, idx) => isResultSuccess(r) ? (r?.path || files[idx]?.filename) : null).filter(Boolean)]
         });
-        const successCount = results.filter(r => r.success).length;
         if (!silent) {
             const skipSuffix = skippedCount > 0 ? `，已跳过 ${skippedCount} 个重复` : '';
-            showToast(result.message || `已保存 ${successCount} 个文件${skipSuffix}`, 'success');
+            const readFailSuffix = failedItems.length > 0 ? `，${failedItems.length} 个资源读取失败` : '';
+            showToast(result.message || `已保存 ${successCount} 个文件${skipSuffix}${readFailSuffix}`, 'success');
         }
     }, [buildLocalSaveFiles, getFilenameFromUrl, getItemProxyPreference, getLocalSaveBaseUrl, showToast]);
 
@@ -14712,11 +14744,12 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         const hours = String(cstTime.getUTCHours()).padStart(2, '0');
         const minutes = String(cstTime.getUTCMinutes()).padStart(2, '0');
         const seconds = String(cstTime.getUTCSeconds()).padStart(2, '0');
-        return `${year} -${month} -${day}T${hours} -${minutes} -${seconds} `;
+        return `${year}-${month}-${day}T${hours}-${minutes}-${seconds}`;
     };
 
     const isLikelyAssetUrl = (value) => {
         if (!value || typeof value !== 'string') return false;
+        if (LocalImageManager.isImageId(value) || value.startsWith('asset://')) return true;
         if (value.startsWith('data:image/') || value.startsWith('data:video/')) return true;
         if (value.startsWith('blob:')) return true;
         return /\.(png|jpg|jpeg|webp|gif|mp4|webm|mov)(\?|$)/i.test(value);

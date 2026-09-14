@@ -145,7 +145,7 @@ export const StudioStylesApi = {
   /** type 为 1 时返回视觉风格，为 2 时返回影调风格。 */
   async getOptions(styleType: StudioCustomStyleType): Promise<StudioStyleOption[]> {
     const response = await getStyleOptions(styleType)
-    if ((response.code ?? 200) >= 400) {
+    if (response.code !== 200) {
       throw new Error(response.message || 'Style options loading failed')
     }
     if (!Array.isArray(response.data)) return []
