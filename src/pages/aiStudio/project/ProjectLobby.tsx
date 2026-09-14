@@ -27,6 +27,7 @@ import { useNavigate } from 'react-router-dom'
 import { StudioScriptsApi } from '../../../services/studioScripts'
 import type { StudioScriptImportId, StudioScriptImportListItem } from '../../../services/studioScripts'
 import { useBilingualText } from '../../../i18n/useBilingualText'
+import { useAppStore } from '../../../store/useAppStore'
 import { clearProjectCreationDrafts } from './projectCreationDraft'
 import { loadScriptImportChapters, loadScriptImportDetail } from './scriptImportResumeCache'
 import {
@@ -112,16 +113,26 @@ const formatChineseCount = (count: number) => {
   return `${Number.isInteger(value) ? value : value.toFixed(1)}万`
 }
 
-const formatProjectDate = (value?: string) => {
+const formatProjectDate = (value: string | undefined, language: 'zh-CN' | 'en-US') => {
   if (!value) return '--'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
+  if (language === 'en-US') {
+    return new Intl.DateTimeFormat('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    }).format(date)
+  }
   const pad = (part: number) => String(part).padStart(2, '0')
   return `${date.getFullYear()}.${pad(date.getMonth() + 1)}.${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' }) => {
   const l = useBilingualText()
+  const language = useAppStore((state) => state.language)
   const navigate = useNavigate()
   const { token } = theme.useToken()
   const [projects, setProjects] = useState<ProjectView[]>([])
@@ -387,7 +398,7 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
             aria-hidden={visibleInfoProjectId !== p.id}
           >
             <div>{l('创建人：', 'Created by: ')}{p.creatorName ?? '--'}</div>
-            <div>{l('创建时间：', 'Created at: ')}{formatProjectDate(p.createdAt)}</div>
+            <div>{l('创建时间：', 'Created at: ')}{formatProjectDate(p.createdAt, language)}</div>
           </div>
         </div>
 
@@ -478,7 +489,7 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
           </div>
           {isCanvasView ? (
             <div className="project-lobby-card__meta project-lobby-card__meta--canvas">
-              <span>{l('更新于', 'Updated')} {formatProjectDate(p.updatedAt)}</span>
+              <span>{l('更新于', 'Updated')} {formatProjectDate(p.updatedAt, language)}</span>
             </div>
           ) : (
             <div className="project-lobby-card__meta">

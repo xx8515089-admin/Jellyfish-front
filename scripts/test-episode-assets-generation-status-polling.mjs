@@ -296,7 +296,7 @@ test('batch submission uses the documented payload and reconciles status even wh
 })
 
 test('completed scope hides retry and credits, while cards and workspace share the state selector', () => {
-  assert.ok(/\{assetPollingErrorMessage\s*&&\s*!currentScopeGenerationCompleted\s*&&\s*\(/.test(source), 'Completed scopes hide the retry action')
+  assert.ok(/assetPollingErrorMessage\s*&&\s*!currentScopeGenerationCompleted/.test(source), 'Completed scopes hide the retry action')
   assert.ok(/disabled=\{\s*currentScopeGenerationCompleted/.test(source), 'Completed scopes disable batch creation')
   assert.ok(/\{!currentScopeGenerationCompleted\s*&&\s*\(\s*<span className="project-assets-step__generation-cost">/.test(source), 'Completed scopes hide batch credits')
   assert.match(declaration('cardGenerationState'), /selectAssetGenerationState\(assetImageTasks\[asset\.id\], batchAssetImageTasks\[asset\.id\]\)/)

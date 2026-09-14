@@ -1,7 +1,8 @@
 import type { StudioAssetLookItem } from '../../../services/studioAssetGeneration'
 import type { AssetImageOptionsInput } from './AssetGenerationWorkspace'
 
-export const DEFAULT_ASSET_IMAGE_RATIO_OPTIONS = ['9:16', '4:3', '16:9', '3:4', '1:1', '21:9']
+export const DEFAULT_ASSET_IMAGE_RATIO = '16:9'
+export const DEFAULT_ASSET_IMAGE_RATIO_OPTIONS = [DEFAULT_ASSET_IMAGE_RATIO, '9:16', '4:3', '3:4', '1:1', '21:9']
 
 let lastImageOptionsClientRevision = 0
 
@@ -73,6 +74,7 @@ export const resolveAssetImageOptions = ({
   const aspectRatio = [look?.aspectRatio, asset.aspectRatio, ratio]
     .map((value) => value?.trim())
     .find((value): value is string => Boolean(value && availableRatios.includes(value)))
+    ?? (availableRatios.includes(DEFAULT_ASSET_IMAGE_RATIO) ? DEFAULT_ASSET_IMAGE_RATIO : undefined)
     ?? availableRatios[0]
     ?? ''
 

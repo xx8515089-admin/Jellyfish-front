@@ -36,6 +36,7 @@ import { getAssetLookGenerationTask } from './assetLookGenerationTask'
 import type { AssetLookGenerationTaskSnapshot } from './assetLookGenerationTask'
 import {
   createImageOptionsClientRevision,
+  DEFAULT_ASSET_IMAGE_RATIO,
   DEFAULT_ASSET_IMAGE_RATIO_OPTIONS as DEFAULT_RATIO_OPTIONS,
   resolveAssetImageOptions,
   selectInitialAssetLook,
@@ -75,6 +76,9 @@ type ResolvedAssetImageHistoryItem = {
   versionId?: string
   imageUrl: string
   thumbnailUrl: string
+  operationType: number | null
+  operationTypeName?: string
+  isAssetLibraryImport: boolean
   isCurrent: boolean
   isSelected: boolean
   createdAt?: string
@@ -101,6 +105,7 @@ type AssetGenerationWorkspaceProps = {
   modelOptionsError?: unknown
   assetId?: number | null
   episodeId?: string | number
+  preferredLookId?: number | null
   imageHistoryItems?: StudioAssetImageHistoryItem[]
   currentImageFileId?: string | number
   imageHistoryLoading?: boolean
@@ -167,6 +172,31 @@ type LookDraft = {
 
 const MAX_REFERENCE_IMAGES = 14
 const MAX_PROMPT_LENGTH = 5000
+const ASSET_LIBRARY_IMPORT_OPERATION_TYPE = 9
+
+function normalizeHistoryOperationType(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const normalized = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(normalized) ? normalized : null
+}
+
+function normalizeHistoryOperationName(value: unknown): string | undefined {
+  return typeof value === 'string' ? value.trim() || undefined : undefined
+}
+
+function isAssetLibraryImportOperation(operationType: number | null, operationName?: string): boolean {
+  if (operationType === ASSET_LIBRARY_IMPORT_OPERATION_TYPE) return true
+  const normalizedName = operationName?.replace(/[\s_-]+/g, '').toLowerCase()
+  return Boolean(
+    normalizedName
+      && (
+        /空间.*导入|导入.*空间/.test(normalizedName)
+        || (normalizedName.includes('library') && normalizedName.includes('import'))
+        || (normalizedName.includes('space') && normalizedName.includes('import'))
+      ),
+  )
+}
+
 const EMPTY_LOOK_GENERATION_TASK: AssetLookGenerationTaskSnapshot = {
   phase: 'idle',
   progress: 0,
@@ -219,9 +249,13 @@ export const loadAssetVisualStyleOptions = (force = false) => {
       const uniqueOptions = new Map<string, AssetVisualStyleOption>()
       options.forEach((option) => {
         const name = option.name.trim()
-        if (!name || isNoStyleName(name) || uniqueOptions.has(name)) return
-        uniqueOptions.set(name, {
-          id: option.id,
+        const id = Number(option.id)
+        const status = option.status === null || option.status === undefined
+          ? 1
+          : Number(option.status)
+        if (!name || isNoStyleName(name) || !Number.isInteger(id) || id <= 0 || status !== 1) return
+        uniqueOptions.set(`id:${id}`, {
+          id,
           name,
           coverUrl: option.coverUrl?.trim() || undefined,
         })
@@ -302,6 +336,7 @@ export default function AssetGenerationWorkspace({
   modelOptionsError,
   assetId,
   episodeId,
+  preferredLookId,
   imageHistoryItems = [],
   currentImageFileId,
   imageHistoryLoading = false,
@@ -375,7 +410,9 @@ export default function AssetGenerationWorkspace({
   const [selectedRatio, setSelectedRatio] = useState(() => (
     (savedAspectRatio || ratio) && supportedRatioOptions.includes(savedAspectRatio || ratio)
       ? savedAspectRatio || ratio
-      : supportedRatioOptions[0] ?? '9:16'
+      : supportedRatioOptions.includes(DEFAULT_ASSET_IMAGE_RATIO)
+        ? DEFAULT_ASSET_IMAGE_RATIO
+        : supportedRatioOptions[0] ?? DEFAULT_ASSET_IMAGE_RATIO
   ))
   const [selectedStyle, setSelectedStyle] = useState<string | undefined>(savedStyleName || undefined)
   const providedVisualStyleNames = useMemo(() => [...new Set(visualStyleNames
@@ -545,19 +582,29 @@ export default function AssetGenerationWorkspace({
     const seen = new Set<string>()
     const items = imageHistoryItems.flatMap((item) => {
       const fileId = item.fileId?.trim() || undefined
-      const imageUrl = resolveAssetUrl(item.imageUrl ?? item.fileId ?? item.thumbnailUrl)
-      const thumbnailUrl = resolveAssetUrl(item.thumbnailUrl ?? item.imageUrl ?? item.fileId)
+      const versionId = item.versionId?.trim() || undefined
+      const imageUrl = resolveAssetUrl(item.imageUrl ?? item.fileUrl ?? item.fileId ?? item.thumbnailUrl)
+      const thumbnailUrl = resolveAssetUrl(item.thumbnailUrl ?? item.imageUrl ?? item.fileUrl ?? item.fileId)
         ?? imageUrl
-      const dedupeKey = fileId ? `file:${fileId}` : `url:${imageUrl}`
+      const dedupeKey = versionId
+        ? `version:${versionId}`
+        : fileId
+          ? `file:${fileId}`
+          : `url:${imageUrl}`
       if (!imageUrl || !thumbnailUrl || seen.has(dedupeKey)) return []
       seen.add(dedupeKey)
+      const operationType = normalizeHistoryOperationType(item.operationType)
+      const operationTypeName = normalizeHistoryOperationName(item.operationTypeName)
       return [{
         id: item.id,
         fileId,
-        versionId: item.versionId,
+        versionId,
         imageUrl,
         thumbnailUrl,
-        isCurrent: Boolean(item.isCurrent),
+        operationType,
+        operationTypeName,
+        isAssetLibraryImport: isAssetLibraryImportOperation(operationType, operationTypeName),
+        isCurrent: Boolean(item.isCurrent ?? item.primary),
         isSelected: false,
         createdAt: item.createdAt,
         prompt: item.prompt,
@@ -594,6 +641,8 @@ export default function AssetGenerationWorkspace({
       }),
       imageUrl: currentImageUrl,
       thumbnailUrl: currentImageUrl,
+      operationType: null,
+      isAssetLibraryImport: false,
       isCurrent: true,
       isSelected: true,
     }, ...items.map((item) => ({ ...item, isSelected: false }))]
@@ -923,9 +972,12 @@ export default function AssetGenerationWorkspace({
         if (!nextLooks.length) return
         loadedLooksContextRef.current = context
         rememberSavedLookNames(nextLooks)
+        const preferredLook = Number.isInteger(Number(preferredLookId)) && Number(preferredLookId) > 0
+          ? nextLooks.find((look) => look.backendId === Number(preferredLookId))
+          : undefined
         const nextActiveLook = (refreshExisting
           ? nextLooks.find((look) => look.id === activeLookIdRef.current)
-          : undefined) ?? selectInitialAssetLook(nextLooks)!
+          : preferredLook) ?? selectInitialAssetLook(nextLooks)!
         setLooks(nextLooks)
         setActiveLookId(nextActiveLook.id)
         if (refreshExisting && nextActiveLook.id === previousLook?.id) {
@@ -951,7 +1003,7 @@ export default function AssetGenerationWorkspace({
       active = false
       request.cancel()
     }
-  }, [assetId, createLookDraftFromRemote, episodeId, l, lookGenerationTask, onActiveLookChange, resultsRefreshToken])
+  }, [assetId, createLookDraftFromRemote, episodeId, l, lookGenerationTask, onActiveLookChange, preferredLookId, resultsRefreshToken])
 
   const styleOptions = useMemo(() => {
     if (visualStyleOptionsLoading && providedVisualStyleOptions.length === 0) return []
@@ -1032,7 +1084,11 @@ export default function AssetGenerationWorkspace({
 
   useEffect(() => {
     if (supportedRatioOptions.includes(selectedRatio)) return
-    setSelectedRatio(supportedRatioOptions[0] ?? '9:16')
+    setSelectedRatio(
+      supportedRatioOptions.includes(DEFAULT_ASSET_IMAGE_RATIO)
+        ? DEFAULT_ASSET_IMAGE_RATIO
+        : supportedRatioOptions[0] ?? DEFAULT_ASSET_IMAGE_RATIO,
+    )
   }, [selectedRatio, supportedRatioOptions])
 
   useEffect(() => {
@@ -2046,11 +2102,19 @@ export default function AssetGenerationWorkspace({
                       aria-label={item.isSelected
                         ? l('当前正在查看这张历史图片', 'Currently viewing this history image')
                         : l(`切换到第${index + 1}张历史图片`, `Switch to history image ${index + 1}`)}
-                      title={item.createdAt}
+                      title={[item.operationTypeName, item.createdAt].filter(Boolean).join(' · ') || undefined}
                       onClick={() => selectHistoryImage(item)}
                     >
                       <img src={item.thumbnailUrl} alt="" loading="lazy" decoding="async" />
                     </button>
+                    {item.isAssetLibraryImport && (
+                      <span
+                        className="asset-generation-workspace__history-origin-badge"
+                        title={item.operationTypeName ?? l('空间导入', 'Asset library import')}
+                      >
+                        {item.operationTypeName ?? l('空间导入', 'Library')}
+                      </span>
+                    )}
                   </div>
                 )
               })}

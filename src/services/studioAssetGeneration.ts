@@ -120,6 +120,10 @@ export type StudioStoryboardVideoReferenceDeleteRequest = {
   referenceIndex: number
 }
 
+export type StudioStoryboardImageSkillRequest = {
+  segmentId: string | number
+}
+
 export type StudioStoryboardVideoReferenceDeleteResult = {
   segmentId?: string | number | null
   revisionNo?: number | null
@@ -271,12 +275,21 @@ export type StudioEpisodeStoryboardAssetReference = {
 
 export type StudioEpisodeStoryboardPromptReference = {
   referenceIndex?: number | null
+  referenceKey?: string | null
   referenceType?: number | null
   referenceTypeName?: string
   referenceToken: string
   fileId?: string | number | null
   fileUrl?: string | null
   displayName: string
+  matchNames?: string[]
+}
+
+export type StudioEpisodeStoryboardPromptMention = {
+  start: number | null
+  end: number | null
+  text: string
+  referenceKey?: string | null
 }
 
 export type StudioEpisodeStoryboardDirectorPrompt = {
@@ -284,17 +297,26 @@ export type StudioEpisodeStoryboardDirectorPrompt = {
   taskId?: string | number | null
   status?: number | null
   progress?: number | null
+  skillCode?: string
+  skillName?: string
   textModelId?: number | null
   videoModelId?: number | null
   sourceChanged: boolean
   durationSeconds?: number | null
+  suggestedDurationSeconds?: number | null
   generateAudio?: boolean
   prompt: string
   promptCharacters?: number | null
   maxPromptCharacters?: number | null
   references: StudioEpisodeStoryboardPromptReference[]
+  mentions: StudioEpisodeStoryboardPromptMention[]
   warnings: string[]
+  canUndoSkill?: boolean
   error?: string
+}
+
+export type StudioStoryboardImageSkillResult = StudioEpisodeStoryboardDirectorPrompt & {
+  segmentId?: string | number | null
 }
 
 export type StudioEpisodeStoryboardReferenceSelection = {
@@ -319,6 +341,7 @@ export type StudioEpisodeStoryboardSegment = {
   canEdit?: boolean
   error?: string
   durationSeconds?: number | null
+  suggestedDurationSeconds?: number | null
   manuallyEdited?: boolean
   manuallyAdded?: boolean
   revisionNo?: number | null
@@ -329,6 +352,7 @@ export type StudioEpisodeStoryboardSegment = {
   assetReferences?: StudioEpisodeStoryboardAssetReference[]
   referenceSelection?: StudioEpisodeStoryboardReferenceSelection | null
   directorPrompt?: StudioEpisodeStoryboardDirectorPrompt | null
+  imagePrompt?: StudioEpisodeStoryboardDirectorPrompt | null
 }
 
 export type StudioEpisodeStoryboardEditorResult = {
@@ -394,6 +418,7 @@ export type StudioStoryboardVideoPromptDetailResult = {
   segmentRevision?: number | null
   sourceChanged: boolean
   durationSeconds?: number | null
+  suggestedDurationSeconds?: number | null
   generateAudio?: boolean
   prompt?: string | null
   promptCharacters?: number | null
@@ -461,6 +486,25 @@ export type StudioAssetPrimaryImageRequest = {
   lookId: number
 }
 
+export type StudioAssetCopyrightReviewRequest = {
+  assetId: number
+  versionId: number
+}
+
+export type StudioAssetCopyrightReviewResult = {
+  versionId: number
+  reviewStatus: number | null
+  reviewStatusName: string | null
+  riskLevel: number | null
+  riskLevelName: string | null
+  riskScore: number | null
+  findings: string | null
+  reviewMethod: string | null
+  reviewedAt: string | null
+  resultMessage: string | null
+  disclaimer: string | null
+}
+
 export type StudioAssetLookUploadRequest = {
   assetId: number
   name: string
@@ -514,17 +558,38 @@ export type StudioAssetLookItem = {
 export type StudioAssetImageHistoryItem = {
   id: string
   fileId?: string
+  fileUrl?: string
   imageUrl?: string
   thumbnailUrl?: string
   versionId?: string
+  taskId?: string | null
+  characterLookId?: number | null
+  characterLookName?: string | null
+  operationType?: number | null
+  operationTypeName?: string | null
+  versionNo?: number | null
+  versionLabel?: string | null
   isCurrent?: boolean
+  primary?: boolean
+  status?: number | null
+  statusName?: string | null
+  progress?: number | null
+  copyrightReviewStatus?: number | null
+  copyrightReviewStatusName?: string | null
+  copyrightRiskLevel?: number | null
+  copyrightRiskLevelName?: string | null
   createdAt?: string
+  updatedAt?: string
   prompt?: string
   aspectRatio?: string
   visualStyleId?: number | null
+  quality?: number | null
   modelId?: number | null
+  modelName?: string | null
   resolution?: number | null
   lookId?: number | null
+  error?: string | null
+  usage?: unknown
 }
 
 export type StudioAssetReferenceItem = {
@@ -711,6 +776,34 @@ function deleteStoryboardVideoReference(
   return __request(OpenAPI, {
     method: 'POST',
     url: '/api/v1/studio/storyboards/videos/references/delete',
+    body: requestBody,
+    mediaType: 'application/json',
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function applyStoryboardImageSkill(
+  requestBody: StudioStoryboardImageSkillRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'POST',
+    url: '/api/v1/studio/storyboards/images/applySkill',
+    body: requestBody,
+    mediaType: 'application/json',
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function undoStoryboardImageSkill(
+  requestBody: StudioStoryboardImageSkillRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'POST',
+    url: '/api/v1/studio/storyboards/images/undoSkill',
     body: requestBody,
     mediaType: 'application/json',
     errors: {
@@ -925,6 +1018,20 @@ function getAssetImageHistory(
     query: lookId === undefined || lookId === null
       ? { assetId }
       : { assetId, lookId },
+    errors: {
+      422: 'Validation Error',
+    },
+  })
+}
+
+function reviewAssetImageCopyright(
+  requestBody: StudioAssetCopyrightReviewRequest,
+): CancelablePromise<ApiEnvelope<unknown>> {
+  return __request(OpenAPI, {
+    method: 'POST',
+    url: '/api/v1/studio/assets/images/copyright-review',
+    body: requestBody,
+    mediaType: 'application/json',
     errors: {
       422: 'Validation Error',
     },
@@ -1173,11 +1280,31 @@ function normalizeAssetImageHistory(data: unknown): StudioAssetImageHistoryItem[
       ?? record.thumb_url
       ?? record.thumbnail,
     )
-    const dedupeKey = fileId ?? imageUrl ?? thumbnailUrl
+    const versionId = normalizeHistoryValue(record.versionId ?? record.version_id)
+    const taskId = normalizeHistoryValue(record.taskId ?? record.task_id) ?? null
+    const dedupeKey = versionId
+      ?? normalizeHistoryValue(record.id)
+      ?? fileId
+      ?? imageUrl
+      ?? thumbnailUrl
     if (!dedupeKey || seen.has(dedupeKey)) return
     seen.add(dedupeKey)
 
-    const versionId = normalizeHistoryValue(record.versionId ?? record.version_id)
+    const characterLookId = normalizeFiniteNumber(
+      record.characterLookId
+        ?? record.character_look_id
+        ?? record.lookId
+        ?? record.look_id
+        ?? payload?.characterLookId
+        ?? payload?.lookId,
+    ) ?? null
+    const primary = normalizeHistoryBoolean(
+      record.primary
+        ?? record.isCurrent
+        ?? record.current
+        ?? record.selected
+        ?? record.main,
+    )
     result.push({
       id: versionId
         ?? normalizeHistoryValue(record.id)
@@ -1186,32 +1313,83 @@ function normalizeAssetImageHistory(data: unknown): StudioAssetImageHistoryItem[
         ?? thumbnailUrl
         ?? `history-${index}`,
       fileId,
+      fileUrl: imageUrl,
       imageUrl,
       thumbnailUrl,
       versionId,
-      isCurrent: normalizeHistoryBoolean(
-        record.isCurrent ?? record.current ?? record.selected ?? record.main,
-      ),
+      taskId,
+      characterLookId,
+      characterLookName: normalizeHistoryValue(
+        record.characterLookName ?? record.character_look_name,
+      ) ?? null,
+      operationType: normalizeFiniteNumber(
+        record.operationType ?? record.operation_type,
+      ) ?? null,
+      operationTypeName: normalizeHistoryValue(
+        record.operationTypeName ?? record.operation_type_name,
+      ) ?? null,
+      versionNo: normalizeFiniteNumber(record.versionNo ?? record.version_no) ?? null,
+      versionLabel: normalizeHistoryValue(record.versionLabel ?? record.version_label) ?? null,
+      isCurrent: primary,
+      primary,
+      status: normalizeFiniteNumber(record.status) ?? null,
+      statusName: normalizeHistoryValue(record.statusName ?? record.status_name) ?? null,
+      progress: normalizeFiniteNumber(record.progress) ?? null,
+      copyrightReviewStatus: normalizeFiniteNumber(
+        record.copyrightReviewStatus ?? record.copyright_review_status,
+      ) ?? null,
+      copyrightReviewStatusName: normalizeHistoryValue(
+        record.copyrightReviewStatusName ?? record.copyright_review_status_name,
+      ) ?? null,
+      copyrightRiskLevel: normalizeFiniteNumber(
+        record.copyrightRiskLevel ?? record.copyright_risk_level,
+      ) ?? null,
+      copyrightRiskLevelName: normalizeHistoryValue(
+        record.copyrightRiskLevelName ?? record.copyright_risk_level_name,
+      ) ?? null,
       createdAt: normalizeHistoryValue(record.createdAt ?? record.created_at),
+      updatedAt: normalizeHistoryValue(record.updatedAt ?? record.updated_at),
       prompt: normalizeHistoryValue(record.prompt ?? payload?.prompt),
       aspectRatio: normalizeHistoryValue(record.aspectRatio ?? record.aspect_ratio ?? payload?.aspectRatio),
       visualStyleId: normalizeFiniteNumber(
         record.visualStyleId ?? record.visual_style_id ?? payload?.visualStyleId,
       ) ?? null,
+      quality: normalizeFiniteNumber(record.quality ?? payload?.quality) ?? null,
       modelId: normalizeFiniteNumber(record.modelId ?? record.model_id ?? payload?.modelId) ?? null,
+      modelName: normalizeHistoryValue(record.modelName ?? record.model_name) ?? null,
       resolution: normalizeFiniteNumber(record.resolution ?? payload?.resolution) ?? null,
-      lookId: normalizeFiniteNumber(
-        record.lookId
-          ?? record.look_id
-          ?? record.characterLookId
-          ?? record.character_look_id
-          ?? payload?.lookId
-          ?? payload?.characterLookId,
-      ) ?? null,
+      lookId: characterLookId,
+      error: typeof record.error === 'string'
+        ? record.error
+        : normalizeHistoryValue(record.error) ?? null,
+      usage: record.usage ?? payload?.usage ?? null,
     })
   })
 
   return result
+}
+
+function normalizeAssetCopyrightReview(data: unknown): StudioAssetCopyrightReviewResult {
+  const record = asRecord(data)
+  const versionId = normalizeFiniteNumber(record?.versionId ?? record?.version_id)
+  if (!record || versionId === undefined) {
+    throw new Error('Copyright review returned invalid data')
+  }
+  return {
+    versionId,
+    reviewStatus: normalizeFiniteNumber(record.reviewStatus ?? record.review_status) ?? null,
+    reviewStatusName: normalizeHistoryValue(
+      record.reviewStatusName ?? record.review_status_name,
+    ) ?? null,
+    riskLevel: normalizeFiniteNumber(record.riskLevel ?? record.risk_level) ?? null,
+    riskLevelName: normalizeHistoryValue(record.riskLevelName ?? record.risk_level_name) ?? null,
+    riskScore: normalizeFiniteNumber(record.riskScore ?? record.risk_score) ?? null,
+    findings: normalizeHistoryValue(record.findings) ?? null,
+    reviewMethod: normalizeHistoryValue(record.reviewMethod ?? record.review_method) ?? null,
+    reviewedAt: normalizeHistoryValue(record.reviewedAt ?? record.reviewed_at) ?? null,
+    resultMessage: normalizeHistoryValue(record.resultMessage ?? record.result_message) ?? null,
+    disclaimer: normalizeHistoryValue(record.disclaimer) ?? null,
+  }
 }
 
 function normalizeAssetReferences(data: unknown): StudioAssetReferenceListResult {
@@ -1469,6 +1647,7 @@ function normalizeStoryboardPromptReferences(data: unknown): StudioEpisodeStoryb
     ) ?? referenceToken
     return [{
       referenceIndex: normalizeNumberOrNull(item.referenceIndex ?? item.reference_index ?? item.index),
+      referenceKey: normalizeHistoryValue(item.referenceKey ?? item.reference_key) ?? null,
       referenceType: normalizeNumberOrNull(item.referenceType ?? item.reference_type ?? item.assetType ?? item.asset_type),
       referenceTypeName: normalizeHistoryValue(item.referenceTypeName ?? item.reference_type_name),
       referenceToken,
@@ -1482,6 +1661,7 @@ function normalizeStoryboardPromptReferences(data: unknown): StudioEpisodeStoryb
           ?? item.image_url,
       ) ?? null,
       displayName,
+      matchNames: normalizeStringList(item.matchNames ?? item.match_names),
     }]
   })
 }
@@ -1595,6 +1775,22 @@ function normalizeStoryboardVideoReferenceDelete(data: unknown): StudioStoryboar
   }
 }
 
+function normalizeStoryboardPromptMentions(data: unknown): StudioEpisodeStoryboardPromptMention[] {
+  const rows = Array.isArray(data) ? data : []
+  return rows.flatMap((value): StudioEpisodeStoryboardPromptMention[] => {
+    const item = asRecord(value)
+    if (!item) return []
+    const text = normalizeHistoryValue(item.text)
+    if (!text) return []
+    return [{
+      start: normalizeNumberOrNull(item.start),
+      end: normalizeNumberOrNull(item.end),
+      text,
+      referenceKey: normalizeHistoryValue(item.referenceKey ?? item.reference_key) ?? null,
+    }]
+  })
+}
+
 function normalizeStoryboardDirectorPrompt(data: unknown): StudioEpisodeStoryboardDirectorPrompt | null {
   const record = asRecord(data)
   if (!record) return null
@@ -1603,17 +1799,36 @@ function normalizeStoryboardDirectorPrompt(data: unknown): StudioEpisodeStoryboa
     taskId: normalizeHistoryValue(record.taskId ?? record.task_id) ?? null,
     status: normalizeNumberOrNull(record.status),
     progress: normalizeNumberOrNull(record.progress),
+    skillCode: normalizeHistoryValue(record.skillCode ?? record.skill_code),
+    skillName: normalizeHistoryValue(record.skillName ?? record.skill_name),
     textModelId: normalizeNumberOrNull(record.textModelId ?? record.text_model_id),
     videoModelId: normalizeNumberOrNull(record.videoModelId ?? record.video_model_id),
     sourceChanged: Boolean(normalizeHistoryBoolean(record.sourceChanged ?? record.source_changed)),
     durationSeconds: normalizeNumberOrNull(record.durationSeconds ?? record.duration_seconds),
+    suggestedDurationSeconds: normalizeNumberOrNull(
+      record.suggestedDurationSeconds ?? record.suggested_duration_seconds,
+    ),
     generateAudio: normalizeHistoryBoolean(record.generateAudio ?? record.generate_audio),
     prompt: normalizeHistoryValue(record.prompt) ?? '',
     promptCharacters: normalizeNumberOrNull(record.promptCharacters ?? record.prompt_characters),
     maxPromptCharacters: normalizeNumberOrNull(record.maxPromptCharacters ?? record.max_prompt_characters),
     references: normalizeStoryboardPromptReferences(record.references),
+    mentions: normalizeStoryboardPromptMentions(record.mentions),
     warnings: normalizeStringList(record.warnings),
+    canUndoSkill: normalizeHistoryBoolean(record.canUndoSkill ?? record.can_undo_skill),
     error: normalizeHistoryValue(record.error),
+  }
+}
+
+function normalizeStoryboardImageSkill(data: unknown): StudioStoryboardImageSkillResult {
+  const record = asRecord(data)
+  const prompt = normalizeStoryboardDirectorPrompt(data)
+  if (!record || !prompt) {
+    throw new Error('Storyboard image skill returned invalid data')
+  }
+  return {
+    ...prompt,
+    segmentId: normalizeHistoryValue(record.segmentId ?? record.segment_id) ?? null,
   }
 }
 
@@ -1648,6 +1863,9 @@ function normalizeStoryboardVideoPromptDetail(data: unknown): StudioStoryboardVi
     segmentRevision: normalizeNumberOrNull(record?.segmentRevision ?? record?.segment_revision),
     sourceChanged: Boolean(normalizeHistoryBoolean(record?.sourceChanged ?? record?.source_changed)),
     durationSeconds: normalizeNumberOrNull(record?.durationSeconds ?? record?.duration_seconds),
+    suggestedDurationSeconds: normalizeNumberOrNull(
+      record?.suggestedDurationSeconds ?? record?.suggested_duration_seconds,
+    ),
     generateAudio: normalizeHistoryBoolean(record?.generateAudio ?? record?.generate_audio),
     prompt,
     promptCharacters: normalizeNumberOrNull(record?.promptCharacters ?? record?.prompt_characters),
@@ -1701,6 +1919,12 @@ function normalizeStoryboardSegments(data: unknown): StudioEpisodeStoryboardSegm
     )
     const id = normalizeHistoryValue(item.id ?? item.segmentId ?? item.segment_id) ?? `segment-${segmentIndex}`
     const sourceType = normalizeStoryboardSegmentSourceType(item.sourceType ?? item.source_type)
+    const directorPromptSource = item.directorPrompt
+      ?? item.director_prompt
+      ?? (item.prompt !== undefined || item.references !== undefined || item.skillCode !== undefined || item.skill_code !== undefined
+        ? item
+        : undefined)
+    const imagePromptSource = item.imagePrompt ?? item.image_prompt
     return [{
       id,
       segmentIndex,
@@ -1720,6 +1944,9 @@ function normalizeStoryboardSegments(data: unknown): StudioEpisodeStoryboardSegm
       canEdit: normalizeHistoryBoolean(item.canEdit ?? item.can_edit),
       error: normalizeHistoryValue(item.error),
       durationSeconds: normalizeNumberOrNull(item.durationSeconds ?? item.duration_seconds),
+      suggestedDurationSeconds: normalizeNumberOrNull(
+        item.suggestedDurationSeconds ?? item.suggested_duration_seconds,
+      ),
       manuallyEdited: normalizeHistoryBoolean(item.manuallyEdited ?? item.manually_edited),
       manuallyAdded: sourceType !== undefined
         ? sourceType === 2
@@ -1740,7 +1967,8 @@ function normalizeStoryboardSegments(data: unknown): StudioEpisodeStoryboardSegm
       shots: normalizeStoryboardShots(item.shots ?? item.lens ?? item.items),
       assetReferences: normalizeStoryboardAssetReferenceRows(item.assetReferences ?? item.asset_references),
       referenceSelection: normalizeStoryboardReferenceSelection(item.referenceSelection ?? item.reference_selection),
-      directorPrompt: normalizeStoryboardDirectorPrompt(item.directorPrompt ?? item.director_prompt),
+      directorPrompt: normalizeStoryboardDirectorPrompt(directorPromptSource),
+      imagePrompt: normalizeStoryboardDirectorPrompt(imagePromptSource),
     }]
   })
 }
@@ -1800,6 +2028,12 @@ function normalizeEpisodeStoryboardSegmentDetail(data: unknown): StudioEpisodeSt
   const [segment] = normalizeStoryboardSegments(data)
   const fallbackSegmentIndex = normalizeNumberOrNull(record?.segmentIndex ?? record?.segment_index) ?? 1
   const fallbackSourceType = normalizeStoryboardSegmentSourceType(record?.sourceType ?? record?.source_type)
+  const directDirectorPromptSource = record?.directorPrompt
+    ?? record?.director_prompt
+    ?? (record?.prompt !== undefined || record?.references !== undefined || record?.skillCode !== undefined || record?.skill_code !== undefined
+      ? record
+      : undefined)
+  const directImagePromptSource = record?.imagePrompt ?? record?.image_prompt
   const normalizedSegment: StudioEpisodeStoryboardSegment = segment ?? {
     id: normalizeHistoryValue(record?.id ?? record?.segmentId ?? record?.segment_id) ?? `segment-${fallbackSegmentIndex}`,
     segmentIndex: fallbackSegmentIndex,
@@ -1814,6 +2048,9 @@ function normalizeEpisodeStoryboardSegmentDetail(data: unknown): StudioEpisodeSt
     canEdit: normalizeHistoryBoolean(record?.canEdit ?? record?.can_edit),
     error: normalizeHistoryValue(record?.error),
     durationSeconds: normalizeNumberOrNull(record?.durationSeconds ?? record?.duration_seconds),
+    suggestedDurationSeconds: normalizeNumberOrNull(
+      record?.suggestedDurationSeconds ?? record?.suggested_duration_seconds,
+    ),
     manuallyEdited: normalizeHistoryBoolean(record?.manuallyEdited ?? record?.manually_edited),
     manuallyAdded: fallbackSourceType !== undefined
       ? fallbackSourceType === 2
@@ -1834,12 +2071,17 @@ function normalizeEpisodeStoryboardSegmentDetail(data: unknown): StudioEpisodeSt
     shots: normalizeStoryboardShots(record?.shots ?? record?.lens ?? record?.items),
     assetReferences: normalizeStoryboardAssetReferenceRows(record?.assetReferences ?? record?.asset_references),
     referenceSelection: normalizeStoryboardReferenceSelection(record?.referenceSelection ?? record?.reference_selection),
-    directorPrompt: normalizeStoryboardDirectorPrompt(record?.directorPrompt ?? record?.director_prompt),
+    directorPrompt: normalizeStoryboardDirectorPrompt(directDirectorPromptSource),
+    imagePrompt: normalizeStoryboardDirectorPrompt(directImagePromptSource),
   }
   const referenceSelection = normalizeStoryboardReferenceSelection(record?.referenceSelection ?? record?.reference_selection)
+  const directDirectorPrompt = normalizeStoryboardDirectorPrompt(directDirectorPromptSource)
+  const directImagePrompt = normalizeStoryboardDirectorPrompt(directImagePromptSource)
   return {
     ...normalizedSegment,
     referenceSelection: referenceSelection ?? normalizedSegment.referenceSelection ?? null,
+    directorPrompt: directDirectorPrompt ?? normalizedSegment.directorPrompt ?? null,
+    imagePrompt: directImagePrompt ?? normalizedSegment.imagePrompt ?? null,
     runId: normalizeHistoryValue(record?.runId ?? record?.run_id) ?? null,
     episodeId: normalizeHistoryValue(record?.episodeId ?? record?.episode_id) ?? null,
   }
@@ -2083,7 +2325,7 @@ export const StudioAssetGenerationApi = {
     return {
       cancel: () => request.cancel(),
       promise: request.then((response) => {
-        if ((response.code ?? 200) >= 400) {
+        if (response.code !== 200) {
           throw Object.assign(new Error(response.message || 'Episode assets generation status loading failed'), { status: response.code })
         }
         return normalizeEpisodeAssetsGenerateStatus(response.data)
@@ -2369,12 +2611,42 @@ export const StudioAssetGenerationApi = {
     }
   },
 
+  requestStoryboardImageSkillApply(
+    requestBody: StudioStoryboardImageSkillRequest,
+  ): StudioAssetImageTaskRequest<StudioStoryboardImageSkillResult> {
+    const request = applyStoryboardImageSkill(requestBody)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw new Error(response.message || 'Storyboard image skill application failed')
+        }
+        return normalizeStoryboardImageSkill(response.data)
+      }),
+    }
+  },
+
+  requestStoryboardImageSkillUndo(
+    requestBody: StudioStoryboardImageSkillRequest,
+  ): StudioAssetImageTaskRequest<StudioStoryboardImageSkillResult> {
+    const request = undoStoryboardImageSkill(requestBody)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if ((response.code ?? 200) >= 400) {
+          throw new Error(response.message || 'Storyboard image skill undo failed')
+        }
+        return normalizeStoryboardImageSkill(response.data)
+      }),
+    }
+  },
+
   requestLooks(assetId: number, episodeId?: string | number): StudioAssetImageTaskRequest<StudioAssetLookItem[]> {
     const request = getAssetLooks(assetId, episodeId)
     return {
       cancel: () => request.cancel(),
       promise: request.then((response) => {
-        if ((response.code ?? 200) >= 400) {
+        if (response.code !== 200) {
           throw new Error(response.message || 'Asset looks loading failed')
         }
         return normalizeAssetLooks(response.data)
@@ -2486,10 +2758,25 @@ export const StudioAssetGenerationApi = {
     return {
       cancel: () => request.cancel(),
       promise: request.then((response) => {
-        if ((response.code ?? 200) >= 400) {
+        if (response.code !== 200) {
           throw new Error(response.message || 'Asset image history loading failed')
         }
         return normalizeAssetImageHistory(response.data)
+      }),
+    }
+  },
+
+  requestCopyrightReview(
+    requestBody: StudioAssetCopyrightReviewRequest,
+  ): StudioAssetImageTaskRequest<StudioAssetCopyrightReviewResult> {
+    const request = reviewAssetImageCopyright(requestBody)
+    return {
+      cancel: () => request.cancel(),
+      promise: request.then((response) => {
+        if (response.code !== 200) {
+          throw new Error(response.message || 'Asset image copyright review failed')
+        }
+        return normalizeAssetCopyrightReview(response.data)
       }),
     }
   },

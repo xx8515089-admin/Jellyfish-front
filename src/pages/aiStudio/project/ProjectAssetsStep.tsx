@@ -1,16 +1,20 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type React from 'react'
-import { Button, Dropdown, Empty, Input, Modal, Spin, message } from 'antd'
+import { Button, Dropdown, Empty, Input, Modal, Pagination, Spin, message } from 'antd'
+import type { InputRef } from 'antd'
 import {
   AudioOutlined,
   CheckOutlined,
   CloseOutlined,
   DeleteOutlined,
   DownloadOutlined,
+  DownOutlined,
   EyeOutlined,
+  FilterOutlined,
   MoreOutlined,
   PictureOutlined,
   PlusOutlined,
+  SearchOutlined,
   SwapOutlined,
   StarFilled,
   UploadOutlined,
@@ -21,13 +25,21 @@ import {
   StudioAssetGenerationApi,
   parseStudioAssetImageTaskResult,
 } from '../../../services/studioAssetGeneration'
+import {
+  StudioAssetLibraryApi,
+  formatAssetLibraryTags,
+  formatAssetLibraryValue,
+  type StudioAssetLibraryAssetType,
+  type StudioAssetLibraryImportResult,
+  type StudioAssetLibraryOption,
+  type StudioAssetLibraryOptions,
+} from '../../../services/studioAssetLibrary'
 import type {
   StudioAssetImageHistoryItem,
   StudioAssetImageTaskDetail,
   StudioAssetImageTaskRequest,
   StudioAssetReferenceItem,
 } from '../../../services/studioAssetGeneration'
-import { StudioEntitiesApi } from '../../../services/studioEntities'
 import { StudioModelsApi } from '../../../services/studioModels'
 import type { StudioGenerationModel } from '../../../services/studioModels'
 import { StudioScriptsApi } from '../../../services/studioScripts'
@@ -68,6 +80,7 @@ import { mergeHydratedAssets, mergeHydratedIds } from './assetDraftHydration'
 import { downloadMediaFile, normalizeMediaFileId } from '../assets/utils'
 import {
   createImageOptionsClientRevision,
+  DEFAULT_ASSET_IMAGE_RATIO,
   DEFAULT_ASSET_IMAGE_RATIO_OPTIONS,
   resolveAssetImageOptions,
   selectImageResolution,
@@ -86,8 +99,8 @@ import './ProjectAssetsStep.css'
 
 const loadAssetGenerationWorkspaceModule = () => import('./AssetGenerationWorkspace')
 const AssetGenerationWorkspace = lazy(loadAssetGenerationWorkspaceModule)
-const loadAssetVisualStyleOptions = () => loadAssetGenerationWorkspaceModule()
-  .then((module) => module.loadAssetVisualStyleOptions())
+const loadAssetVisualStyleOptions = (force = false) => loadAssetGenerationWorkspaceModule()
+  .then((module) => module.loadAssetVisualStyleOptions(force))
 
 export type AssetEpisodeSource = {
   id: string
@@ -258,27 +271,34 @@ type ProjectAssetsStepProps = {
 type PersonalAsset = {
   id: string
   name: string
+  libraryCode?: string
   imageUrl?: string
   style?: string
   gender?: string
   age?: string
   region?: string
+  lookCount?: number
+  tags?: string[]
 }
 
-type PersonalAssetCacheEntry = {
-  items: PersonalAsset[]
-  expiresAt: number
+type PendingPersonalImportRefresh = {
+  assetId: number
+  assetType: StudioScriptAssetType
+  scopeId: AssetScope
+  refreshStarted: boolean
+  notified: boolean
 }
 
-type PersonalAssetFilter = 'gender' | 'style' | 'age' | 'region'
-
-const EMPTY_PERSONAL_FILTERS: Record<PersonalAssetFilter, string> = {
-  gender: 'all',
-  style: 'all',
-  age: 'all',
-  region: 'all',
+type StoreAssetFormState = {
+  sourceAsset: AssetDraft | null
+  kind: AssetKind
+  imageVersionId: number | null
+  name: string
+  gender: string
+  ageGroup: string
+  visualStyleId: number | null
+  countryType: string
 }
-const PERSONAL_ASSET_CACHE_TTL_MS = 60_000
 
 const KIND_LABELS: Record<AssetKind, { zh: string; en: string }> = {
   role: { zh: '角色', en: 'Characters' },
@@ -292,13 +312,53 @@ const LOOK_COUNT_LABELS: Record<AssetKind, { zh: string; en: string }> = {
   prop: { zh: '道具', en: 'props' },
 }
 
+const PERSONAL_ASSET_PAGE_SIZE = 30
+const PERSONAL_IMPORT_EPISODE_LIMIT = 200
+
+const getPositiveInteger = (value: unknown): number | null => {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null
+}
+
+const buildStoreAssetSelectOptions = (options: StudioAssetLibraryOption[] | undefined) => {
+  const seen = new Set<string>()
+  return (options ?? []).flatMap((option) => {
+    const value = option.code.trim()
+    const label = option.label.trim()
+    if (!value || !label || seen.has(value)) return []
+    seen.add(value)
+    return [{ value, label }]
+  })
+}
+
+const isStoreAssetImageSelectable = (item: StudioAssetImageHistoryItem, kind: AssetKind) => (
+  item.status === 3
+  && getPositiveInteger(item.versionId) !== null
+  && getPositiveInteger(item.fileId) !== null
+  && (kind !== 'role' || getPositiveInteger(item.lookId ?? item.characterLookId) !== null)
+)
+
+const isStoreAssetImageStorable = (item: StudioAssetImageHistoryItem | undefined, kind: AssetKind) => Boolean(
+  item
+  && isStoreAssetImageSelectable(item, kind)
+  && item.copyrightReviewStatus === 2
+  && item.copyrightRiskLevel === 1,
+)
+
 const ASSET_TYPES = [1, 2, 3] as const satisfies readonly StudioScriptAssetType[]
+const EMPTY_ASSET_VISUAL_STYLE_OPTIONS: AssetVisualStyleOption[] = []
 const ASSET_KIND_BY_TYPE: Record<StudioScriptAssetType, AssetKind> = {
   1: 'role',
   2: 'scene',
   3: 'prop',
 }
 const ASSET_TYPE_BY_KIND: Record<AssetKind, StudioScriptAssetType> = {
+  role: 1,
+  scene: 2,
+  prop: 3,
+}
+
+const ASSET_LIBRARY_TYPE_BY_KIND: Record<AssetKind, StudioAssetLibraryAssetType> = {
   role: 1,
   scene: 2,
   prop: 3,
@@ -328,6 +388,52 @@ const getRemoteAssetDraftId = (
   assetType: StudioScriptAssetType,
   assetId: StudioScriptImportId,
 ) => `remote:${scriptImportId}:${assetType}:${assetId}`
+
+const createStoreAssetForm = (
+  asset: AssetDraft | null = null,
+  fallbackKind: AssetKind = 'scene',
+): StoreAssetFormState => {
+  return {
+    sourceAsset: asset,
+    kind: asset?.kind ?? fallbackKind,
+    imageVersionId: null,
+    name: asset?.name ?? '',
+    gender: '',
+    ageGroup: '',
+    visualStyleId: null,
+    countryType: '',
+  }
+}
+
+const normalizePersonalAssetGender = (value: unknown) => {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  if (/^(female|woman|girl|女|女性)$/i.test(trimmed)) return '女'
+  if (/^(male|man|boy|男|男性)$/i.test(trimmed)) return '男'
+  return trimmed
+}
+
+const normalizePersonalAssetAge = (value: unknown) => {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  if (/^(child|children|kid|儿童|小孩)$/i.test(trimmed)) return '儿童'
+  if (/^(teen|teenager|teen_age|teenage|少年)$/i.test(trimmed)) return '少年'
+  if (/^(young|young adult|young_adult|青年)$/i.test(trimmed)) return '青年'
+  if (/^(middle|middle-aged|middle aged|middle_aged|中年)$/i.test(trimmed)) return '中年'
+  if (/^(senior|old|elderly|老年)$/i.test(trimmed)) return '老年'
+  return trimmed
+}
+
+const normalizePersonalAssetRegion = (value: unknown) => {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  if (/^(china|cn|domestic|中国|国内)$/i.test(trimmed)) return '国内'
+  if (/^(overseas|foreign|international|海外|国外)$/i.test(trimmed)) return '海外'
+  return trimmed
+}
 
 const getAssetImageOptionsRequestSignature = (input: AssetImageOptionsInput) => JSON.stringify([
   input.prompt,
@@ -381,6 +487,28 @@ const getErrorStatus = (error: unknown) => {
   if (!error || typeof error !== 'object' || !('status' in error)) return null
   const status = Number((error as { status?: unknown }).status)
   return Number.isFinite(status) ? status : null
+}
+
+const getErrorBodyRecord = (error: unknown): Record<string, unknown> | null => {
+  if (!error || typeof error !== 'object' || !('body' in error)) return null
+  const body = (error as { body?: unknown }).body
+  return body && typeof body === 'object' && !Array.isArray(body)
+    ? body as Record<string, unknown>
+    : null
+}
+
+const isStructuredImportBusinessFailure = (error: unknown, status: number | null) => {
+  const body = getErrorBodyRecord(error)
+  return status === 502 && Number(body?.code) === 502
+}
+
+const getConciseApiErrorMessage = (
+  error: unknown,
+  fallback: string,
+  longMessageFallback: string,
+) => {
+  const errorMessage = getApiErrorMessage(error, fallback)
+  return errorMessage.length > 240 ? longMessageFallback : errorMessage
 }
 
 const getBackendAssetId = (value: StudioScriptImportId | undefined): number | null => {
@@ -674,10 +802,10 @@ function buildAssetPrompt(asset: AssetDraft, episodes: AssetEpisodeSource[]) {
 export default function ProjectAssetsStep({
   scriptImportId,
   episodes,
-  ratio = '9:16',
+  ratio = DEFAULT_ASSET_IMAGE_RATIO,
   styleName = '',
   visualStyleNames = [],
-  visualStyleOptions = [],
+  visualStyleOptions = EMPTY_ASSET_VISUAL_STYLE_OPTIONS,
   onImageSubmissionStateChange,
   onGenerationCompletionStateChange,
   onScopeChange,
@@ -817,14 +945,50 @@ export default function ProjectAssetsStep({
     || episodeAssetsGeneratePending
     || Object.values(assetImageTasks).some((task) => task.phase === 'submitting')
   const [personalImportOpen, setPersonalImportOpen] = useState(false)
-  const [personalImportTargetId, setPersonalImportTargetId] = useState<string>()
-  const [personalImportTargetSnapshot, setPersonalImportTargetSnapshot] = useState<AssetDraft>()
+  const [personalImportSettingsOpen, setPersonalImportSettingsOpen] = useState(false)
+  const [storeAssetOpen, setStoreAssetOpen] = useState(false)
+  const [storeAssetForm, setStoreAssetForm] = useState<StoreAssetFormState>(() => createStoreAssetForm(null, kind))
+  const [storeAssetPending, setStoreAssetPending] = useState(false)
+  const [storeAssetImages, setStoreAssetImages] = useState<StudioAssetImageHistoryItem[]>([])
+  const [storeAssetImagesLoading, setStoreAssetImagesLoading] = useState(false)
+  const [storeAssetImagesError, setStoreAssetImagesError] = useState<unknown>()
+  const [storeAssetImagesRetryToken, setStoreAssetImagesRetryToken] = useState(0)
+  const [storeAssetReviewPendingVersionId, setStoreAssetReviewPendingVersionId] = useState<number>()
+  const [storeAssetImageFailures, setStoreAssetImageFailures] = useState<Set<string>>(() => new Set())
+  const [storeAssetRoleOptions, setStoreAssetRoleOptions] = useState<StudioAssetLibraryOptions>({})
+  const [storeAssetRoleOptionsLoading, setStoreAssetRoleOptionsLoading] = useState(false)
+  const [storeAssetRoleOptionsError, setStoreAssetRoleOptionsError] = useState<unknown>()
+  const [storeAssetRoleOptionsRetryToken, setStoreAssetRoleOptionsRetryToken] = useState(0)
+  const [storeAssetVisualStyles, setStoreAssetVisualStyles] = useState<AssetVisualStyleOption[]>([])
+  const [storeAssetVisualStylesLoading, setStoreAssetVisualStylesLoading] = useState(false)
+  const [storeAssetVisualStylesError, setStoreAssetVisualStylesError] = useState<unknown>()
+  const [storeAssetVisualStylesRetryToken, setStoreAssetVisualStylesRetryToken] = useState(0)
   const [personalAssets, setPersonalAssets] = useState<PersonalAsset[]>([])
   const [personalAssetId, setPersonalAssetId] = useState('')
+  const [personalAssetSearch, setPersonalAssetSearch] = useState('')
+  const [personalAssetSearchOpen, setPersonalAssetSearchOpen] = useState(false)
   const [personalAssetsLoading, setPersonalAssetsLoading] = useState(false)
+  const [personalAssetsError, setPersonalAssetsError] = useState<unknown>()
+  const [personalAssetsRetryToken, setPersonalAssetsRetryToken] = useState(0)
+  const [personalAssetsPage, setPersonalAssetsPage] = useState(1)
+  const [personalAssetsTotal, setPersonalAssetsTotal] = useState(0)
+  const [personalImportName, setPersonalImportName] = useState('')
+  const [personalImportEpisodeMode, setPersonalImportEpisodeMode] = useState<'all' | 'selected'>('all')
+  const [personalImportEpisodeIndexes, setPersonalImportEpisodeIndexes] = useState<number[]>([])
+  const [personalImportEpisodes, setPersonalImportEpisodes] = useState<AssetEpisodeSource[]>(episodes)
+  const [personalImportEpisodesLoading, setPersonalImportEpisodesLoading] = useState(false)
+  const [personalImportEpisodesError, setPersonalImportEpisodesError] = useState<unknown>()
+  const [personalImportPending, setPersonalImportPending] = useState(false)
+  const [personalImportResultUncertain, setPersonalImportResultUncertain] = useState(false)
+  const [pendingPersonalImportRefresh, setPendingPersonalImportRefresh] = useState<PendingPersonalImportRefresh>()
+  const [personalAssetImageFailures, setPersonalAssetImageFailures] = useState<Set<string>>(() => new Set())
+  const [recentImportedAsset, setRecentImportedAsset] = useState<StudioAssetLibraryImportResult>()
+  const personalAssetSearchInputRef = useRef<InputRef>(null)
+  const personalImportNameInputRef = useRef<InputRef>(null)
+  const personalImportSettingsTriggerRef = useRef<HTMLButtonElement>(null)
   const personalAssetsRequestRevisionRef = useRef(0)
-  const personalAssetsCacheRef = useRef(new Map<AssetKind, PersonalAssetCacheEntry>())
-  const [personalAssetFilters, setPersonalAssetFilters] = useState(EMPTY_PERSONAL_FILTERS)
+  const personalImportEpisodesRequestRevisionRef = useRef(0)
+  const personalImportEpisodesRequestRef = useRef<ReturnType<typeof StudioScriptsApi.requestAssetEpisodes> | null>(null)
   const [voiceLibraryOpen, setVoiceLibraryOpen] = useState(false)
   const [voiceTargetAsset, setVoiceTargetAsset] = useState<AssetDraft>()
   const [model, setModel] = useState(canRestoreDraft ? restoredDraft.model : '')
@@ -971,6 +1135,9 @@ export default function ProjectAssetsStep({
       assetReferenceUploadInProgressRef.current = false
       activeAssetReferenceUploadRequestRef.current?.cancel()
       activeAssetReferenceUploadRequestRef.current = null
+      personalImportEpisodesRequestRevisionRef.current += 1
+      personalImportEpisodesRequestRef.current?.cancel()
+      personalImportEpisodesRequestRef.current = null
       activeEpisodeAssetsGenerateRequestRef.current?.cancel()
       activeEpisodeAssetsGenerateRequestRef.current = null
     }
@@ -1353,9 +1520,41 @@ export default function ProjectAssetsStep({
     setGenerationAssetId(undefined)
     setGenerationAssetSnapshot(undefined)
     setPersonalImportOpen(false)
+    setPersonalImportSettingsOpen(false)
+    setPersonalImportPending(false)
+    setPersonalImportResultUncertain(false)
+    setPendingPersonalImportRefresh(undefined)
+    setPersonalAssets([])
+    setPersonalAssetsError(undefined)
+    setPersonalAssetsPage(1)
+    setPersonalAssetsTotal(0)
+    setPersonalAssetId('')
+    setPersonalAssetSearch('')
+    setPersonalImportName('')
+    setPersonalImportEpisodeMode('all')
+    setPersonalImportEpisodeIndexes([])
+    setPersonalImportEpisodes(episodes)
+    setPersonalImportEpisodesLoading(false)
+    setPersonalImportEpisodesError(undefined)
+    setPersonalAssetImageFailures(new Set())
+    setRecentImportedAsset(undefined)
+    setStoreAssetOpen(false)
+    setStoreAssetPending(false)
+    setStoreAssetForm(createStoreAssetForm(null, 'role'))
+    setStoreAssetImages([])
+    setStoreAssetImagesError(undefined)
+    setStoreAssetReviewPendingVersionId(undefined)
+    setStoreAssetImageFailures(new Set())
+    setStoreAssetRoleOptions({})
+    setStoreAssetRoleOptionsLoading(false)
+    setStoreAssetRoleOptionsError(undefined)
+    setStoreAssetVisualStyles([])
+    setStoreAssetVisualStylesLoading(false)
+    setStoreAssetVisualStylesError(undefined)
     personalAssetsRequestRevisionRef.current += 1
-    setPersonalImportTargetId(undefined)
-    setPersonalImportTargetSnapshot(undefined)
+    personalImportEpisodesRequestRevisionRef.current += 1
+    personalImportEpisodesRequestRef.current?.cancel()
+    personalImportEpisodesRequestRef.current = null
     setImageTargetId(undefined)
     setImageTargetSnapshot(undefined)
     setLocalImportWorkspaceOpen(false)
@@ -1367,6 +1566,190 @@ export default function ProjectAssetsStep({
     setVoiceLibraryOpen(false)
     setVoiceTargetAsset(undefined)
   }, [episodes, scriptImportId, sourceSignature])
+
+  useEffect(() => {
+    const sourceAsset = storeAssetForm.sourceAsset
+    const assetId = getBackendAssetId(sourceAsset?.backendAssetId)
+    if (!storeAssetOpen || !sourceAsset || assetId === null) {
+      setStoreAssetImages([])
+      setStoreAssetImagesLoading(false)
+      setStoreAssetImagesError(undefined)
+      return
+    }
+
+    let active = true
+    setStoreAssetImagesLoading(true)
+    setStoreAssetImagesError(undefined)
+    setStoreAssetImageFailures(new Set())
+    const request = StudioAssetGenerationApi.requestImageHistory(assetId)
+    void request.promise
+      .then((history) => {
+        if (!active) return
+        const candidates = history.filter((item) => isStoreAssetImageSelectable(item, sourceAsset.kind))
+        const coverFileId = getPositiveInteger(sourceAsset.coverFileId)
+        setStoreAssetImages(candidates)
+        setStoreAssetForm((current) => {
+          if (current.sourceAsset !== sourceAsset) return current
+          const requestedVersionId = getPositiveInteger(current.imageVersionId)
+          const selected = (requestedVersionId === null
+            ? undefined
+            : candidates.find((item) => getPositiveInteger(item.versionId) === requestedVersionId))
+            ?? (coverFileId === null
+              ? undefined
+              : candidates.find((item) => getPositiveInteger(item.fileId) === coverFileId))
+            ?? candidates.find((item) => item.primary || item.isCurrent)
+            ?? candidates[0]
+          const selectedVersionId = getPositiveInteger(selected?.versionId)
+          return {
+            ...current,
+            imageVersionId: selectedVersionId,
+          }
+        })
+      })
+      .catch((error) => {
+        if (!active) return
+        setStoreAssetImages([])
+        setStoreAssetImagesError(error)
+      })
+      .finally(() => {
+        if (active) setStoreAssetImagesLoading(false)
+      })
+
+    return () => {
+      active = false
+      request.cancel()
+    }
+  }, [storeAssetImagesRetryToken, storeAssetOpen, storeAssetForm.sourceAsset])
+
+  useEffect(() => {
+    if (!storeAssetOpen || storeAssetForm.kind !== 'role') {
+      setStoreAssetRoleOptions({})
+      setStoreAssetRoleOptionsLoading(false)
+      setStoreAssetRoleOptionsError(undefined)
+      return
+    }
+
+    let active = true
+    setStoreAssetRoleOptionsLoading(true)
+    setStoreAssetRoleOptionsError(undefined)
+    void StudioAssetLibraryApi.getOptions(1)
+      .then((options) => {
+        if (active) setStoreAssetRoleOptions(options)
+      })
+      .catch((error) => {
+        if (!active) return
+        setStoreAssetRoleOptions({})
+        setStoreAssetRoleOptionsError(error)
+      })
+      .finally(() => {
+        if (active) setStoreAssetRoleOptionsLoading(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [storeAssetOpen, storeAssetForm.kind, storeAssetRoleOptionsRetryToken])
+
+  useEffect(() => {
+    if (!storeAssetOpen) {
+      setStoreAssetVisualStyles([])
+      setStoreAssetVisualStylesLoading(false)
+      setStoreAssetVisualStylesError(undefined)
+      return
+    }
+
+    const suppliedStyles = visualStyleOptions.filter((option) => (
+      getPositiveInteger(option.id) !== null && option.name.trim()
+    ))
+    if (suppliedStyles.length > 0 && storeAssetVisualStylesRetryToken === 0) {
+      setStoreAssetVisualStyles(suppliedStyles)
+      setStoreAssetVisualStylesLoading(false)
+      setStoreAssetVisualStylesError(undefined)
+      return
+    }
+
+    let active = true
+    setStoreAssetVisualStylesLoading(true)
+    setStoreAssetVisualStylesError(undefined)
+    void loadAssetVisualStyleOptions(storeAssetVisualStylesRetryToken > 0)
+      .then((options) => {
+        if (active) setStoreAssetVisualStyles(options)
+      })
+      .catch((error) => {
+        if (!active) return
+        setStoreAssetVisualStyles(suppliedStyles)
+        setStoreAssetVisualStylesError(error)
+      })
+      .finally(() => {
+        if (active) setStoreAssetVisualStylesLoading(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [storeAssetOpen, storeAssetForm.kind, storeAssetVisualStylesRetryToken, visualStyleOptions])
+
+  useEffect(() => {
+    if (!personalImportOpen) return
+    const requestRevision = ++personalAssetsRequestRevisionRef.current
+    let active = true
+    const delay = personalAssetSearch.trim() ? 250 : 0
+    setPersonalAssetsLoading(true)
+    setPersonalAssetsError(undefined)
+    const timer = window.setTimeout(() => {
+      void StudioAssetLibraryApi.listItems({
+        assetType: ASSET_LIBRARY_TYPE_BY_KIND[kind],
+        status: 1,
+        keyword: personalAssetSearch.trim() || undefined,
+        page: personalAssetsPage,
+        pageSize: PERSONAL_ASSET_PAGE_SIZE,
+      })
+        .then((response) => {
+          if (!active || requestRevision !== personalAssetsRequestRevisionRef.current) return
+          const expectedAssetType = ASSET_LIBRARY_TYPE_BY_KIND[kind]
+          const nextAssets = response.items
+            .filter((item) => item.assetType === expectedAssetType && item.status === 1)
+            .map((item) => ({
+              id: String(item.id),
+              name: item.name,
+              libraryCode: item.libraryCode ?? undefined,
+              imageUrl: item.coverUrl ?? undefined,
+              style: item.visualStyleName ?? undefined,
+              gender: normalizePersonalAssetGender(formatAssetLibraryValue(item.gender)),
+              age: normalizePersonalAssetAge(formatAssetLibraryValue(item.ageGroup)),
+              region: normalizePersonalAssetRegion(formatAssetLibraryValue(item.countryType)),
+              lookCount: item.lookName ? 1 : undefined,
+              tags: [
+                ...formatAssetLibraryTags(item.temperamentTags),
+                ...formatAssetLibraryTags(item.personaTags),
+                ...formatAssetLibraryTags(item.customTags),
+              ],
+            })).filter((item) => item.id && item.name)
+          setPersonalAssets(nextAssets)
+          setPersonalAssetsPage(response.page)
+          setPersonalAssetsTotal(response.total)
+          setPersonalAssetImageFailures(new Set())
+        })
+        .catch((error) => {
+          if (!active || requestRevision !== personalAssetsRequestRevisionRef.current) return
+          setPersonalAssets([])
+          setPersonalAssetsError(error)
+        })
+        .finally(() => {
+          if (active && requestRevision === personalAssetsRequestRevisionRef.current) {
+            setPersonalAssetsLoading(false)
+          }
+        })
+    }, delay)
+
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+      if (requestRevision === personalAssetsRequestRevisionRef.current) {
+        personalAssetsRequestRevisionRef.current += 1
+      }
+    }
+  }, [kind, personalAssetSearch, personalAssetsPage, personalAssetsRetryToken, personalImportOpen])
 
   useEffect(() => {
     const selectedEpisode = scope === 'overview'
@@ -1558,6 +1941,48 @@ export default function ProjectAssetsStep({
   }, [assetPollingRetryToken, currentScopeGenerationCompleted, episodes, l, scope, scriptImportId, sourceSignature])
 
   useEffect(() => {
+    const pendingRefresh = pendingPersonalImportRefresh
+    if (
+      !pendingRefresh
+      || pendingRefresh.scopeId !== scope
+      || assetPollingState.scopeId !== pendingRefresh.scopeId
+    ) return
+
+    const assetKind = ASSET_KIND_BY_TYPE[pendingRefresh.assetType]
+    const importedAssetFound = (remoteAssetsByScope[pendingRefresh.scopeId]?.[assetKind] ?? [])
+      .some((asset) => getBackendAssetId(asset.backendAssetId) === pendingRefresh.assetId)
+    if (importedAssetFound) {
+      setPendingPersonalImportRefresh((current) => (
+        current?.assetId === pendingRefresh.assetId ? undefined : current
+      ))
+      return
+    }
+
+    const lane = assetPollingState.lanes[pendingRefresh.assetType]
+    if (lane.loading || lane.polling) {
+      if (!pendingRefresh.refreshStarted) {
+        setPendingPersonalImportRefresh((current) => (
+          current?.assetId === pendingRefresh.assetId
+            ? { ...current, refreshStarted: true }
+            : current
+        ))
+      }
+      return
+    }
+    if (!pendingRefresh.refreshStarted || pendingRefresh.notified) return
+
+    setPendingPersonalImportRefresh((current) => (
+      current?.assetId === pendingRefresh.assetId
+        ? { ...current, notified: true }
+        : current
+    ))
+    message.warning(l(
+      '导入成功，但资产列表刷新失败；请只重试列表刷新，不要重复导入',
+      'Import succeeded, but the asset list did not refresh. Retry only the list refresh; do not import again',
+    ))
+  }, [assetPollingState, l, pendingPersonalImportRefresh, remoteAssetsByScope, scope])
+
+  useEffect(() => {
     if (!localImportWorkspaceOpen) return
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
@@ -1667,12 +2092,80 @@ export default function ProjectAssetsStep({
     || Boolean(currentAssetGenerationStatus?.shouldPoll)
     || scopedAssets.some((asset) => isAssetImageTaskActive(batchAssetImageTasks[asset.id]))
   batchCreationBlockedRef.current = currentScopeBatchGenerationActive || currentScopeGenerationStatusUncertain
-  const visiblePersonalAssets = useMemo(() => personalAssets.filter((item) => (
-    (personalAssetFilters.gender === 'all' || item.gender === personalAssetFilters.gender)
-    && (personalAssetFilters.style === 'all' || item.style === personalAssetFilters.style)
-    && (personalAssetFilters.age === 'all' || item.age === personalAssetFilters.age)
-    && (personalAssetFilters.region === 'all' || item.region === personalAssetFilters.region)
-  )), [personalAssetFilters, personalAssets])
+  const visiblePersonalAssets = personalAssets
+  const selectedPersonalAsset = personalAssets.find((item) => item.id === personalAssetId)
+  const personalImportEpisodeOptions = useMemo(() => personalImportEpisodes.flatMap((episode) => {
+    const index = getPositiveInteger(episode.index)
+    return index === null ? [] : [{
+      value: String(index),
+      label: episode.title || l(`第${index}集`, `Episode ${index}`),
+    }]
+  }), [l, personalImportEpisodes])
+  const selectedStoreAssetImage = storeAssetImages.find(
+    (item) => getPositiveInteger(item.versionId) === storeAssetForm.imageVersionId,
+  )
+  const selectedStoreAssetImageKey = selectedStoreAssetImage?.versionId ?? selectedStoreAssetImage?.id ?? ''
+  const selectedStoreAssetImageUrl = selectedStoreAssetImage?.imageUrl
+    ?? selectedStoreAssetImage?.fileUrl
+    ?? selectedStoreAssetImage?.thumbnailUrl
+  const storeAssetImageUrl = selectedStoreAssetImageUrl
+    && !storeAssetImageFailures.has(selectedStoreAssetImageKey)
+    ? selectedStoreAssetImageUrl
+    : undefined
+  const storeAssetRoleGenderOptions = buildStoreAssetSelectOptions(storeAssetRoleOptions.gender)
+  const storeAssetRoleAgeOptions = buildStoreAssetSelectOptions(storeAssetRoleOptions.ageGroup)
+  const storeAssetRoleCountryOptions = buildStoreAssetSelectOptions(storeAssetRoleOptions.countryType)
+  const seenStoreAssetStyleIds = new Set<number>()
+  const storeAssetStyleOptions = storeAssetVisualStyles.flatMap((option) => {
+    const id = getPositiveInteger(option.id)
+    const label = option.name.trim()
+    if (id === null || !label || seenStoreAssetStyleIds.has(id)) return []
+    seenStoreAssetStyleIds.add(id)
+    return [{ value: String(id), label }]
+  })
+  const selectedStoreAssetStyleId = getPositiveInteger(storeAssetForm.visualStyleId)
+  const storeAssetStyleReady = selectedStoreAssetStyleId !== null
+    && storeAssetStyleOptions.some((option) => option.value === String(selectedStoreAssetStyleId))
+  const storeAssetStyleFieldReady = Boolean(
+    storeAssetStyleReady
+    && !storeAssetVisualStylesLoading
+  )
+  const storeAssetRoleFieldsReady = storeAssetForm.kind !== 'role' || Boolean(
+    storeAssetForm.gender
+    && storeAssetRoleGenderOptions.some((option) => option.value === storeAssetForm.gender)
+    && storeAssetForm.ageGroup
+    && storeAssetRoleAgeOptions.some((option) => option.value === storeAssetForm.ageGroup)
+    && storeAssetStyleFieldReady
+    && storeAssetForm.countryType
+    && storeAssetRoleCountryOptions.some((option) => option.value === storeAssetForm.countryType)
+    && !storeAssetRoleOptionsLoading
+  )
+  const storeAssetReady = Boolean(
+    storeAssetForm.sourceAsset
+    && isStoreAssetImageStorable(selectedStoreAssetImage, storeAssetForm.kind)
+    && storeAssetForm.name.trim().length <= 30
+    && storeAssetRoleFieldsReady
+    && storeAssetStyleFieldReady
+    && !storeAssetImagesLoading
+    && storeAssetReviewPendingVersionId === undefined
+    && !storeAssetPending,
+  )
+  const personalImportReady = Boolean(
+    selectedPersonalAsset
+    && getPositiveInteger(scriptImportId) !== null
+    && personalImportEpisodeOptions.length > 0
+    && !personalImportEpisodesLoading
+    && !personalImportEpisodesError
+    && !personalImportPending
+    && !personalImportResultUncertain
+    && (
+      personalImportEpisodeMode === 'all'
+      || (
+        personalImportEpisodeIndexes.length > 0
+        && personalImportEpisodeIndexes.length <= PERSONAL_IMPORT_EPISODE_LIMIT
+      )
+    ),
+  )
 
   const currentEpisode = episodes.find((episode) => episode.id === scope)
   const generationAsset = scopedAssets.find((asset) => asset.id === generationAssetId)
@@ -1685,13 +2178,16 @@ export default function ProjectAssetsStep({
     : undefined
   const generationLatestImageOptions = generationImageOptionsQueue?.latestInput
   const generationBackendAssetId = getBackendAssetId(generationAsset?.backendAssetId)
+  const generationPreferredLookId = generationBackendAssetId !== null
+    && generationBackendAssetId === getPositiveInteger(recentImportedAsset?.assetId)
+    && generationAsset?.kind === (recentImportedAsset ? ASSET_KIND_BY_TYPE[recentImportedAsset.assetType] : undefined)
+    ? getPositiveInteger(recentImportedAsset?.defaultLookId)
+    : null
   const generationAssetKind = generationAsset?.kind
   const generationHistoryLookReady = generationAssetKind === 'role'
     ? generationActiveLookId !== undefined
     : true
-  const generationHistoryLookId = generationAssetKind === 'role'
-    ? generationActiveLookId
-    : undefined
+  const generationHistoryLookId = generationActiveLookId
   const generationAssetImageHistoryKey = generationBackendAssetId === null
     || scriptImportId === null
     || !generationHistoryLookReady
@@ -3133,92 +3629,226 @@ export default function ProjectAssetsStep({
     message.success(l(`本地${KIND_LABELS[kind].zh}已导入`, `Local ${KIND_LABELS[kind].en.toLowerCase()} imported`))
   }
 
-  const openPersonalImport = async (targetAssetId?: string) => {
+  const refreshPersonalImportEpisodes = () => {
+    const targetScriptImportId = getPositiveInteger(scriptImportId)
+    if (targetScriptImportId === null) {
+      setPersonalImportEpisodesError(new Error(l(
+        '当前剧本尚未创建，无法刷新分集',
+        'This script is not ready for episode refresh',
+      )))
+      return
+    }
+
+    personalImportEpisodesRequestRef.current?.cancel()
+    const requestRevision = ++personalImportEpisodesRequestRevisionRef.current
+    const request = StudioScriptsApi.requestAssetEpisodes(targetScriptImportId)
+    personalImportEpisodesRequestRef.current = request
+    setPersonalImportEpisodesLoading(true)
+    setPersonalImportEpisodesError(undefined)
+    void request.promise
+      .then((items) => {
+        if (
+          !componentMountedRef.current
+          || requestRevision !== personalImportEpisodesRequestRevisionRef.current
+        ) return
+        const refreshedEpisodes = items.flatMap((item) => {
+          const id = getPositiveInteger(item.id)
+          const index = getPositiveInteger(item.index)
+          if (id === null || index === null) return []
+          return [{
+            id: String(id),
+            index,
+            title: item.title?.trim() || l(`第${index}集`, `Episode ${index}`),
+            rawText: '',
+          }]
+        })
+        const validIndexes = new Set(refreshedEpisodes.map((episode) => episode.index))
+        setPersonalImportEpisodes(refreshedEpisodes)
+        setPersonalImportEpisodeIndexes((current) => current.filter((index) => validIndexes.has(index)))
+      })
+      .catch((error) => {
+        if (
+          isCancelledRequestError(error)
+          || !componentMountedRef.current
+          || requestRevision !== personalImportEpisodesRequestRevisionRef.current
+        ) return
+        setPersonalImportEpisodesError(error)
+        message.error(getApiErrorMessage(error, l('分集列表刷新失败', 'Failed to refresh episodes')))
+      })
+      .finally(() => {
+        if (requestRevision !== personalImportEpisodesRequestRevisionRef.current) return
+        personalImportEpisodesRequestRef.current = null
+        if (componentMountedRef.current) setPersonalImportEpisodesLoading(false)
+      })
+  }
+
+  const openPersonalImport = (targetAssetId?: string) => {
     if (targetAssetId && assetImageOperationLocked(targetAssetId)) {
       message.warning(l('图片任务尚未结束，暂时不能替换图片', 'Wait for the image task before replacing the image'))
       return
     }
-    setPersonalImportTargetId(targetAssetId)
-    setPersonalImportTargetSnapshot(targetAssetId
-      ? scopedAssets.find((asset) => asset.id === targetAssetId)
-      : undefined)
+    const episode = scope === 'overview'
+      ? undefined
+      : episodes.find((item) => item.id === scope)
+    const episodeIndex = episode
+      ? getPositiveInteger(episode.index)
+      : null
     setPersonalImportOpen(true)
+    setPersonalImportSettingsOpen(false)
     setPersonalAssetId('')
-    setPersonalAssetFilters(EMPTY_PERSONAL_FILTERS)
+    setPersonalAssetSearch('')
+    setPersonalAssetSearchOpen(false)
+    setPersonalImportName('')
+    setPersonalImportResultUncertain(false)
+    setPersonalImportEpisodes(episodes)
+    setPersonalImportEpisodesLoading(false)
+    setPersonalImportEpisodesError(undefined)
+    personalImportEpisodesRequestRevisionRef.current += 1
+    personalImportEpisodesRequestRef.current?.cancel()
+    personalImportEpisodesRequestRef.current = null
+    setPersonalImportEpisodeMode(episodeIndex === null ? 'all' : 'selected')
+    setPersonalImportEpisodeIndexes(episodeIndex === null ? [] : [episodeIndex])
     setPersonalAssets([])
-    const requestRevision = ++personalAssetsRequestRevisionRef.current
-    const requestSourceSignature = sourceSignature
-    const isCurrent = () => componentMountedRef.current
-      && requestRevision === personalAssetsRequestRevisionRef.current
-      && latestSourceSignatureRef.current === requestSourceSignature
-    const cached = personalAssetsCacheRef.current.get(kind)
-    if (cached && cached.expiresAt > Date.now()) {
-      setPersonalAssets(cached.items)
-      setPersonalAssetsLoading(false)
-      return
-    }
-    if (cached) personalAssetsCacheRef.current.delete(kind)
-    setPersonalAssetsLoading(true)
-    try {
-      const entityType = kind === 'role' ? 'character' : kind
-      const response = await StudioEntitiesApi.list(entityType, { page: 1, pageSize: 100 })
-      if (!isCurrent()) return
-      const nextAssets = (response.data?.items ?? []).map((item) => {
-        const rawThumbnail = item.thumbnail ?? item.image_url ?? item.preview_url
-        return {
-          id: String(item.id ?? ''),
-          name: String(item.name ?? ''),
-          imageUrl: typeof rawThumbnail === 'string' ? rawThumbnail : undefined,
-          style: typeof item.visual_style === 'string'
-            ? item.visual_style
-            : typeof item.style === 'string' ? item.style : undefined,
-          gender: typeof item.gender === 'string' ? item.gender : undefined,
-          age: typeof item.age === 'string'
-            ? item.age
-            : typeof item.age_group === 'string' ? item.age_group : undefined,
-          region: typeof item.region === 'string'
-            ? item.region
-            : typeof item.country === 'string' ? item.country : undefined,
-        }
-      }).filter((item) => item.id && item.name)
-      personalAssetsCacheRef.current.set(kind, {
-        items: nextAssets,
-        expiresAt: Date.now() + PERSONAL_ASSET_CACHE_TTL_MS,
-      })
-      setPersonalAssets(nextAssets)
-    } catch {
-      if (!isCurrent()) return
-      message.error(l('个人空间资产加载失败', 'Failed to load personal assets'))
-    } finally {
-      if (isCurrent()) setPersonalAssetsLoading(false)
+    setPersonalAssetsPage(1)
+    setPersonalAssetsTotal(0)
+    setPersonalAssetsError(undefined)
+    setPersonalAssetImageFailures(new Set())
+    if (!episodes.some((item) => getPositiveInteger(item.index) !== null)) {
+      refreshPersonalImportEpisodes()
     }
   }
 
-  const confirmPersonalImport = () => {
+  const confirmPersonalImport = async () => {
     const selected = personalAssets.find((item) => item.id === personalAssetId)
     if (!selected) {
       message.warning(l('请选择要导入的资产', 'Choose an asset to import'))
       return
     }
-    if (personalImportTargetId) {
-      const targetAsset = scopedAssets.find((asset) => asset.id === personalImportTargetId)
-        ?? (personalImportTargetSnapshot?.id === personalImportTargetId
-          ? personalImportTargetSnapshot
-          : undefined)
-      if (!targetAsset) return
-      if (!selected.imageUrl) {
-        message.warning(l('选中的资产没有可用图片', 'The selected asset has no usable image'))
-        return
-      }
-      saveAssetOverride({ ...targetAsset, imageUrl: selected.imageUrl }, ['imageUrl'])
-    } else {
-      appendAsset({ name: selected.name, imageUrl: selected.imageUrl })
+    const targetScriptImportId = getPositiveInteger(scriptImportId)
+    if (targetScriptImportId === null) {
+      message.warning(l('当前剧本尚未创建，无法导入资产', 'This script is not ready for asset import'))
+      return
     }
-    setPersonalImportOpen(false)
-    setPersonalImportTargetId(undefined)
-    setPersonalImportTargetSnapshot(undefined)
-    setPersonalAssetId('')
-    message.success(l('个人空间资产已导入', 'Personal asset imported'))
+    const libraryItemId = Number(selected.id)
+    if (!Number.isInteger(libraryItemId) || libraryItemId <= 0) {
+      message.warning(l('选中的资产缺少有效空间 ID', 'The selected asset has no valid library ID'))
+      return
+    }
+    if (personalImportEpisodeOptions.length === 0) {
+      message.warning(l('目标剧本没有可绑定的分集', 'The target script has no episodes available for import'))
+      return
+    }
+    if (personalImportName.trim().length > 128) {
+      message.warning(l('导入名称不能超过 128 个字符', 'The import name cannot exceed 128 characters'))
+      return
+    }
+    const targetEpisodeIndexes = personalImportEpisodeMode === 'selected'
+      ? [...new Set(personalImportEpisodeIndexes.map(getPositiveInteger).filter((value): value is number => value !== null))]
+        .sort((left, right) => left - right)
+      : []
+    if (personalImportEpisodeMode === 'selected' && targetEpisodeIndexes.length === 0) {
+      message.warning(l('请至少选择一个分集', 'Choose at least one episode'))
+      return
+    }
+    if (targetEpisodeIndexes.length > PERSONAL_IMPORT_EPISODE_LIMIT) {
+      message.warning(l('指定分集最多选择 200 集', 'Choose up to 200 episodes'))
+      return
+    }
+    setPersonalImportPending(true)
+    try {
+      const result = await StudioAssetLibraryApi.importItem({
+        assetType: ASSET_LIBRARY_TYPE_BY_KIND[kind],
+        libraryItemId,
+        scriptImportId: targetScriptImportId,
+        name: personalImportName.trim() || null,
+        episodeIndexes: targetEpisodeIndexes,
+      })
+      const importedEpisodeIndexes = result.episodeIndexes
+        .map(getPositiveInteger)
+        .filter((value): value is number => value !== null)
+      const importedEpisodeIndexSet = new Set(importedEpisodeIndexes)
+      const importedPageEpisodes = personalImportEpisodes.flatMap((serverEpisode) => {
+        const serverIndex = getPositiveInteger(serverEpisode.index)
+        if (serverIndex === null || !importedEpisodeIndexSet.has(serverIndex)) return []
+        const pageEpisode = episodes.find((episode) => (
+          episode.id === serverEpisode.id && getPositiveInteger(episode.index) === serverIndex
+        ))
+        return pageEpisode ? [pageEpisode] : []
+      })
+      let nextScope: AssetScope = scope
+      if (scope !== 'overview' && !importedPageEpisodes.some((episode) => episode.id === scope)) {
+        nextScope = importedPageEpisodes[0]?.id ?? 'overview'
+      }
+      setRecentImportedAsset(result)
+      setPendingPersonalImportRefresh({
+        assetId: result.assetId,
+        assetType: result.assetType,
+        scopeId: nextScope,
+        refreshStarted: false,
+        notified: false,
+      })
+      setKind(ASSET_KIND_BY_TYPE[result.assetType])
+      setScope(nextScope)
+      setPersonalImportOpen(false)
+      setPersonalImportSettingsOpen(false)
+      setPersonalAssetId('')
+      setPersonalAssetSearch('')
+      setPersonalAssetSearchOpen(false)
+      setPersonalImportName('')
+      setPersonalImportResultUncertain(false)
+      setAssetPollingRetryToken((current) => current + 1)
+      setAssetGenerationStatusRefreshToken((current) => current + 1)
+      message.success(l('资产已导入', 'Asset imported'))
+    } catch (error) {
+      const status = getErrorStatus(error)
+      const structuredBusinessFailure = isStructuredImportBusinessFailure(error, status)
+      const resultUncertain = status === null || (status >= 500 && !structuredBusinessFailure)
+      if (resultUncertain) {
+        setPersonalImportResultUncertain(true)
+        setScope('overview')
+        setAssetPollingRetryToken((current) => current + 1)
+        setAssetGenerationStatusRefreshToken((current) => current + 1)
+        message.warning(l(
+          '导入结果暂时无法确认，已切到全剧并刷新资产列表；请先检查结果，不要重复提交',
+          'The import result is uncertain. The full-script asset list is refreshing; check it before submitting again',
+        ))
+      } else {
+        const errorMessage = getApiErrorMessage(error, l('资产导入失败', 'Asset import failed'))
+        const libraryItemMentioned = /(资产库条目|空间条目|库条目|library\s+(?:asset\s+)?item|asset\s+library\s+item)/i.test(errorMessage)
+        const libraryCoverUnavailable = /(空间|资产库|library).*(主图|封面|cover).*(不存在|缺失|不可用|missing|not\s+found|unavailable)/i.test(errorMessage)
+        const libraryItemUnavailable = (
+          libraryItemMentioned
+          && /(停用|不存在|不匹配|inactive|disabled|not\s+found|mismatch)/i.test(errorMessage)
+        ) || libraryCoverUnavailable
+        const episodeSelectionStale = /(分集|剧集|episode|chapter)/i.test(errorMessage)
+          && /(不属于|不存在|无效|invalid|not\s+found|does\s+not\s+belong)/i.test(errorMessage)
+        const duplicateAssetName = /(同名|重名|duplicate|already\s+exists)/i.test(errorMessage)
+        if (libraryItemUnavailable) {
+          setPersonalAssetId('')
+          setPersonalImportSettingsOpen(false)
+          setPersonalImportName('')
+          setPersonalAssetsPage(1)
+          setPersonalAssetsRetryToken((current) => current + 1)
+        }
+        if (episodeSelectionStale) {
+          setPersonalImportSettingsOpen(true)
+          refreshPersonalImportEpisodes()
+        }
+        if (duplicateAssetName) {
+          setPersonalImportSettingsOpen(true)
+          window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => personalImportNameInputRef.current?.focus({ cursor: 'all' }))
+          })
+        }
+        message.error(getConciseApiErrorMessage(
+          error,
+          l('资产导入失败', 'Asset import failed'),
+          l('导入参数校验失败，请检查名称和分集选择', 'Import validation failed; check the name and episode selection'),
+        ))
+      }
+    } finally {
+      setPersonalImportPending(false)
+    }
   }
 
   const handleAddMenuClick = (key: 'generate' | 'personal' | 'local') => {
@@ -3242,7 +3872,13 @@ export default function ProjectAssetsStep({
     void loadAssetGenerationWorkspaceModule()
     setGenerationAssetSnapshot(asset)
     setGenerationAssetId(asset.id)
-    setGenerationActiveLookId(undefined)
+    const isRecentImport = asset.kind === (recentImportedAsset ? ASSET_KIND_BY_TYPE[recentImportedAsset.assetType] : undefined)
+      && getBackendAssetId(asset.backendAssetId) === getPositiveInteger(recentImportedAsset?.assetId)
+    setGenerationActiveLookId(
+      isRecentImport
+        ? getPositiveInteger(recentImportedAsset?.defaultLookId) ?? undefined
+        : undefined,
+    )
     setGenerationWorkspaceOpen(true)
   }
 
@@ -3252,10 +3888,6 @@ export default function ProjectAssetsStep({
   }
 
   const openVoiceLibrary = (asset: AssetDraft) => {
-    if (assetImageOperationLocked(asset.id)) {
-      message.warning(l('图片任务尚未结束，请稍后配置音色', 'Wait for the image task before configuring a voice'))
-      return
-    }
     if (getBackendAssetId(asset.backendAssetId) === null) {
       message.warning(l(
         '当前角色还没有后端资产 ID，暂时无法配置音色',
@@ -3265,6 +3897,70 @@ export default function ProjectAssetsStep({
     }
     setVoiceTargetAsset(asset)
     setVoiceLibraryOpen(true)
+  }
+
+  const openStoreAssetModal = (asset: AssetDraft) => {
+    setStoreAssetForm(createStoreAssetForm(asset, asset.kind))
+    setStoreAssetImages([])
+    setStoreAssetImagesError(undefined)
+    setStoreAssetReviewPendingVersionId(undefined)
+    setStoreAssetImageFailures(new Set())
+    setStoreAssetRoleOptions({})
+    setStoreAssetRoleOptionsError(undefined)
+    setStoreAssetRoleOptionsRetryToken(0)
+    setStoreAssetVisualStyles([])
+    setStoreAssetVisualStylesError(undefined)
+    setStoreAssetVisualStylesRetryToken(0)
+    setStoreAssetOpen(true)
+  }
+
+  const closeStoreAssetModal = () => {
+    if (storeAssetPending || storeAssetReviewPendingVersionId !== undefined) return
+    setStoreAssetOpen(false)
+  }
+
+  const patchStoreAssetForm = (patch: Partial<StoreAssetFormState>) => {
+    setStoreAssetForm((current) => ({ ...current, ...patch }))
+  }
+
+  const selectStoreAssetImage = (item: StudioAssetImageHistoryItem) => {
+    const versionId = getPositiveInteger(item.versionId)
+    if (versionId === null) return
+    setStoreAssetForm((current) => {
+      if (current.imageVersionId === versionId) return current
+      return {
+        ...current,
+        imageVersionId: versionId,
+      }
+    })
+  }
+
+  const reviewSelectedStoreAssetImage = async () => {
+    const asset = storeAssetForm.sourceAsset
+    const assetId = getBackendAssetId(asset?.backendAssetId)
+    const versionId = getPositiveInteger(selectedStoreAssetImage?.versionId)
+    if (!asset || assetId === null || versionId === null) return
+    setStoreAssetReviewPendingVersionId(versionId)
+    try {
+      const result = await StudioAssetGenerationApi.requestCopyrightReview({ assetId, versionId }).promise
+      if (result.reviewStatus === 2 && result.riskLevel === 1) {
+        message.success(l('版权初筛通过，可以存入空间', 'Copyright review passed; this image can be saved'))
+      } else {
+        message.warning(result.resultMessage || result.riskLevelName || l(
+          '版权初筛未达到低风险要求，请选择其他版本',
+          'Copyright review did not return a low-risk result; choose another version',
+        ))
+      }
+      setStoreAssetImagesRetryToken((current) => current + 1)
+    } catch (error) {
+      message.error(getConciseApiErrorMessage(
+        error,
+        l('版权初筛失败', 'Copyright review failed'),
+        l('版权初筛请求校验失败，请重新选择图片版本', 'Copyright review validation failed; choose the image version again'),
+      ))
+    } finally {
+      setStoreAssetReviewPendingVersionId(undefined)
+    }
   }
 
   const applyAssetVoice = async (voice: SystemVoiceRead) => {
@@ -3309,18 +4005,93 @@ export default function ProjectAssetsStep({
     ))
   }
 
-  const storeAssetInPersonalSpace = async (asset: AssetDraft) => {
+  const storeAssetInPersonalSpace = async (
+    asset: AssetDraft,
+    metadata: StoreAssetFormState,
+  ) => {
     try {
-      const entityType = asset.kind === 'role' ? 'character' : asset.kind
-      await StudioEntitiesApi.create(entityType, {
-        name: asset.name,
-        image_url: asset.imageUrl,
-        thumbnail: asset.imageUrl,
-      })
-      personalAssetsCacheRef.current.delete(asset.kind)
-      message.success(l('已存入个人空间', 'Saved to personal space'))
-    } catch {
-      message.error(l('存入个人空间失败', 'Failed to save to personal space'))
+      const storedKind = asset.kind
+      const assetId = getBackendAssetId(asset.backendAssetId)
+      if (assetId === null) {
+        message.warning(l('当前资产还没有后端资产 ID，暂时不能存入资产库', 'This asset is not saved yet'))
+        return false
+      }
+      const imageVersionId = getPositiveInteger(metadata.imageVersionId)
+      const selectedImage = storeAssetImages.find(
+        (item) => getPositiveInteger(item.versionId) === imageVersionId,
+      )
+      if (imageVersionId === null || !isStoreAssetImageStorable(selectedImage, storedKind)) {
+        message.warning(l('请选择已通过低风险版权初筛的成功图片版本', 'Choose a successful low-risk reviewed image version'))
+        return false
+      }
+      const name = metadata.name.trim() || null
+      if (storedKind === 'role') {
+        const visualStyleId = getPositiveInteger(metadata.visualStyleId)
+        if (!storeAssetRoleFieldsReady || visualStyleId === null) {
+          message.warning(l('请选择性别、年龄、风格和国别', 'Choose gender, age, style, and nationality'))
+          return false
+        }
+        await StudioAssetLibraryApi.saveItem({
+          assetType: 1,
+          assetId,
+          imageVersionId,
+          name,
+          gender: metadata.gender,
+          ageGroup: metadata.ageGroup,
+          visualStyleId,
+          countryType: metadata.countryType,
+        })
+      } else {
+        const visualStyleId = getPositiveInteger(metadata.visualStyleId)
+        if (!storeAssetStyleFieldReady || visualStyleId === null) {
+          message.warning(l('请选择风格', 'Choose a style'))
+          return false
+        }
+        await StudioAssetLibraryApi.saveItem({
+          assetType: storedKind === 'scene' ? 2 : 3,
+          assetId,
+          imageVersionId,
+          name,
+          visualStyleId,
+        })
+      }
+      message.success(l('已存入空间', 'Saved to asset space'))
+      return true
+    } catch (error) {
+      message.error(getConciseApiErrorMessage(
+        error,
+        l('存入资产库失败', 'Failed to save to asset library'),
+        l('存入参数校验失败，请检查名称、分类和图片版本', 'Save validation failed; check the name, classification, and image version'),
+      ))
+      return false
+    }
+  }
+
+  const confirmStoreAsset = async () => {
+    const asset = storeAssetForm.sourceAsset
+    if (!asset) return
+    if (storeAssetForm.name.trim().length > 30) {
+      message.warning(l('资产名称不能超过 30 个字符', 'The asset name cannot exceed 30 characters'))
+      return
+    }
+    if (!storeAssetRoleFieldsReady) {
+      message.warning(l('请选择性别、年龄、风格和国别', 'Choose gender, age, style, and nationality'))
+      return
+    }
+    if (!storeAssetStyleFieldReady) {
+      message.warning(l('请选择风格', 'Choose a style'))
+      return
+    }
+    if (!isStoreAssetImageStorable(selectedStoreAssetImage, storeAssetForm.kind)) {
+      message.warning(l('请选择已通过低风险版权初筛的成功图片版本', 'Choose a successful low-risk reviewed image version'))
+      return
+    }
+    setStoreAssetPending(true)
+    try {
+      const saved = await storeAssetInPersonalSpace(asset, storeAssetForm)
+      if (saved) setStoreAssetOpen(false)
+    } finally {
+      setStoreAssetPending(false)
     }
   }
 
@@ -3374,7 +4145,7 @@ export default function ProjectAssetsStep({
       return
     }
     if (key === 'store') {
-      void storeAssetInPersonalSpace(asset)
+      openStoreAssetModal(asset)
       return
     }
     if (key === 'space-import') {
@@ -3482,6 +4253,9 @@ export default function ProjectAssetsStep({
     : '') || pollingLanes.find((lane) => (
     lane.errorMessage && !lane.loading && !lane.polling
   ))?.errorMessage || ''
+  const personalImportRefreshFailed = Boolean(
+    pendingPersonalImportRefresh?.scopeId === scope && pendingPersonalImportRefresh.notified,
+  )
   const assetPollingStatusNames = [...new Set(
     pollingLanes.map((lane) => lane.statusName).filter(Boolean),
   )].join(' / ')
@@ -3494,17 +4268,120 @@ export default function ProjectAssetsStep({
     || Boolean(currentAssetGenerationStatus?.loading && visibleAssets.length === 0)
   )
   const showAssetLoadingPlaceholder = visibleAssetsLoading && visibleAssets.length === 0
-  const summaryDescription = assetPollingErrorMessage
+  const summaryDescription = personalImportResultUncertain
     ? l(
-      `部分资产查询失败：${assetPollingErrorMessage}${assetPollingActive ? '，其他类型仍在生成' : ''}`,
-      `Some asset queries failed: ${assetPollingErrorMessage}${assetPollingActive ? '; other types are still generating' : ''}`,
+      '导入结果仍待确认；请核对全剧资产列表，确认前不要重复导入。',
+      'The import result is still uncertain. Check the full-script asset list before importing again.',
     )
-    : assetPollingActive
+    : personalImportRefreshFailed
       ? l(
-        `正在轮询角色、场景和道具资产${assetPollingStatusNames ? `（${assetPollingStatusNames}）` : ''}…`,
-        `Polling character, scene, and prop assets${assetPollingStatusNames ? ` (${assetPollingStatusNames})` : ''}…`,
+        '导入成功，但资产列表刷新失败；请只重试列表刷新，不要重复导入。',
+        'Import succeeded, but the asset list did not refresh. Retry only the list refresh; do not import again.',
       )
-      : l('可通过修改提示词重绘不满意的图片，确保角场景符合剧本设定。', 'Adjust prompts and regenerate images to match the script settings.')
+      : assetPollingErrorMessage
+        ? l(
+          `部分资产查询失败：${assetPollingErrorMessage}${assetPollingActive ? '，其他类型仍在生成' : ''}`,
+          `Some asset queries failed: ${assetPollingErrorMessage}${assetPollingActive ? '; other types are still generating' : ''}`,
+        )
+        : assetPollingActive
+          ? l(
+            `正在轮询角色、场景和道具资产${assetPollingStatusNames ? `（${assetPollingStatusNames}）` : ''}…`,
+            `Polling character, scene, and prop assets${assetPollingStatusNames ? ` (${assetPollingStatusNames})` : ''}…`,
+          )
+          : l('可通过修改提示词重绘不满意的图片，确保角场景符合剧本设定。', 'Adjust prompts and regenerate images to match the script settings.')
+  const personalImportSettingsPanel = (
+    <section
+      id="personal-import-settings-panel"
+      className="project-assets-space-import__config"
+      role="dialog"
+      aria-label={l('导入设置', 'Import settings')}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape') return
+        event.stopPropagation()
+        setPersonalImportSettingsOpen(false)
+        window.requestAnimationFrame(() => personalImportSettingsTriggerRef.current?.focus())
+      }}
+    >
+      <button
+        type="button"
+        className="project-assets-space-import__config-close"
+        aria-label={l('关闭导入设置', 'Close import settings')}
+        onClick={() => {
+          setPersonalImportSettingsOpen(false)
+          personalImportSettingsTriggerRef.current?.focus()
+        }}
+      >
+        <CloseOutlined />
+      </button>
+      <label className="project-assets-space-import__config-field">
+        <span>{l('导入名称', 'Import name')}</span>
+        <Input
+          ref={personalImportNameInputRef}
+          value={personalImportName}
+          disabled={!selectedPersonalAsset || personalImportPending}
+          maxLength={128}
+          showCount
+          placeholder={selectedPersonalAsset?.name}
+          onChange={(event) => setPersonalImportName(event.target.value)}
+        />
+      </label>
+      <div className="project-assets-space-import__config-field">
+        <span>{l('导入范围', 'Import range')}</span>
+        <div className="project-assets-space-import__scope-tabs" role="group" aria-label={l('导入范围', 'Import range')}>
+          <button
+            type="button"
+            className={personalImportEpisodeMode === 'all' ? 'is-selected' : ''}
+            disabled={personalImportPending}
+            onClick={() => setPersonalImportEpisodeMode('all')}
+          >
+            {l('全部分集', 'All episodes')}
+          </button>
+          <button
+            type="button"
+            className={personalImportEpisodeMode === 'selected' ? 'is-selected' : ''}
+            disabled={personalImportPending}
+            onClick={() => setPersonalImportEpisodeMode('selected')}
+          >
+            {l('指定分集', 'Selected episodes')}
+          </button>
+        </div>
+      </div>
+      {personalImportEpisodeMode === 'selected' && (
+        <label className="project-assets-space-import__config-field is-full">
+          <span>{l('选择分集', 'Choose episodes')}</span>
+          <StudioSelect
+            mode="multiple"
+            maxCount={PERSONAL_IMPORT_EPISODE_LIMIT}
+            value={personalImportEpisodeIndexes.map(String)}
+            loading={personalImportEpisodesLoading}
+            status={personalImportEpisodesError ? 'error' : undefined}
+            disabled={personalImportPending || personalImportEpisodesLoading}
+            placeholder={l('至少选择一个分集', 'Choose at least one episode')}
+            options={personalImportEpisodeOptions}
+            onChange={(value) => setPersonalImportEpisodeIndexes(
+              (Array.isArray(value) ? value : [])
+                .map(getPositiveInteger)
+                .filter((item): item is number => item !== null)
+                .slice(0, PERSONAL_IMPORT_EPISODE_LIMIT),
+            )}
+          />
+        </label>
+      )}
+      {Boolean(personalImportEpisodesError) && (
+        <div className="project-assets-space-import__error project-assets-space-import__config-error">
+          <span>{getApiErrorMessage(personalImportEpisodesError, l('分集列表刷新失败', 'Failed to refresh episodes'))}</span>
+          <Button
+            size="small"
+            loading={personalImportEpisodesLoading}
+            disabled={personalImportPending}
+            onClick={refreshPersonalImportEpisodes}
+          >
+            {l('重试分集刷新', 'Retry episode refresh')}
+          </Button>
+        </div>
+      )}
+    </section>
+  )
 
   return (
     <main className="project-assets-step">
@@ -3544,12 +4421,24 @@ export default function ProjectAssetsStep({
             <span>{summaryDescription}</span>
           </div>
           <div className="project-assets-step__generation-settings">
-            {assetPollingErrorMessage && !currentScopeGenerationCompleted && (
+            {(personalImportResultUncertain
+              || personalImportRefreshFailed
+              || (assetPollingErrorMessage && !currentScopeGenerationCompleted)) && (
               <Button onClick={() => {
+                if (personalImportRefreshFailed) {
+                  setPendingPersonalImportRefresh((current) => current
+                    ? { ...current, refreshStarted: false, notified: false }
+                    : current)
+                }
+                if (personalImportResultUncertain) setScope('overview')
                 setAssetPollingRetryToken((current) => current + 1)
                 setAssetGenerationStatusRefreshToken((current) => current + 1)
               }}>
-                {l('重试资产查询', 'Retry asset query')}
+                {personalImportResultUncertain
+                  ? l('重新核验资产列表', 'Recheck asset list')
+                  : personalImportRefreshFailed
+                    ? l('重试列表刷新', 'Retry list refresh')
+                    : l('重试资产查询', 'Retry asset query')}
               </Button>
             )}
             <StudioSelect
@@ -3637,10 +4526,12 @@ export default function ProjectAssetsStep({
               const cardGenerationState = selectAssetGenerationState(assetImageTasks[asset.id], batchAssetImageTasks[asset.id])
               const cardGenerating = isAssetImageTaskActive(cardGenerationState)
               const assetFileId = normalizeMediaFileId(asset.coverFileId)
+              const recentlyImported = asset.kind === (recentImportedAsset ? ASSET_KIND_BY_TYPE[recentImportedAsset.assetType] : undefined)
+                && getBackendAssetId(asset.backendAssetId) === getPositiveInteger(recentImportedAsset?.assetId)
               return (
                 <article
                   key={asset.id}
-                  className={`project-assets-step__card${asset.imageUrl ? ' has-image' : ''}${cardGenerating ? ' is-generating' : ''}`}
+                  className={`project-assets-step__card${asset.imageUrl ? ' has-image' : ''}${cardGenerating ? ' is-generating' : ''}${recentlyImported ? ' is-imported' : ''}`}
                   role="button"
                   tabIndex={0}
                   aria-busy={cardGenerating}
@@ -3710,14 +4601,16 @@ export default function ProjectAssetsStep({
                         type="text"
                         className={`project-assets-step__voice-button${asset.voice ? ' is-configured' : ''}`}
                         icon={<AudioOutlined />}
-                        disabled={getBackendAssetId(asset.backendAssetId) === null
-                          || assetImageOperationLocked(asset.id)}
+                        disabled={getBackendAssetId(asset.backendAssetId) === null}
                         title={getBackendAssetId(asset.backendAssetId) === null
                           ? l('本地角色需要先保存为后端资产才能配置音色', 'Save this local character before configuring a voice')
                           : asset.voice?.name
                             ? l(`当前音色：${asset.voice.name}`, `Current voice: ${asset.voice.name}`)
                             : l('配置角色音色', 'Configure character voice')}
-                        onClick={() => openVoiceLibrary(asset)}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          openVoiceLibrary(asset)
+                        }}
                       >
                         {asset.voice?.name ?? l('配置音色', 'Voice')}
                       </Button>
@@ -3734,8 +4627,8 @@ export default function ProjectAssetsStep({
                             icon: assetDownloadFileId === assetFileId ? <Spin size="small" /> : <DownloadOutlined />,
                             disabled: !assetFileId || Boolean(assetDownloadFileId),
                           },
-                          { key: 'store', label: l('存入空间', 'Save to space') },
-                          { key: 'space-import', label: l('空间导入', 'Import from space') },
+                          { key: 'store', label: l('存入资产', 'Save asset') },
+                          { key: 'space-import', label: l('资产导入', 'Import from assets') },
                           { key: 'local-import', label: l('本地导入', 'Import from device') },
                           { type: 'divider' },
                           { key: 'delete', label: l('删除', 'Delete'), danger: true },
@@ -3769,7 +4662,7 @@ export default function ProjectAssetsStep({
                 items: [
                   { key: 'generate', label: l('模型生成', 'Generate with model') },
                   { key: 'local', label: l('本地导入', 'Import from device') },
-                  { key: 'personal', label: l('空间导入', 'Import from personal space') },
+                  { key: 'personal', label: l('资产导入', 'Import from assets') },
                 ],
                 onClick: ({ key }) => handleAddMenuClick(key as 'generate' | 'personal' | 'local'),
               }}
@@ -3964,6 +4857,7 @@ export default function ProjectAssetsStep({
           modelOptionsError={imageModelsError}
           assetId={generationBackendAssetId}
           episodeId={scope === 'overview' ? undefined : scope}
+          preferredLookId={generationPreferredLookId}
           imageHistoryItems={generationAssetImageHistory?.items ?? []}
           currentImageFileId={generationAsset?.coverFileId}
           imageHistoryLoading={generationBackendAssetId !== null
@@ -4072,90 +4966,107 @@ export default function ProjectAssetsStep({
       <Modal
         open={personalImportOpen}
         centered
-        width={1080}
-        title={l(`导入${KIND_LABELS[kind].zh}`, `Import ${KIND_LABELS[kind].en.toLowerCase()}`)}
+        width={1000}
+        title={l('资产导入', 'Asset import')}
         footer={null}
+        closeIcon={<CloseOutlined />}
         rootClassName="project-assets-space-import"
         onCancel={() => {
+          if (personalImportPending) return
           personalAssetsRequestRevisionRef.current += 1
+          personalImportEpisodesRequestRevisionRef.current += 1
+          personalImportEpisodesRequestRef.current?.cancel()
+          personalImportEpisodesRequestRef.current = null
           setPersonalImportOpen(false)
-          setPersonalImportTargetId(undefined)
-          setPersonalImportTargetSnapshot(undefined)
+          setPersonalImportSettingsOpen(false)
+          setPersonalAssetSearch('')
+          setPersonalAssetSearchOpen(false)
+          setPersonalAssetId('')
+          setPersonalImportName('')
+          setPersonalAssetsError(undefined)
+          setPersonalImportEpisodesLoading(false)
+          setPersonalImportEpisodesError(undefined)
         }}
       >
         <div className="project-assets-space-import__filters">
           <div className="project-assets-space-import__toolbar-title">
-            <strong>{l('空间资产', 'Space assets')}</strong>
-            <span>{l(`共 ${personalAssets.length} 项`, `${personalAssets.length} items`)}</span>
+            <span>{l('团队资产', 'Team assets')}</span>
           </div>
           <div className="project-assets-space-import__filter-controls">
-            <StudioSelect
-              value={personalAssetFilters.gender}
-              disabled={personalAssetsLoading}
-              aria-label={l(kind === 'role' ? '性别' : '类型', kind === 'role' ? 'Gender' : 'Type')}
-              optionLabelProp="trigger"
-              popupMatchSelectWidth={152}
-              popupClassName="project-assets-space-import__filter-popup"
-              options={kind === 'role' ? [
-                { value: 'gender-heading', label: l('性别', 'Gender'), trigger: l('性别', 'Gender'), disabled: true, className: 'is-heading' },
-                { value: 'all', label: l('全部', 'All'), trigger: l('性别', 'Gender') },
-                { value: 'female', label: l('女性', 'Female'), trigger: l('女性', 'Female') },
-                { value: 'male', label: l('男性', 'Male'), trigger: l('男性', 'Male') },
-              ] : [
-                { value: 'type-heading', label: l('类型', 'Type'), trigger: l('类型', 'Type'), disabled: true, className: 'is-heading' },
-                { value: 'all', label: l('全部', 'All'), trigger: l('类型', 'Type') },
-              ]}
-              onChange={(value) => setPersonalAssetFilters((current) => ({ ...current, gender: value }))}
-            />
-            <StudioSelect
-              value={personalAssetFilters.style}
-              disabled={personalAssetsLoading}
-              aria-label={l('风格', 'Style')}
-              optionLabelProp="trigger"
-              popupMatchSelectWidth={152}
-              popupClassName="project-assets-space-import__filter-popup"
-              options={[
-                { value: 'style-heading', label: l('风格', 'Style'), trigger: l('风格', 'Style'), disabled: true, className: 'is-heading' },
-                { value: 'all', label: l('全部', 'All'), trigger: l('风格', 'Style') },
-                { value: 'realistic', label: l('真人', 'Realistic'), trigger: l('真人', 'Realistic') },
-                { value: 'anime', label: l('动漫', 'Anime'), trigger: l('动漫', 'Anime') },
-              ]}
-              onChange={(value) => setPersonalAssetFilters((current) => ({ ...current, style: value }))}
-            />
-            <StudioSelect
-              value={personalAssetFilters.age}
-              disabled={personalAssetsLoading}
-              aria-label={l(kind === 'role' ? '年龄' : '年代', kind === 'role' ? 'Age' : 'Era')}
-              optionLabelProp="trigger"
-              popupMatchSelectWidth={152}
-              popupClassName="project-assets-space-import__filter-popup"
-              options={kind === 'role' ? [
-                { value: 'age-heading', label: l('年龄', 'Age'), trigger: l('年龄', 'Age'), disabled: true, className: 'is-heading' },
-                { value: 'all', label: l('全部', 'All'), trigger: l('年龄', 'Age') },
-                { value: 'young', label: l('青年', 'Young'), trigger: l('青年', 'Young') },
-                { value: 'middle', label: l('中年', 'Middle-aged'), trigger: l('中年', 'Middle-aged') },
-                { value: 'senior', label: l('老年', 'Senior'), trigger: l('老年', 'Senior') },
-              ] : [
-                { value: 'era-heading', label: l('年代', 'Era'), trigger: l('年代', 'Era'), disabled: true, className: 'is-heading' },
-                { value: 'all', label: l('全部', 'All'), trigger: l('年代', 'Era') },
-              ]}
-              onChange={(value) => setPersonalAssetFilters((current) => ({ ...current, age: value }))}
-            />
-            <StudioSelect
-              value={personalAssetFilters.region}
-              disabled={personalAssetsLoading}
-              aria-label={l('国别', 'Region')}
-              optionLabelProp="trigger"
-              popupMatchSelectWidth={152}
-              popupClassName="project-assets-space-import__filter-popup"
-              options={[
-                { value: 'region-heading', label: l('国别', 'Region'), trigger: l('国别', 'Region'), disabled: true, className: 'is-heading' },
-                { value: 'all', label: l('全部', 'All'), trigger: l('国别', 'Region') },
-                { value: 'china', label: l('中国', 'China'), trigger: l('中国', 'China') },
-                { value: 'overseas', label: l('海外', 'Overseas'), trigger: l('海外', 'Overseas') },
-              ]}
-              onChange={(value) => setPersonalAssetFilters((current) => ({ ...current, region: value }))}
-            />
+            <div className={`project-assets-space-import__search-control${personalAssetSearchOpen || personalAssetSearch.trim() ? ' is-expanded' : ''}`}>
+              <Input
+                ref={personalAssetSearchInputRef}
+                allowClear={personalAssetSearchOpen}
+                value={personalAssetSearch}
+                placeholder={personalAssetSearchOpen ? l('搜索', 'Search') : undefined}
+                className="project-assets-space-import__search"
+                tabIndex={personalAssetSearchOpen ? 0 : -1}
+                suffix={(
+                  <button
+                    type="button"
+                    className="project-assets-space-import__search-suffix"
+                    aria-label={personalAssetSearchOpen ? l('收起搜索', 'Collapse search') : l('搜索资产', 'Search assets')}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      if (!personalAssetSearchOpen) {
+                        setPersonalAssetSearchOpen(true)
+                        window.requestAnimationFrame(() => personalAssetSearchInputRef.current?.focus({ cursor: 'end' }))
+                        return
+                      }
+                      if (!personalAssetSearch) {
+                        personalAssetSearchInputRef.current?.blur()
+                        setPersonalAssetSearchOpen(false)
+                      }
+                    }}
+                  >
+                    <SearchOutlined />
+                  </button>
+                )}
+                onFocus={() => setPersonalAssetSearchOpen(true)}
+                maxLength={128}
+                onChange={(event) => {
+                  setPersonalAssetSearch(event.target.value)
+                  setPersonalAssetsPage(1)
+                  setPersonalAssetId('')
+                  setPersonalImportName('')
+                  setPersonalImportSettingsOpen(false)
+                }}
+                onBlur={() => {
+                  if (!personalAssetSearch) setPersonalAssetSearchOpen(false)
+                }}
+              />
+            </div>
+            {[l('风格', 'Style'), l('性别', 'Gender'), l('年龄', 'Age'), l('国别', 'Region')].map((label) => (
+              <button
+                key={label}
+                type="button"
+                className="project-assets-space-import__filter-shell"
+                aria-label={l(`${label}筛选暂不可用`, `${label} filter is unavailable`)}
+                aria-disabled="true"
+                title={l('当前资产空间接口暂不支持该筛选', 'This filter is not supported by the asset-space API yet')}
+                onClick={() => message.info(l(
+                  '当前资产空间接口暂不支持该筛选',
+                  'This filter is not supported by the asset-space API yet',
+                ))}
+              >
+                <span>{label}</span>
+                <DownOutlined />
+              </button>
+            ))}
+            <button
+              type="button"
+              className="project-assets-space-import__filter-shell is-more"
+              aria-label={l('更多筛选暂不可用', 'More filters are unavailable')}
+              aria-disabled="true"
+              title={l('当前资产空间接口暂不支持更多筛选', 'More filters are not supported by the asset-space API yet')}
+              onClick={() => message.info(l(
+                '当前资产空间接口暂不支持更多筛选',
+                'More filters are not supported by the asset-space API yet',
+              ))}
+            >
+              <span>{l('更多筛选', 'More filters')}</span>
+              <FilterOutlined />
+            </button>
           </div>
         </div>
 
@@ -4164,40 +5075,418 @@ export default function ProjectAssetsStep({
           wrapperClassName={`project-assets-space-import__spin${visiblePersonalAssets.length === 0 ? ' is-empty' : ''}`}
         >
           <div className={`project-assets-space-import__library${visiblePersonalAssets.length === 0 ? ' is-empty' : ''}`}>
-            {visiblePersonalAssets.length > 0 ? visiblePersonalAssets.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={`project-assets-space-import__card${personalAssetId === item.id ? ' is-selected' : ''}`}
-                aria-pressed={personalAssetId === item.id}
-                onClick={() => setPersonalAssetId((current) => current === item.id ? '' : item.id)}
-              >
-                <span className="project-assets-space-import__card-media">
-                  {item.imageUrl ? <img src={item.imageUrl} alt="" loading="lazy" decoding="async" /> : <PictureOutlined />}
-                  {item.style && <small>{item.style}</small>}
-                  {personalAssetId === item.id && (
-                    <span className="project-assets-space-import__check"><CheckOutlined /></span>
-                  )}
-                </span>
-                <strong title={item.name}>{item.name}</strong>
-              </button>
-            )) : (
+            {personalAssetsError ? (
+              <div className="project-assets-space-import__error">
+                <span>{getApiErrorMessage(personalAssetsError, l('资产空间加载失败', 'Failed to load asset space'))}</span>
+                <Button onClick={() => setPersonalAssetsRetryToken((current) => current + 1)}>
+                  {l('重试', 'Retry')}
+                </Button>
+              </div>
+            ) : visiblePersonalAssets.length > 0 ? visiblePersonalAssets.map((item) => {
+              const meta = [item.libraryCode, item.gender, item.age, item.style, item.region].filter(Boolean).join('·')
+              const lookCount = item.lookCount && item.lookCount > 0 ? item.lookCount : 1
+              const imageFailed = personalAssetImageFailures.has(item.id)
+              const selected = personalAssetId === item.id
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`project-assets-space-import__card${selected ? ' is-selected' : ''}`}
+                  aria-pressed={selected}
+                  onClick={() => {
+                    setPersonalAssetId(selected ? '' : item.id)
+                    setPersonalImportName(selected ? '' : item.name)
+                    setPersonalImportSettingsOpen(!selected && Boolean(personalImportEpisodesError))
+                  }}
+                >
+                  <span className="project-assets-space-import__card-media">
+                    {item.imageUrl && !imageFailed ? (
+                      <img
+                        src={item.imageUrl}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        onError={() => setPersonalAssetImageFailures((current) => new Set(current).add(item.id))}
+                      />
+                    ) : <PictureOutlined />}
+                    {kind === 'role' && (
+                      <small>{l(`${lookCount}个造型`, `${lookCount} looks`)}</small>
+                    )}
+                  </span>
+                  <span className="project-assets-space-import__card-body">
+                    <strong title={item.name}>{item.name}</strong>
+                    {meta && <em title={meta}>{meta}</em>}
+                  </span>
+                  <EyeOutlined className="project-assets-space-import__card-preview-icon" aria-hidden="true" />
+                </button>
+              )
+            }) : (
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={personalAssets.length > 0
-                  ? l('没有符合筛选条件的资产', 'No assets match these filters')
-                  : l('个人空间暂无可导入资产', 'No assets available')}
+                description={personalAssetSearch.trim()
+                  ? l('没有匹配搜索条件的资产', 'No assets match this search')
+                  : l('暂无可导入资产', 'No assets available')}
               />
             )}
           </div>
         </Spin>
 
+        {personalAssetsTotal > PERSONAL_ASSET_PAGE_SIZE && !personalAssetsError && (
+          <div className="project-assets-space-import__pagination">
+            <Pagination
+              current={personalAssetsPage}
+              total={personalAssetsTotal}
+              pageSize={PERSONAL_ASSET_PAGE_SIZE}
+              showSizeChanger={false}
+              onChange={(page) => {
+                setPersonalAssetsPage(page)
+                setPersonalAssetId('')
+                setPersonalImportName('')
+                setPersonalImportSettingsOpen(false)
+              }}
+            />
+          </div>
+        )}
+
         <footer className="project-assets-space-import__footer">
-          <strong>{l('已选', 'Selected')} <span>{personalAssetId ? 1 : 0}</span></strong>
-          <Button type="primary" disabled={!personalAssetId} onClick={confirmPersonalImport}>
+          <div className="project-assets-space-import__selection">
+            <strong>
+              {personalImportResultUncertain
+                ? l('结果待确认，请关闭弹窗检查资产列表', 'Result pending confirmation; close and check the asset list')
+                : l('已选', 'Selected')}
+            </strong>
+            {selectedPersonalAsset && !personalImportResultUncertain && (
+              <>
+                <button
+                  ref={personalImportSettingsTriggerRef}
+                  type="button"
+                  className="project-assets-space-import__selected-preview"
+                  aria-label={l(`${selectedPersonalAsset.name}，导入设置`, `${selectedPersonalAsset.name}, import settings`)}
+                  aria-haspopup="dialog"
+                  aria-expanded={personalImportSettingsOpen}
+                  aria-controls="personal-import-settings-panel"
+                  title={l(`${selectedPersonalAsset.name} · 点击配置导入`, `${selectedPersonalAsset.name} · Configure import`)}
+                  disabled={personalImportPending}
+                  onClick={() => {
+                    if (personalImportSettingsOpen) {
+                      setPersonalImportSettingsOpen(false)
+                      return
+                    }
+                    setPersonalImportSettingsOpen(true)
+                    window.requestAnimationFrame(() => personalImportNameInputRef.current?.focus({ cursor: 'end' }))
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape' && personalImportSettingsOpen) {
+                      event.preventDefault()
+                      setPersonalImportSettingsOpen(false)
+                    }
+                  }}
+                >
+                  {selectedPersonalAsset.imageUrl && !personalAssetImageFailures.has(selectedPersonalAsset.id) ? (
+                    <img
+                      src={selectedPersonalAsset.imageUrl}
+                      alt=""
+                      decoding="async"
+                      onError={() => setPersonalAssetImageFailures((current) => new Set(current).add(selectedPersonalAsset.id))}
+                    />
+                  ) : <PictureOutlined />}
+                </button>
+                {personalImportSettingsOpen && personalImportSettingsPanel}
+              </>
+            )}
+          </div>
+          <Button
+            type="primary"
+            loading={personalImportPending}
+            disabled={!personalImportReady}
+            onClick={() => { void confirmPersonalImport() }}
+          >
             {l('确定', 'Confirm')}
           </Button>
         </footer>
+      </Modal>
+
+      <Modal
+        open={storeAssetOpen}
+        centered
+        width={1000}
+        title={null}
+        footer={null}
+        closeIcon={<CloseOutlined />}
+        rootClassName="project-assets-store-modal"
+        maskClosable={!storeAssetPending && storeAssetReviewPendingVersionId === undefined}
+        onCancel={closeStoreAssetModal}
+      >
+        <div className="project-assets-store">
+          <header className="project-assets-store__header">
+            <h2>{l('存入资产', 'Save asset')}</h2>
+          </header>
+
+          <div className="project-assets-store__body">
+            <section
+              className="project-assets-store__media has-versions"
+              aria-label={l('资产图片', 'Asset images')}
+            >
+              <figure className={`project-assets-store__preview${storeAssetImageUrl ? ' has-image' : ''}`}>
+                {storeAssetImageUrl ? (
+                  <img
+                    src={storeAssetImageUrl}
+                    alt={storeAssetForm.sourceAsset?.name ?? ''}
+                    loading="lazy"
+                    decoding="async"
+                    onError={() => setStoreAssetImageFailures((current) => (
+                      new Set(current).add(selectedStoreAssetImageKey)
+                    ))}
+                  />
+                ) : (
+                  <span className="project-assets-store__preview-placeholder">
+                    <PictureOutlined />
+                  </span>
+                )}
+                <figcaption>
+                  {selectedStoreAssetImage?.versionLabel
+                    || (selectedStoreAssetImage?.versionNo
+                      ? l(`版本 ${selectedStoreAssetImage.versionNo}`, `Version ${selectedStoreAssetImage.versionNo}`)
+                      : l('所选版本', 'Selected version'))}
+                </figcaption>
+              </figure>
+
+              <div className="project-assets-store__versions">
+                <div className="project-assets-store__versions-title">
+                  <span>{l('图片版本', 'Image versions')}</span>
+                  {storeAssetImagesLoading && <Spin size="small" />}
+                </div>
+                {storeAssetImagesError ? (
+                  <div className="project-assets-store__versions-error">
+                    <span>{getApiErrorMessage(storeAssetImagesError, l('图片版本加载失败', 'Failed to load image versions'))}</span>
+                    <Button size="small" onClick={() => setStoreAssetImagesRetryToken((current) => current + 1)}>
+                      {l('重试', 'Retry')}
+                    </Button>
+                  </div>
+                ) : storeAssetImages.length > 0 ? (
+                  <div className="project-assets-store__version-list">
+                    {storeAssetImages.map((item) => {
+                      const itemVersionId = getPositiveInteger(item.versionId)
+                      const itemKey = String(item.versionId ?? item.id)
+                      const itemUrl = item.imageUrl ?? item.fileUrl ?? item.thumbnailUrl
+                      const itemSelected = itemVersionId === storeAssetForm.imageVersionId
+                      const itemReady = isStoreAssetImageStorable(item, storeAssetForm.kind)
+                      return (
+                        <button
+                          key={itemKey}
+                          type="button"
+                          className={`project-assets-store__version${itemSelected ? ' is-selected' : ''}${itemReady ? ' is-ready' : ' needs-review'}`}
+                          aria-pressed={itemSelected}
+                          title={itemReady
+                            ? l('已通过版权初筛', 'Copyright review passed')
+                            : l('需要版权初筛或风险不符合要求', 'Copyright review required or risk is not eligible')}
+                          onClick={() => selectStoreAssetImage(item)}
+                        >
+                          <span>
+                            {itemUrl && !storeAssetImageFailures.has(itemKey) ? (
+                              <img
+                                src={itemUrl}
+                                alt=""
+                                loading="lazy"
+                                decoding="async"
+                                onError={() => setStoreAssetImageFailures((current) => new Set(current).add(itemKey))}
+                              />
+                            ) : <PictureOutlined />}
+                          </span>
+                          <small title={[item.characterLookName, item.versionLabel].filter(Boolean).join(' · ') || undefined}>
+                            {[
+                              item.characterLookName,
+                              item.versionLabel || item.versionNo || `V${itemVersionId ?? '-'}`,
+                            ].filter(Boolean).join(' · ')}
+                          </small>
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : !storeAssetImagesLoading ? (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description={l('没有可选择的成功图片版本', 'No successful image version is available')}
+                  />
+                ) : null}
+              </div>
+
+              {selectedStoreAssetImage && (
+                <div className={`project-assets-store__review-status${isStoreAssetImageStorable(selectedStoreAssetImage, storeAssetForm.kind) ? ' is-ready' : ' needs-review'}`}>
+                  <span>
+                    {isStoreAssetImageStorable(selectedStoreAssetImage, storeAssetForm.kind)
+                      ? l('版权初筛：低风险，可存入', 'Copyright review: low risk, ready to save')
+                      : selectedStoreAssetImage.copyrightReviewStatus === 2
+                        ? l(
+                            `版权初筛：${selectedStoreAssetImage.copyrightRiskLevelName || '风险不符合要求'}`,
+                            `Copyright review: ${selectedStoreAssetImage.copyrightRiskLevelName || 'risk is not eligible'}`,
+                          )
+                        : l('该版本尚未完成版权初筛', 'This version has not completed copyright review')}
+                  </span>
+                  {selectedStoreAssetImage.copyrightReviewStatus !== 2 && (
+                    <Button
+                      size="small"
+                      type="primary"
+                      loading={storeAssetReviewPendingVersionId === getPositiveInteger(selectedStoreAssetImage.versionId)}
+                      disabled={storeAssetPending || storeAssetReviewPendingVersionId !== undefined}
+                      onClick={() => { void reviewSelectedStoreAssetImage() }}
+                    >
+                      {l('开始版权初筛', 'Run copyright review')}
+                    </Button>
+                  )}
+                </div>
+              )}
+            </section>
+
+            <aside className="project-assets-store__form">
+              <div className="project-assets-store__field is-full">
+                <span>{l('资产类型', 'Asset type')}</span>
+                <div className="project-assets-store__type-tabs" role="tablist" aria-label={l('资产类型', 'Asset type')}>
+                  {(Object.keys(KIND_LABELS) as AssetKind[]).map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      className={storeAssetForm.kind === item ? 'is-selected' : ''}
+                      role="tab"
+                      aria-selected={storeAssetForm.kind === item}
+                      aria-disabled={storeAssetForm.kind !== item}
+                      disabled={storeAssetForm.kind !== item}
+                    >
+                      {l(KIND_LABELS[item].zh, KIND_LABELS[item].en)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <label className="project-assets-store__field is-full">
+                <span>
+                  {storeAssetForm.kind === 'scene'
+                    ? l('场景名称', 'Scene name')
+                    : storeAssetForm.kind === 'prop'
+                      ? l('道具名称', 'Prop name')
+                      : l('资产名称', 'Asset name')}
+                </span>
+                <Input
+                  value={storeAssetForm.name}
+                  maxLength={30}
+                  showCount
+                  placeholder={storeAssetForm.sourceAsset?.name}
+                  onChange={(event) => patchStoreAssetForm({ name: event.target.value })}
+                />
+              </label>
+
+              {storeAssetForm.kind === 'role' && (
+                <>
+                  <label className="project-assets-store__field is-required">
+                    <span>{l('性别', 'Gender')}</span>
+                    <StudioSelect
+                      popupClassName="project-assets-store__select-popup"
+                      value={storeAssetForm.gender || undefined}
+                      placeholder={l('请选择', 'Choose')}
+                      loading={storeAssetRoleOptionsLoading}
+                      status={storeAssetRoleOptionsError ? 'error' : undefined}
+                      options={storeAssetRoleGenderOptions}
+                      onDropdownVisibleChange={(open) => {
+                        if (open && storeAssetRoleOptionsError) {
+                          setStoreAssetRoleOptionsRetryToken((current) => current + 1)
+                        }
+                      }}
+                      onChange={(value) => patchStoreAssetForm({ gender: String(value) })}
+                    />
+                  </label>
+
+                  <label className="project-assets-store__field is-required">
+                    <span>{l('年龄', 'Age')}</span>
+                    <StudioSelect
+                      popupClassName="project-assets-store__select-popup"
+                      value={storeAssetForm.ageGroup || undefined}
+                      placeholder={l('请选择', 'Choose')}
+                      loading={storeAssetRoleOptionsLoading}
+                      status={storeAssetRoleOptionsError ? 'error' : undefined}
+                      options={storeAssetRoleAgeOptions}
+                      onDropdownVisibleChange={(open) => {
+                        if (open && storeAssetRoleOptionsError) {
+                          setStoreAssetRoleOptionsRetryToken((current) => current + 1)
+                        }
+                      }}
+                      onChange={(value) => patchStoreAssetForm({ ageGroup: String(value) })}
+                    />
+                  </label>
+                </>
+              )}
+
+              <label className="project-assets-store__field is-required">
+                <span>{l('风格', 'Style')}</span>
+                <StudioSelect
+                  popupClassName="project-assets-store__select-popup"
+                  value={selectedStoreAssetStyleId === null ? undefined : String(selectedStoreAssetStyleId)}
+                  placeholder={l('请选择', 'Choose')}
+                  loading={storeAssetVisualStylesLoading}
+                  disabled={storeAssetImagesLoading || !selectedStoreAssetImage}
+                  status={storeAssetVisualStylesError || (
+                    selectedStoreAssetStyleId !== null
+                    && !storeAssetStyleReady
+                    && !storeAssetVisualStylesLoading
+                  ) ? 'error' : undefined}
+                  options={storeAssetStyleOptions}
+                  onDropdownVisibleChange={(open) => {
+                    if (open && storeAssetVisualStylesError) {
+                      setStoreAssetVisualStylesRetryToken((current) => current + 1)
+                    }
+                  }}
+                  onChange={(value) => patchStoreAssetForm({ visualStyleId: getPositiveInteger(value) })}
+                />
+                {selectedStoreAssetStyleId !== null
+                  && !storeAssetStyleReady
+                  && !storeAssetVisualStylesLoading
+                  && !storeAssetVisualStylesError && (
+                    <small className="project-assets-store__field-error">
+                      {l('原图片风格已不可用，请重新选择', 'The image style is unavailable; choose another style')}
+                    </small>
+                  )}
+              </label>
+
+              {storeAssetForm.kind === 'role' && (
+                <>
+                  <label className="project-assets-store__field is-required">
+                    <span>{l('国别', 'Nationality')}</span>
+                    <StudioSelect
+                      popupClassName="project-assets-store__select-popup"
+                      value={storeAssetForm.countryType || undefined}
+                      placeholder={l('请选择', 'Choose')}
+                      loading={storeAssetRoleOptionsLoading}
+                      status={storeAssetRoleOptionsError ? 'error' : undefined}
+                      options={storeAssetRoleCountryOptions}
+                      onDropdownVisibleChange={(open) => {
+                        if (open && storeAssetRoleOptionsError) {
+                          setStoreAssetRoleOptionsRetryToken((current) => current + 1)
+                        }
+                      }}
+                      onChange={(value) => patchStoreAssetForm({ countryType: String(value) })}
+                    />
+                  </label>
+                </>
+              )}
+
+              {Boolean(storeAssetRoleOptionsError || storeAssetVisualStylesError) && (
+                <small className="project-assets-store__form-error">
+                  {l('选项加载失败，请展开对应下拉框重试', 'Options failed to load; reopen the affected menu to retry')}
+                </small>
+              )}
+            </aside>
+          </div>
+
+          <footer className="project-assets-store__footer">
+            <Button
+              type="primary"
+              loading={storeAssetPending}
+              disabled={!storeAssetReady}
+              onClick={() => { void confirmStoreAsset() }}
+            >
+              {l('存入空间', 'Save to space')}
+            </Button>
+          </footer>
+        </div>
       </Modal>
 
       <VoiceLibraryModal

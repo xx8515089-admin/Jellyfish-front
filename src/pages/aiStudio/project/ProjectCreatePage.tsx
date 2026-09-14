@@ -77,7 +77,8 @@ const ProjectClipEditingStep = lazy(loadProjectClipEditingStep)
 
 const MAX_NAME_LENGTH = 100
 const RECOMMENDED_SCRIPT_LENGTH = 50
-const FALLBACK_RATIOS = ['9:16', '4:3', '16:9', '3:4', '1:1', '21:9']
+const DEFAULT_VIDEO_RATIO = '16:9'
+const FALLBACK_RATIOS = [DEFAULT_VIDEO_RATIO, '9:16', '4:3', '3:4', '1:1', '21:9']
 const SCRIPT_IMPORT_ACCEPT = '.txt,.md,.doc,.docx'
 const VISUAL_STYLE_NAMES_SESSION_KEY_PREFIX = 'jellyfish:studio:visual-style-names'
 const STORYBOARD_RESTORE_POINT_STORAGE_KEY_PREFIX = 'jellyfish:project-creation:v2:storyboard-restore-point'
@@ -842,7 +843,7 @@ const ProjectCreatePage: React.FC = () => {
     episodeSavedSignaturesRef.current = createEpisodeSaveSignatures(nextEpisodes)
   }, [])
   const [ratio, setRatio] = useState(
-    resumeSnapshot ? resumeSnapshot.videoRatio ?? '9:16' : shouldRestoreProjectDraft ? restoredDraft?.ratio ?? '9:16' : '9:16',
+    resumeSnapshot ? resumeSnapshot.videoRatio ?? DEFAULT_VIDEO_RATIO : shouldRestoreProjectDraft ? restoredDraft?.ratio ?? DEFAULT_VIDEO_RATIO : DEFAULT_VIDEO_RATIO,
   )
   const [targetMarket, setTargetMarket] = useState(
     resumeSnapshot ? resumeSnapshot.targetMarket ?? 'overseas' : shouldRestoreProjectDraft ? restoredDraft?.targetMarket ?? 'overseas' : 'overseas',
@@ -1182,7 +1183,7 @@ const ProjectCreatePage: React.FC = () => {
         setActiveEpisodeIndex(nextActiveEpisodeIndex)
         setRatio(typeof fullDraft.ratio === 'string' && FALLBACK_RATIOS.includes(fullDraft.ratio)
           ? fullDraft.ratio
-          : '9:16')
+          : DEFAULT_VIDEO_RATIO)
         setTargetMarket(typeof fullDraft.targetMarket === 'string'
           ? fullDraft.targetMarket
           : 'overseas')
@@ -1376,7 +1377,7 @@ const ProjectCreatePage: React.FC = () => {
         }
         setName(detail.title ?? '')
         setScript(restoredScript)
-        setRatio(detail.videoRatio ?? '9:16')
+        setRatio(detail.videoRatio ?? DEFAULT_VIDEO_RATIO)
         setTargetMarket(detail.targetMarket ?? 'overseas')
         setImportedFileName(restoredFileName)
         setImportedFileType(restoredFileType)

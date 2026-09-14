@@ -26,7 +26,7 @@ test('history references attach existing file IDs instead of fetching remote ima
 
 test('history and reference thumbnails keep API image URLs for display while downloads use file IDs', () => {
   assert.match(workspaceSource, /resolveAssetUrl\(reference\.url\s*\?\?\s*reference\.fileId\)/)
-  assert.match(workspaceSource, /resolveAssetUrl\(item\.imageUrl\s*\?\?\s*item\.fileId\s*\?\?\s*item\.thumbnailUrl\)/)
+  assert.match(workspaceSource, /resolveAssetUrl\(item\.imageUrl\s*\?\?\s*item\.fileUrl\s*\?\?\s*item\.fileId\s*\?\?\s*item\.thumbnailUrl\)/)
   assert.match(workspaceSource, /resolveAssetUrl\(item\.coverUrl\s*\?\?\s*item\.coverFileId\)/)
   assert.match(workspaceSource, /const\s+downloadPreviewImage\s*=\s*async\s*\(\)\s*=>/)
   assert.match(workspaceSource, /await\s+downloadMediaFile\(fileId\)/)

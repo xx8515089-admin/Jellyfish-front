@@ -342,6 +342,27 @@
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--project-create-primary) 16%, transparent);
 }
 
+.asset-generation-workspace__history-origin-badge {
+  position: absolute;
+  z-index: 1;
+  right: 3px;
+  bottom: 3px;
+  max-width: 50px;
+  padding: 1px 4px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.48);
+  border-radius: 3px;
+  background: rgba(21, 33, 54, 0.84);
+  color: #fff;
+  font-size: 8px;
+  font-weight: 600;
+  line-height: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  backdrop-filter: blur(3px);
+}
+
 .asset-generation-workspace__history-loading {
   width: 56px;
   height: 56px;
@@ -1142,10 +1163,7 @@
   border-color: rgba(24, 34, 48, 0.72);
   background: #fff;
   color: #182230;
-  box-shadow:
-    0 0 0 2px rgba(255, 255, 255, 0.96),
-    0 0 0 3px rgba(24, 34, 48, 0.45),
-    0 10px 22px rgba(16, 24, 40, 0.18);
+  box-shadow: 0 10px 22px rgba(16, 24, 40, 0.18);
 }
 
 .asset-generation-workspace__look-main.is-selected:hover {

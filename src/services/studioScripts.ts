@@ -665,10 +665,14 @@ export const StudioScriptsApi = {
     return {
       cancel: () => request.cancel(),
       promise: request.then((response) => {
-        const episodes = unwrapApiData<StudioScriptAssetEpisode[]>(
-          response,
-          'Script asset episodes loading failed',
-        )
+        if (response.code !== 200 || !Array.isArray(response.data)) {
+          const error = new Error(response.message || 'Script asset episodes loading failed') as Error & {
+            status?: number
+          }
+          error.status = response.code
+          throw error
+        }
+        const episodes = response.data
         return [...episodes].sort((left, right) => left.index - right.index)
       }),
     }
@@ -679,12 +683,11 @@ export const StudioScriptsApi = {
     return {
       cancel: () => request.cancel(),
       promise: request.then((response) => {
-        const status = response.code ?? 200
-        if (status >= 400 || response.data === null || response.data === undefined) {
+        if (response.code !== 200 || response.data === null || response.data === undefined) {
           const error = new Error(response.message || 'Script assets loading failed') as Error & {
             status?: number
           }
-          error.status = status
+          error.status = response.code
           throw error
         }
         return response.data
