@@ -1,9 +1,11 @@
+import { cloudAssetUrl } from './cloudAssetRuntime';
 import { useEffect, useState } from "react";
 import { getStoredAssetKey, localAssetBinaryStorage } from "./localAssetBinaryStorage";
 
-export function useResolvedLocalAssetUrl(asset: { url: string; storageKey?: string } | undefined) {
-  const storageKey = asset?.storageKey ?? (asset ? getStoredAssetKey(asset.url) : null);
-  const directUrl = asset && !storageKey ? asset.url : undefined;
+export function useResolvedLocalAssetUrl(asset: { url: string; storageKey?: string; cloudFileId?: number; sourceType?: string } | undefined) {
+  const cloudUrl = asset?.cloudFileId != null ? cloudAssetUrl(asset.cloudFileId, asset.sourceType === 'image') : undefined;
+  const storageKey = cloudUrl ? null : asset?.storageKey ?? (asset ? getStoredAssetKey(asset.url) : null);
+  const directUrl = cloudUrl ?? (asset && !storageKey ? asset.url : undefined);
   const [resolvedUrl, setResolvedUrl] = useState<string | undefined>(directUrl);
 
   useEffect(() => {

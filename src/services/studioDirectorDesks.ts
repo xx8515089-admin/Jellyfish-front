@@ -1,5 +1,5 @@
 import { OpenAPI } from './generated'
-import { request } from './generated/core/request'
+import { request, getHeaders } from './generated/core/request'
 import type { ApiRequestOptions } from './generated/core/ApiRequestOptions'
 import type { DirectorProject } from '../pages/directorDesk/runtime/editor/schema/directorProject'
 import type { ViewportAspectRatio } from '../pages/directorDesk/runtime/editor/schema/viewportAspectRatio'
@@ -59,6 +59,37 @@ export interface DirectorImageReference extends DirectorReference {
   useOnly: string
   doNotUse: string
 }
+export interface DirectorDraft {
+  directorDeskId: DirectorId
+  draftRevisionNo: number
+  baseRevisionNo: number
+  latestRevisionNo: number
+  hasDraft: boolean
+  conflict: boolean
+  projectSchemaVersion: number | null
+  project: DirectorProject | null
+  viewSettings: DirectorSnapshot['viewSettings'] | null
+  characterBindings: DirectorBinding[] | null
+}
+export interface DirectorApplication {
+  applicationRevisionNo: number
+  fileId: DirectorId | null
+  directorDeskId: DirectorId | null
+  directorRevisionNo: number | null
+  imageReferences: DirectorImageReference[]
+  videoReferenceSelection: DirectorReferenceSelection | null
+  alreadyApplied: boolean
+}
+export interface DirectorOrigin {
+  fileId: DirectorId
+  directorDeskId: DirectorId
+  directorRevisionNo: number
+  name: string
+  deleted: boolean
+}
+export interface DirectorAssetFile {
+  id: number; relativePath: string; sha256: string; byteSize: number; contentType: string; dependencies: string[]
+}
 
 export function buildDirectorImageReferences(reference: DirectorReference, bindings: DirectorBinding[]): DirectorImageReference[] {
   if (reference.referenceType !== 5) throw new Error('生图垫图必须是图片，不能使用视频参考类型')
@@ -81,6 +112,30 @@ const get = <T>(path: string, query: Record<string, unknown>) => call<T>({ metho
 const post = <T>(path: string, body: unknown) => call<T>({ method: 'POST', url: `/api/v1/studio/${path}`, body, mediaType: 'application/json' })
 
 export const StudioDirectorDesks = {
+  downloadAsset: async (id: number) => {
+    const url = `/api/v1/studio/directorDesks/assets/download?id=${id}`
+    const headers = await getHeaders(OpenAPI, { method: 'GET', url })
+    const response = await fetch(`${OpenAPI.BASE}${url}`, { headers, credentials: OpenAPI.WITH_CREDENTIALS ? OpenAPI.CREDENTIALS : 'same-origin' })
+    if (!response.ok) {
+      const result = await response.json().catch(() => null)
+      throw new Error(result?.message || `素材下载失败（${response.status}）`)
+    }
+    return response.blob()
+  },
+  openForSegment: (segmentId: DirectorId, id?: DirectorId) => post<{ outcome: 'created' | 'restored' | 'choose'; desk: DirectorDesk | null; candidates: DirectorDeskSummary[]; total: number }>('directorDesks/openForSegment', { segmentId, id }),
+  draft: (id: DirectorId) => get<DirectorDraft>('directorDesks/draft', { id }),
+  saveDraft: (body: DirectorSnapshot & { id: DirectorId; baseRevisionNo: number; expectedDraftRevisionNo: number; characterBindings: DirectorBinding[] }) => post<DirectorDraft>('directorDesks/saveDraft', body),
+  discardDraft: (id: DirectorId, expectedDraftRevisionNo: number) => post<DirectorDraft>('directorDesks/discardDraft', { id, expectedDraftRevisionNo }),
+  publishDraft: (id: DirectorId, expectedDraftRevisionNo: number, expectedRevisionNo: number) => post<{ desk: DirectorDesk; draft: DirectorDraft }>('directorDesks/publishDraft', { id, expectedDraftRevisionNo, expectedRevisionNo }),
+  revisions: (id: DirectorId, page = 1) => get<{ items: { revisionNo: number; createdAt: string }[]; total: number }>('directorDesks/revisions', { id, page, pageSize: 20 }),
+  bindingStatus: (id: DirectorId, revisionNo?: number) => get<{ items: { objectId: string; status: string; message: string }[] }>('directorDesks/bindingStatus', { id, revisionNo }),
+  segmentApplications: (segmentId: DirectorId) => get<{ image: DirectorApplication; video: DirectorApplication }>('directorDesks/segmentApplications', { segmentId }),
+  applyCapture: (body: { fileId: DirectorId; segmentId: DirectorId; target: 'image' | 'video'; expectedApplicationRevisionNo: number; expectedReferenceRevisionNo?: number; modelId?: DirectorId; includeCharacters: boolean }) => post<DirectorApplication>('directorDesks/applyCapture', body),
+  generationOrigins: (generationType: 'image' | 'video', generationId: DirectorId) => get<{ origins: DirectorOrigin[] }>('directorDesks/generationOrigins', { generationType, generationId }),
+  forkRevision: (directorDeskId: DirectorId, revisionNo: number, segmentId?: DirectorId) => post<DirectorDesk>('directorDesks/forkRevision', { directorDeskId, revisionNo, segmentId }),
+  uploadAsset: (directorDeskId: DirectorId, file: File, relativePath: string) => call<DirectorAssetFile>({ method: 'POST', url: '/api/v1/studio/directorDesks/assets/upload', formData: { directorDeskId, file, relativePath } }),
+  assets: (directorDeskId: DirectorId) => get<DirectorAssetFile[]>('directorDesks/assets/list', { directorDeskId }),
+  validateAssets: (directorDeskId: DirectorId, files: { assetFileId: number; sha256: string }[]) => post<{ valid: boolean; files: { assetFileId: number; status: string; message: string }[] }>('directorDesks/assets/validate', { directorDeskId, files }),
   list: (query: { page: number; pageSize: number; keyword?: string; segmentId?: DirectorId }) =>
     get<{ items: DirectorDeskSummary[]; page: number; pageSize: number; total: number }>('directorDesks/list', query),
   create: (name: string, segmentId?: DirectorId) => post<DirectorDesk>('directorDesks/create', { name, segmentId }),

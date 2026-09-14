@@ -1,3 +1,4 @@
+import { directorLoader } from '../loaders/cloudAssetRuntime';
 import { Html, Line, TransformControls, type TransformControlsProps } from "@react-three/drei";
 import { useLoader, type ThreeEvent } from "@react-three/fiber";
 import { Component, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
@@ -201,19 +202,19 @@ function NormalizedImportedObject({ color, object }: { color?: string; object: O
 }
 
 function FbxModel({ color, url }: { color?: string; url: string }) {
-  const object = useLoader(FBXLoader, url);
+  const object = useLoader(directorLoader(FBXLoader, url), url);
 
   return <NormalizedImportedObject color={color} object={object} />;
 }
 
 function ObjModel({ color, url }: { color?: string; url: string }) {
-  const object = useLoader(OBJLoader, url);
+  const object = useLoader(directorLoader(OBJLoader, url), url);
 
   return <NormalizedImportedObject color={color} object={object} />;
 }
 
 function GlbModel({ color, url }: { color?: string; url: string }) {
-  const loaded = useLoader(GLTFLoader, url);
+  const loaded = useLoader(directorLoader(GLTFLoader, url), url);
 
   return <NormalizedImportedObject color={color} object={loaded.scene} />;
 }

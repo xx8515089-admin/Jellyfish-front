@@ -1,3 +1,4 @@
+import { directorLoader } from '../loaders/cloudAssetRuntime';
 /* eslint-disable react/no-unknown-property -- React Three Fiber 使用 Three.js 对象属性扩展了 JSX。 */
 import { useFrame, useLoader } from "@react-three/fiber";
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
@@ -836,7 +837,7 @@ function ExternalFbxAnimationClip({ animation, ...props }: {
   playbackMode?: CharacterActionPlaybackMode;
   scene: Object3D;
 }) {
-  const source = useLoader(FBXLoader, animation.url);
+  const source = useLoader(directorLoader(FBXLoader, animation.url), animation.url);
   const sourceClip = source.animations.find((clip) => clip.name === animation.clipName) ?? source.animations[0] ?? null;
   return <PreparedExternalAnimationClip {...props} sourceClip={sourceClip} sourceScene={source} />;
 }
@@ -851,7 +852,7 @@ function ExternalGlbAnimationClip({ animation, ...props }: {
   playbackMode?: CharacterActionPlaybackMode;
   scene: Object3D;
 }) {
-  const source = useLoader(GLTFLoader, animation.url);
+  const source = useLoader(directorLoader(GLTFLoader, animation.url), animation.url);
   const sourceClip = source.animations.find((clip) => clip.name === animation.clipName) ?? source.animations[0] ?? null;
   return <PreparedExternalAnimationClip {...props} sourceClip={sourceClip} sourceScene={source.scene} />;
 }
@@ -993,7 +994,7 @@ function LoadedMixamoCharacter({
 }
 
 function MixamoFbxCharacter(props: MixamoCharacterModelProps) {
-  const loaded = useLoader(FBXLoader, props.url);
+  const loaded = useLoader(directorLoader(FBXLoader, props.url), props.url);
   const useProceduralBuiltInAction = shouldUseProceduralBuiltInAction(
     props.url,
     props.actionPresetId,
@@ -1009,7 +1010,7 @@ function MixamoFbxCharacter(props: MixamoCharacterModelProps) {
 }
 
 function MixamoGlbCharacter(props: MixamoCharacterModelProps) {
-  const loaded = useLoader(GLTFLoader, props.url);
+  const loaded = useLoader(directorLoader(GLTFLoader, props.url), props.url);
   const isRobotExpressive = /robot-expressive\.glb(?:$|[?#])/i.test(props.url);
   const isSoldier = /soldier\.glb(?:$|[?#])/i.test(props.url);
   const retargetMode: MixamoRetargetMode = isRobotExpressive || isSoldier ? "direct" : "local-rest";

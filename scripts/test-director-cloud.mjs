@@ -4,6 +4,7 @@ import { File } from 'node:buffer'
 import { test } from 'node:test'
 import vm from 'node:vm'
 import ts from 'typescript'
+import { webcrypto } from 'node:crypto'
 
 function load(path, imports = {}, globals = {}) {
   const exports = {}
@@ -58,6 +59,7 @@ function captureHarness(exportFrame) {
     './runtime/editor/store/directorStore': { useDirectorStore: { getState: () => state, subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener) } } },
     './runtime/editor/runtime/playbackRuntime': { getRuntimePlaybackProgress: () => state.cameraMotionProgress },
     './runtime/editor/io/projectDocument': { parseDirectorProjectDocument: (value) => value.project },
+    './runtime/editor/io/referenceVideoExport': { requestReferenceVideoExport: async () => { throw new Error('not used') } },
     './runtime/editor/io/cleanFrameExport': { requestCleanFrameExport: () => exportFrame(update) },
   })
   return { module, update, state: () => state, listeners }
@@ -115,4 +117,70 @@ test('API rejects business errors, bounds snapshot size and keeps multipart head
   assert.equal(refs[1].referenceType, 5)
   assert.ok(refs.every((item) => item.useOnly && item.doNotUse))
   assert.throws(() => buildDirectorImageReferences({ referenceType: 7, fileId: 100 }, []), /必须是图片/)
+})
+
+test('cloud restoration rejects invalid manifests and corrupted downloads before registering resources', async () => {
+  let valid = false
+  let downloads = 0
+  let registered = 0
+  const blob = new Blob(['model'])
+  const hash = Buffer.from(await webcrypto.subtle.digest('SHA-256', await blob.arrayBuffer())).toString('hex')
+  const module = load('../src/pages/directorDesk/directorCloudAssets.ts', {
+    '../../services/studioDirectorDesks': { StudioDirectorDesks: {
+      validateAssets: async () => ({ valid, files: [{ assetFileId: 3, status: valid ? 'available' : 'missingDependency', message: 'missing dependency' }] }),
+      downloadAsset: async () => { downloads++; return blob },
+    } },
+    './runtime/editor/loaders/cloudAssetRuntime': { registerCloudPackage: () => { registered++ } },
+    './runtime/editor/loaders/localAssetBinaryStorage': {},
+  }, { crypto: webcrypto, TextDecoder })
+  const desk = { id: 1, project: { assets: [], jellyfishCloudAssets: [{ assetFileId: 3, relativePath: 'test.bin', byteSize: 5, sha256: hash }] } }
+  await assert.rejects(module.restoreCloudAssets(desk), /missing dependency/)
+  assert.equal(downloads, 0)
+  valid = true
+  desk.project.jellyfishCloudAssets[0].sha256 = '0'.repeat(64)
+  await assert.rejects(module.restoreCloudAssets(desk), /SHA-256/)
+  assert.equal(registered, 0)
+  desk.project.jellyfishCloudAssets[0].sha256 = hash
+  await module.restoreCloudAssets(desk)
+  assert.equal(registered, 1)
+})
+
+test('cloud loaders resolve only their own manifest and isolate loader instances', () => {
+  class LoadingManager { setURLModifier(modifier) { this.modifier = modifier } }
+  class Loader {}
+  let sequence = 0
+  const module = load('../src/pages/directorDesk/runtime/editor/loaders/cloudAssetRuntime.ts', {
+    three: { LoadingManager, DefaultLoadingManager: {} },
+  }, { URL: class extends URL { static createObjectURL() { return `blob:test-${++sequence}` } static revokeObjectURL() {} } })
+  module.registerCloudPackage('one', [{ id: 1, path: 'model.glb', blob: new Blob() }, { id: 2, path: 'textures/a.png', blob: new Blob() }])
+  const url = module.cloudAssetUrl(1)
+  const Constructor = module.directorLoader(Loader, url)
+  assert.notEqual(Constructor, Loader)
+  assert.equal(module.directorLoader(Loader, url), Constructor)
+  assert.equal(module.directorLoader(Loader, '/built-in.glb'), Loader)
+  const loader = new Constructor()
+  assert.equal(loader.manager.modifier(new URL('textures/a.png', url).href), 'blob:test-2')
+  assert.throws(() => loader.manager.modifier('https://external.example/a.png'), /缺少已验证依赖/)
+  assert.throws(() => loader.manager.modifier(new URL('../other.bin', url).href), /缺少已验证依赖/)
+})
+
+test('draft, publication and application keep independent versions and propagate conflicts without retry', async () => {
+  const calls = []
+  const { StudioDirectorDesks: api } = load('../src/services/studioDirectorDesks.ts', {
+    './generated': { OpenAPI: {} },
+    './generated/core/request': { request: async (_, options) => {
+      calls.push(options)
+      return options.url.endsWith('publishDraft') ? { code: 502, message: 'publication conflict' } : { code: 200, data: {} }
+    } },
+  })
+  await api.saveDraft({ ...snapshot(), id: 1, baseRevisionNo: 4, expectedDraftRevisionNo: 12, characterBindings: [] })
+  await assert.rejects(api.publishDraft(1, 13, 4), /publication conflict/)
+  await api.applyCapture({ segmentId: 2, fileId: 3, target: 'video', modelId: 5, includeCharacters: false, expectedApplicationRevisionNo: 7, expectedReferenceRevisionNo: 20 })
+  assert.equal(calls.length, 3)
+  assert.equal(calls[0].body.baseRevisionNo, 4)
+  assert.equal(calls[0].body.expectedDraftRevisionNo, 12)
+  assert.equal(calls[1].body.expectedRevisionNo, 4)
+  assert.equal(calls[1].body.expectedDraftRevisionNo, 13)
+  assert.equal(calls[2].body.expectedApplicationRevisionNo, 7)
+  assert.equal(calls[2].body.expectedReferenceRevisionNo, 20)
 })

@@ -70,6 +70,7 @@ export interface CharacterRigState {
 }
 
 export interface DirectorAssetRef {
+  cloudFileId?: number;
   id: string;
   kind: DirectorAssetKind;
   sourceType: "model" | "image";
@@ -95,6 +96,7 @@ export interface DirectorAnimationClipRef {
 }
 
 export interface DirectorAnimationAssetRef {
+  cloudFileId?: number;
   id: string;
   name: string;
   fileName: string;
@@ -208,6 +210,7 @@ export interface DirectorCameraShot {
 }
 
 export interface DirectorProject {
+  jellyfishCloudAssets?: { assetFileId: number; relativePath: string; sha256: string; byteSize: number }[];
   version: 1;
   scene: SceneSettings;
   assets: DirectorAssetRef[];

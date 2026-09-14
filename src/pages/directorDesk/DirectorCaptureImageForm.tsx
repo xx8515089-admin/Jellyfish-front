@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Alert, Button, Input, Select, Space, Typography, message } from 'antd'
 import { StudioModelsApi, type StudioGenerationModel } from '../../services/studioModels'
-import { StudioDirectorDesks, buildDirectorImageReferences, type DirectorBinding, type DirectorReference } from '../../services/studioDirectorDesks'
+import { StudioDirectorDesks, buildDirectorImageReferences, type DirectorImageReference, type DirectorBinding, type DirectorReference } from '../../services/studioDirectorDesks'
 import { getApiErrorMessage } from '../../services/apiErrors'
 
-export default function DirectorCaptureImageForm({ reference, bindings, segmentId, aspectRatio }: {
-  reference: DirectorReference; bindings: DirectorBinding[]; segmentId: string; aspectRatio: string
+export default function DirectorCaptureImageForm({ reference, bindings, segmentId, aspectRatio, includeCharacters, savedReferences }: {
+  reference: DirectorReference; bindings: DirectorBinding[]; segmentId: string; aspectRatio: string; includeCharacters: boolean; savedReferences?: DirectorImageReference[]
 }) {
+  const [appliedReferences, setAppliedReferences] = useState<DirectorImageReference[] | null>(null)
   const [models, setModels] = useState<StudioGenerationModel[]>([])
   const [modelId, setModelId] = useState<number>()
   const [resolution, setResolution] = useState<number>()
@@ -18,7 +19,8 @@ export default function DirectorCaptureImageForm({ reference, bindings, segmentI
   const [retry, setRetry] = useState(0)
   const model = models.find((item) => item.id === modelId)
   const capabilities = model?.imageCapabilities
-  const references = buildDirectorImageReferences(reference, bindings)
+  const references = appliedReferences ?? buildDirectorImageReferences(reference, bindings)
+  useEffect(() => { setAppliedReferences(savedReferences ?? null) }, [includeCharacters, modelId, savedReferences])
   useEffect(() => {
     let active = true
     setError('')
@@ -48,8 +50,18 @@ export default function DirectorCaptureImageForm({ reference, bindings, segmentI
     {!supported && model && <Alert type="warning" message="此模型不支持当前垫图画幅、参考数量，或未提供图片能力配置。请选择其他模型。" />}
     {references.map((item, index) => <Typography.Text key={`${item.referenceType}-${item.fileId}`}>第 {index + 1} 张：{item.displayName}；仅用于{item.useOnly}</Typography.Text>)}
     <Input.TextArea aria-label="生成图片提示词" rows={4} value={prompt} disabled={busy || submitted} maxLength={capabilities?.maxPromptCharacters || undefined} placeholder="描述最终画面，并确认对应关系，例如：画面左侧人物使用第 1 张角色图，右侧人物使用第 2 张角色图……" onChange={(event) => setPrompt(event.target.value)} />
-    <Button type="primary" loading={busy} disabled={submitted || !supported || !modelId || resolution == null || !prompt.trim()} onClick={async () => {
-      if (busy || submitted || !modelId || resolution == null || !supported) return
+    <Button loading={busy} disabled={busy || !modelId || submitted} onClick={async () => {
+      setBusy(true)
+      try {
+        const current = await StudioDirectorDesks.segmentApplications(segmentId)
+        const applied = await StudioDirectorDesks.applyCapture({ segmentId, fileId: reference.fileId, target: 'image', modelId, includeCharacters, expectedApplicationRevisionNo: current.image.applicationRevisionNo })
+        setAppliedReferences(applied.imageReferences)
+        message.success('已应用到片段图片，尚未发起生成')
+      } catch (reason) { message.error(getApiErrorMessage(reason)) }
+      finally { setBusy(false) }
+    }}>应用到片段图片</Button>
+    <Button type="primary" loading={busy} disabled={!appliedReferences || submitted || !supported || !modelId || resolution == null || !prompt.trim()} onClick={async () => {
+      if (!appliedReferences || busy || submitted || !modelId || resolution == null || !supported) return
       setBusy(true)
       try {
         await StudioDirectorDesks.generateImage({ segmentId, modelId, resolution, quality, prompt: prompt.trim(), aspectRatio, visualStyleId: 5, references })

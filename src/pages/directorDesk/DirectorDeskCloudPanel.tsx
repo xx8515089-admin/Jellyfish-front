@@ -1,13 +1,17 @@
+import { PlusOutlined, CopyOutlined, CloudOutlined, SaveOutlined, TeamOutlined, FolderOpenOutlined, UploadOutlined, HistoryOutlined, DownOutlined, FileOutlined, DeleteOutlined } from '@ant-design/icons'
+import './directorCloudPanel.css'
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Button, Image, Input, InputNumber, List, Modal, Pagination, Popconfirm, Select, Space, Tag, Typography, message } from 'antd'
-import { StudioDirectorDesks as api, type DirectorBinding, type DirectorCapture, type DirectorDesk, type DirectorDeskSummary, type DirectorReference, type DirectorReferenceSelection } from '../../services/studioDirectorDesks'
-import { StudioAssetGenerationApi, type StudioStoryboardVideoReferenceOption } from '../../services/studioAssetGeneration'
+import { Alert, Button, Checkbox, Dropdown, Image, Input, InputNumber, List, Modal, Pagination, Popconfirm, Select, Space, Typography, message } from 'antd'
+import { StudioDirectorDesks as api, type DirectorDraft, type DirectorBinding, type DirectorCapture, type DirectorDesk, type DirectorDeskSummary, type DirectorReference, type DirectorReferenceSelection } from '../../services/studioDirectorDesks'
+import { useDirectorCharacterOptions } from './useDirectorCharacterOptions'
 import { getApiErrorMessage } from '../../services/apiErrors'
 import { useDirectorStore } from './runtime/editor/store/directorStore'
-import { captureDirectorSnapshot, readDirectorSnapshot } from './directorCloudSnapshot'
+import { captureDirectorSnapshot, captureDirectorVideoSnapshot, readDirectorSnapshot } from './directorCloudSnapshot'
 import { parseDirectorProjectDocument } from './runtime/editor/io/projectDocument'
 import { StudioModelsApi, type StudioGenerationModel } from '../../services/studioModels'
 import DirectorCaptureImageForm from './DirectorCaptureImageForm'
+import { restoreCloudAssets, uploadProjectAssets, copyCloudAssets } from './directorCloudAssets'
+import { clearCloudPackages } from './runtime/editor/loaders/cloudAssetRuntime'
 import { saveAndUploadDirectorFrame } from './directorCloudUpload'
 
 interface Props {
@@ -20,6 +24,21 @@ interface Props {
 const fingerprint = (bindings: DirectorBinding[]) => JSON.stringify({ ...readDirectorSnapshot(), characterBindings: bindings })
 
 export default function DirectorDeskCloudPanel({ editorRoot, initialSegmentId, onOpen, cloudReady, onDirtyChange }: Props) {
+  const draft = useRef<DirectorDraft | null>(null)
+  const draftFingerprint = useRef('')
+  const [draftStatus, setDraftStatus] = useState('')
+  const [pendingDraft, setPendingDraft] = useState<{ desk: DirectorDesk; draft: DirectorDraft } | null>(null)
+  const [changeNo, setChangeNo] = useState(0)
+  const [chooseSegment, setChooseSegment] = useState(false)
+  const [includeCharacters, setIncludeCharacters] = useState(true)
+  const [bindingStatuses, setBindingStatuses] = useState<{ objectId: string; status: string; message: string }[]>([])
+  const [revisionItems, setRevisionItems] = useState<{ revisionNo: number; createdAt: string }[]>([])
+  const [revisionPage, setRevisionPage] = useState(1)
+  const [revisionTotal, setRevisionTotal] = useState(0)
+  const [assetsOpen, setAssetsOpen] = useState(false)
+  const filesInput = useRef<HTMLInputElement | null>(null)
+  const folderInput = useRef<HTMLInputElement | null>(null)
+  const [dependencyFiles, setDependencyFiles] = useState<File[]>([])
   const [desk, setDesk] = useState<DirectorDesk | null>(null)
   const [bindings, setBindings] = useState<DirectorBinding[]>([])
   const [dirty, setDirty] = useState(false)
@@ -33,6 +52,7 @@ export default function DirectorDeskCloudPanel({ editorRoot, initialSegmentId, o
   const [total, setTotal] = useState(0)
   const [keyword, setKeyword] = useState('')
   const [name, setName] = useState('新导演台工程')
+  const [newProjectName, setNewProjectName] = useState('')
   const [segmentId, setSegmentId] = useState(initialSegmentId || '')
   const [captures, setCaptures] = useState<DirectorCapture[]>([])
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -45,9 +65,31 @@ export default function DirectorDeskCloudPanel({ editorRoot, initialSegmentId, o
   const [videoModels, setVideoModels] = useState<StudioGenerationModel[]>([])
   const [modelId, setModelId] = useState<number | null>(null)
   const [selection, setSelection] = useState<DirectorReferenceSelection | null>(null)
-  const [options, setOptions] = useState<StudioStoryboardVideoReferenceOption[]>([])
+  const { options, loading: optionsLoading, error: optionsError, validTarget, refresh: refreshCharacterOptions } = useDirectorCharacterOptions(segmentId)
+  const [bindingStatusError, setBindingStatusError] = useState('')
   const [bindingOpen, setBindingOpen] = useState(false)
   const objects = useDirectorStore((state) => state.project.objects)
+
+  useEffect(() => {
+    if (!bindingOpen || !desk) return
+    let active = true
+    setBindingStatuses([])
+    setBindingStatusError('')
+    void api.bindingStatus(desk.id, desk.revisionNo).then((result) => {
+      if (active) setBindingStatuses(result.items)
+    }).catch((error) => {
+      if (active) setBindingStatusError(getApiErrorMessage(error))
+    })
+    return () => { active = false }
+  }, [bindingOpen, desk?.id, desk?.revisionNo])
+
+  function addDependencyFiles(files: File[]) {
+    setDependencyFiles((current) => {
+      const unique = new Map(current.map((file) => [file.webkitRelativePath || file.name, file]))
+      files.forEach((file) => unique.set(file.webkitRelativePath || file.name, file))
+      return [...unique.values()]
+    })
+  }
 
   async function run(work: () => Promise<void>) {
     if (lock.current) return
@@ -66,13 +108,26 @@ export default function DirectorDeskCloudPanel({ editorRoot, initialSegmentId, o
   }
 
   const refresh = async (nextPage = page, search = keyword) => {
-    const result = await api.list({ page: nextPage, pageSize: 12, keyword: search.trim() || undefined })
+    const result = await api.list({ page: nextPage, pageSize: 12, keyword: search.trim() || undefined, segmentId: chooseSegment ? initialSegmentId : undefined })
     setItems(result.items)
     setTotal(result.total)
     setPage(result.page)
   }
 
-  function activate(value: DirectorDesk) {
+  async function activate(value: DirectorDesk, history = false) {
+    if (!history && !value.deleted && value.revisionNo === value.latestRevisionNo) {
+      const stored = await api.draft(value.id)
+      if (stored.hasDraft) { setPendingDraft({ desk: value, draft: stored }); return }
+      await restoreCloudAssets(value)
+      draft.current = stored
+    } else { await restoreCloudAssets(value); draft.current = null }
+    loadDesk(value)
+  }
+
+  function loadDesk(value: DirectorDesk) {
+    setDraftStatus('')
+    draftFingerprint.current = ''
+
     if (!mounted.current) return
     parseDirectorProjectDocument({ format: '3d-director-desk-project', schemaVersion: value.projectSchemaVersion, project: value.project })
     baseline.current = JSON.stringify({ projectSchemaVersion: value.projectSchemaVersion, project: value.project, viewSettings: value.viewSettings, characterBindings: value.characterBindings })
@@ -85,11 +140,13 @@ export default function DirectorDeskCloudPanel({ editorRoot, initialSegmentId, o
     setHistoryOpen(false)
     setReference(null)
     setSelection(null)
-    setOptions([])
     const url = new URL(window.location.href)
     url.searchParams.set('cloudDeskId', String(value.id))
     url.searchParams.set('instanceId', value.instanceId)
+    if (!draft.current) url.searchParams.set('revisionNo', String(value.revisionNo))
+    else url.searchParams.delete('revisionNo')
     window.history.replaceState(window.history.state, '', url)
+    if ('jellyfishDetachedBindings' in value.project) message.warning('此副本包含已解除的失效绑定，请重新绑定角色')
     onOpen(value)
   }
 
@@ -101,14 +158,20 @@ export default function DirectorDeskCloudPanel({ editorRoot, initialSegmentId, o
   useEffect(() => {
     mounted.current = true
     const id = new URLSearchParams(window.location.search).get('cloudDeskId')
-    if (id) void run(async () => activate(await api.detail(id)))
+    const revisionNo = Number(new URLSearchParams(window.location.search).get('revisionNo')) || undefined
+    if (id) void run(async () => activate(await api.detail(id, revisionNo), !!revisionNo))
+    else if (initialSegmentId) void run(async () => {
+      const result = await api.openForSegment(initialSegmentId)
+      if (result.desk) await activate(result.desk)
+      else { setChooseSegment(true); setItems(result.candidates.slice(0, 12)); setTotal(result.total); setOpen(true) }
+    })
     // Initial cloud restoration is requested once, never as a retry after a failed save.
-    return () => { mounted.current = false }
+    return () => { mounted.current = false; clearCloudPackages() }
   }, [])
 
   useEffect(() => {
     if (!desk) return
-    const update = () => setDirty(fingerprint(bindings) !== baseline.current || name !== desk.name)
+    const update = () => { setDirty(fingerprint(bindings) !== baseline.current || name !== desk.name); setChangeNo((value) => value + 1) }
     update()
     return useDirectorStore.subscribe((next, previous) => {
       if (next.project !== previous.project || next.viewportAspectRatio !== previous.viewportAspectRatio || next.finishedShotFov !== previous.finishedShotFov || next.cameraMotionProgress !== previous.cameraMotionProgress) update()
@@ -118,7 +181,7 @@ export default function DirectorDeskCloudPanel({ editorRoot, initialSegmentId, o
   useEffect(() => {
     if (!cloudReady) return
     baseline.current = fingerprint(bindings)
-    setDirty(false)
+    setDirty(!!draft.current?.hasDraft)
   }, [cloudReady])
 
   useEffect(() => { onDirtyChange(dirty) }, [dirty, onDirtyChange])
@@ -130,23 +193,54 @@ export default function DirectorDeskCloudPanel({ editorRoot, initialSegmentId, o
     return () => window.removeEventListener('beforeunload', warn)
   }, [dirty])
 
-  async function save(snapshot = readDirectorSnapshot(), coverFileId?: string | number) {
-    if (!desk) throw new Error('请先创建或打开云工程')
-    if (desk.deleted) throw new Error('该工程已删除，只能查看历史来源')
+  async function saveCloudDraft(snapshot = readDirectorSnapshot()) {
+    if (!desk || !draft.current) throw new Error('请先打开最新工程并处理待恢复草稿')
     const validBindings = bindings.filter((binding) => snapshot.project.objects.some((object) => object.id === binding.objectId && object.kind === 'character'))
-    const saved = await api.save({ ...snapshot, id: desk.id, expectedRevisionNo: desk.revisionNo, characterBindings: validBindings, name: name.trim(), coverFileId })
-    baseline.current = JSON.stringify({ ...snapshot, characterBindings: validBindings })
+    setDraftStatus('草稿保存中')
+    try {
+      const result = await api.saveDraft({ ...snapshot, id: desk.id, baseRevisionNo: desk.revisionNo, expectedDraftRevisionNo: draft.current.draftRevisionNo, characterBindings: validBindings })
+      draft.current = result
+      if (validBindings.length !== bindings.length) setBindings(validBindings)
+      draftFingerprint.current = JSON.stringify({ ...snapshot, characterBindings: validBindings })
+      setDraftStatus(result.conflict ? '草稿基础版本冲突，请另存副本或核对云端版本' : '草稿已保存，尚未发布')
+      return result
+    } catch (error) { setDraftStatus('草稿保存失败，内容已保留；请核对云端草稿'); throw error }
+  }
+
+  useEffect(() => {
+    if (!dirty || !desk || desk.deleted || !draft.current || pendingDraft || busy || draftStatus.includes('失败') || draftStatus.includes('冲突')) return
+    const timer = window.setTimeout(() => {
+      if (fingerprint(bindings) !== draftFingerprint.current) void run(async () => { await saveCloudDraft() })
+    }, 1500)
+    return () => window.clearTimeout(timer)
+  }, [changeNo, dirty, busy, pendingDraft, desk, draftStatus])
+
+  async function save(snapshot = readDirectorSnapshot(), coverFileId?: string | number) {
+    if (!desk || desk.deleted) throw new Error('请先打开可编辑云工程')
+    const stored = await saveCloudDraft(snapshot)
+    if (stored.conflict) throw new Error('正式版本已变化，草稿已保留，请核对或另存副本')
+    let result
+    try { result = await api.publishDraft(desk.id, stored.draftRevisionNo, desk.revisionNo) }
+    catch (error) { setDraftStatus('正式发布失败，草稿已保留；请核对云端版本'); throw error }
+    draft.current = result.draft
+    let saved = result.desk
+    baseline.current = JSON.stringify({ ...snapshot, characterBindings: saved.characterBindings })
     setDesk(saved)
-    setBindings(validBindings)
-    setDirty(fingerprint(validBindings) !== baseline.current)
+    setBindings(saved.characterBindings)
+    setDirty(fingerprint(saved.characterBindings) !== baseline.current)
+    setDraftStatus('正式版本已发布')
+    if (name.trim() !== saved.name || coverFileId != null) {
+      saved = await api.save({ ...snapshot, id: saved.id, expectedRevisionNo: saved.revisionNo, characterBindings: saved.characterBindings, name: name.trim(), coverFileId })
+      setDesk(saved)
+    }
     return saved
   }
 
-  async function capture() {
+  async function capture(video = false) {
     if (!desk || !editorRoot.current) throw new Error('请先打开云工程')
     const target = desk.segmentId == null ? segmentId.trim() : String(desk.segmentId)
     if (!target) throw new Error('独立工程需填写目标片段 ID，才能上传垫图')
-    const { snapshot, file } = await captureDirectorSnapshot(editorRoot.current)
+    const { snapshot, file } = await (video ? captureDirectorVideoSnapshot(editorRoot.current) : captureDirectorSnapshot(editorRoot.current))
     const { saved, reference: uploaded } = await saveAndUploadDirectorFrame({ snapshot, file }, target, save)
     setReference(uploaded)
     setReferenceBindings(saved.characterBindings)
@@ -154,59 +248,134 @@ export default function DirectorDeskCloudPanel({ editorRoot, initialSegmentId, o
     setReferenceSegment(target)
     setSelection(null)
     setReferenceOpen(true)
-    message.success(`垫图已上传，来源：工程 ${saved.id} / 修订 ${saved.revisionNo}`)
+    message.success(`${video ? '参考视频' : '垫图'}已上传，来源：工程 ${saved.id} / 修订 ${saved.revisionNo}`)
   }
 
   return <>
-    <div style={{ display: 'flex', gap: 8, padding: '8px 12px', background: '#141414', alignItems: 'center', flexWrap: 'wrap' }}>
-      <Button disabled={busy} onClick={() => { setOpen(true); void run(() => refresh()) }}>云工程</Button>
-      {desk ? <>
-        <Typography.Text>{desk.name}</Typography.Text>
-        <Tag color={dirty ? 'orange' : 'green'}>{dirty ? '未保存' : '已保存'} · v{desk.revisionNo}</Tag>
-        <Button disabled={busy || desk.deleted} onClick={() => void run(async () => { await save(); message.success('云工程已保存') })}>保存云工程</Button>
-        <Button disabled={busy || desk.deleted} onClick={() => { setBindingOpen(true); setOptions([]) }}>角色绑定</Button>
-        <Input aria-label="目标片段 ID" style={{ width: 150 }} placeholder="目标片段 ID" disabled={busy || desk.segmentId != null} value={segmentId} onChange={(event) => { setSegmentId(event.target.value); setOptions([]) }} />
-        <Button type="primary" loading={busy} disabled={desk.deleted} onClick={() => void run(capture)}>导出垫图并上传</Button>
-        <Button disabled={busy} onClick={() => void run(async () => { setCaptures(await api.captures(desk.id)); setHistoryOpen(true) })}>产物与历史</Button>
-        {reference && <Button disabled={busy} onClick={() => setReferenceOpen(true)}>使用已上传垫图</Button>}
-      </> : <Typography.Text type="secondary">本地工程 · 打开云工程后可保存、绑定角色和上传垫图</Typography.Text>}
+    <div className="director-cloud-toolbar" role="toolbar" aria-label="导演台云工程工具栏">
+      <div className="director-cloud-toolbar__project">
+        <Button icon={<CloudOutlined />} disabled={busy} onClick={() => { setChooseSegment(false); setOpen(true); void run(() => refresh()) }}>云工程</Button>
+        <div className="director-cloud-toolbar__identity">
+          <Typography.Text className="director-cloud-toolbar__name" title={desk?.name}>{desk?.name || '本地工程'}</Typography.Text>
+          <span className={`director-cloud-toolbar__status${dirty ? ' is-dirty' : ''}`} title={draftStatus || undefined}>
+            {desk ? <><span className="director-cloud-toolbar__dot" />{draftStatus || (dirty ? '未保存' : '正式版本已保存')} · v{desk.revisionNo}</> : '打开云工程以保存和应用产物'}
+          </span>
+        </div>
+      </div>
+      {desk && <div className="director-cloud-toolbar__actions">
+        <div className="director-cloud-toolbar__group">
+          {desk.segmentId != null ? <span className="director-cloud-toolbar__segment" title={`目标片段 ${segmentId}`}>片段 {segmentId}</span> : <Input aria-label="目标片段 ID" className="director-cloud-toolbar__target" prefix={<span>片段</span>} placeholder="目标 ID" disabled={busy} value={segmentId} onChange={(event) => setSegmentId(event.target.value)} />}
+          <Button icon={<SaveOutlined />} disabled={busy || desk.deleted} onClick={() => void run(async () => { await save(); message.success('云工程已保存') })}>保存</Button>
+          <Button icon={<TeamOutlined />} disabled={busy || desk.deleted} onClick={() => setBindingOpen(true)}>角色绑定</Button>
+        </div>
+        <div className="director-cloud-toolbar__group">
+          <Button icon={<FolderOpenOutlined />} disabled={busy || desk.deleted} onClick={() => setAssetsOpen(true)}>云素材{dependencyFiles.length > 0 ? ` · ${dependencyFiles.length}` : ''}</Button>
+          <Button icon={<HistoryOutlined />} disabled={busy} onClick={() => void run(async () => { setCaptures(await api.captures(desk.id)); const revisions = await api.revisions(desk.id); setRevisionItems(revisions.items); setRevisionTotal(revisions.total); setRevisionPage(1); setHistoryOpen(true) })}>产物与历史</Button>
+          {reference && <Button disabled={busy} onClick={() => setReferenceOpen(true)}>应用产物</Button>}
+        </div>
+        <Dropdown trigger={['click']} disabled={busy || desk.deleted} menu={{ items: [
+          { key: 'image', label: '导出垫图并上传' },
+          { key: 'video', label: '导出参考视频并上传' },
+        ], onClick: ({ key }) => void run(() => capture(key === 'video')) }}>
+          <Button type="primary" icon={<UploadOutlined />} loading={busy} disabled={busy || desk.deleted}>导出并上传 <DownOutlined /></Button>
+        </Dropdown>
+      </div>}
     </div>
+    <Modal title="云素材" open={assetsOpen} onCancel={() => !busy && setAssetsOpen(false)} width={620} footer={[
+      <Button key="cancel" disabled={busy} onClick={() => setAssetsOpen(false)}>关闭</Button>,
+      <Button key="upload" type="primary" icon={<CloudOutlined />} loading={busy} disabled={!desk || desk.deleted || !draft.current} onClick={() => void run(async () => {
+        if (!desk) return
+        const project = await uploadProjectAssets(desk.id, readDirectorSnapshot().project, dependencyFiles)
+        await restoreCloudAssets({ ...desk, project })
+        useDirectorStore.getState().replaceProject(project)
+        await saveCloudDraft(readDirectorSnapshot())
+        setDependencyFiles([])
+        message.success('模型与依赖已上传并保存云草稿，请发布正式版本')
+      })}>上传模型及依赖</Button>,
+    ]}>
+      <Typography.Paragraph type="secondary">将场景中已导入的本地模型和动作保存到云端。模型用到的纹理等依赖，可在下方补充选择。</Typography.Paragraph>
+      <input ref={filesInput} type="file" multiple hidden disabled={busy} onChange={(event) => { addDependencyFiles(Array.from(event.target.files ?? [])); event.target.value = '' }} />
+      <input ref={(node) => { folderInput.current = node; node?.setAttribute('webkitdirectory', '') }} type="file" multiple hidden disabled={busy} onChange={(event) => { addDependencyFiles(Array.from(event.target.files ?? [])); event.target.value = '' }} />
+      <div className="director-cloud-assets__pickers">
+        <button type="button" className="director-cloud-assets__picker" disabled={busy} onClick={() => filesInput.current?.click()}><FileOutlined /><strong>选择依赖文件</strong><span>补充纹理、材质等文件</span></button>
+        <button type="button" className="director-cloud-assets__picker" disabled={busy} onClick={() => folderInput.current?.click()}><FolderOpenOutlined /><strong>选择依赖文件夹</strong><span>保留文件夹内的相对路径</span></button>
+      </div>
+      <div className="director-cloud-assets__list-heading"><Typography.Text>已选依赖 · {dependencyFiles.length}</Typography.Text>{dependencyFiles.length > 0 && <Button type="text" size="small" disabled={busy} onClick={() => setDependencyFiles([])}>清空</Button>}</div>
+      <List className="director-cloud-assets__list" size="small" dataSource={dependencyFiles} locale={{ emptyText: '未添加额外依赖，可直接上传场景中的本地模型' }} renderItem={(file, index) => <List.Item actions={[<Button key="remove" type="text" icon={<DeleteOutlined />} aria-label={`移除 ${file.webkitRelativePath || file.name}`} disabled={busy} onClick={() => setDependencyFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} />]}><List.Item.Meta avatar={<FileOutlined />} title={<span title={file.webkitRelativePath || file.name}>{file.webkitRelativePath || file.name}</span>} description={file.size < 1024 * 1024 ? `${(file.size / 1024).toFixed(1)} KB` : `${(file.size / (1024 * 1024)).toFixed(1)} MB`} /></List.Item>} />
+    </Modal>
     {desk?.portability?.portable === false && <Alert type="warning" showIcon message="此工程包含浏览器本地素材，换设备后可能缺失" description={`${desk.portability.note || ''} ${desk.portability.browserLocalAssetIds.join('、')}`} />}
     {desk && desk.revisionNo !== desk.latestRevisionNo && <Alert type="warning" message={`正在查看历史修订 ${desk.revisionNo}，最新为 ${desk.latestRevisionNo}。请先核对最新版本；保存不会自动覆盖。`} />}
-    <Modal title="云工程" open={open} onCancel={() => !busy && setOpen(false)} footer={null} width={800}>
-      <Space wrap style={{ marginBottom: 16 }}>
-        <Input.Search placeholder="搜索工程" value={keyword} onChange={(event) => setKeyword(event.target.value)} onSearch={() => void run(() => refresh(1))} disabled={busy} />
-        <Input aria-label="工程名称" placeholder="工程名称" maxLength={128} value={name} onChange={(event) => setName(event.target.value)} disabled={busy} />
-        <Button disabled={busy || !name.trim()} onClick={() => confirmDiscard(async () => { activate(await api.create(name.trim(), initialSegmentId || undefined)) })}>新建云工程</Button>
-        <Button disabled={busy || !name.trim()} onClick={() => void run(async () => {
-          const snapshot = readDirectorSnapshot()
-          const created = await api.create(name.trim(), initialSegmentId || undefined)
-          // Preserve the newly created ID even if the following snapshot save fails.
-          try { activate(await api.save({ ...snapshot, id: created.id, expectedRevisionNo: created.revisionNo, characterBindings: bindings })) }
-          catch (error) { await refresh(1); throw error }
-        })}>当前场景另存为云工程</Button>
+    <Modal title="发现云草稿" open={!!pendingDraft} closable={false} footer={null}>
+      <Alert type={pendingDraft?.draft.conflict ? 'warning' : 'info'} message={pendingDraft?.draft.conflict ? '草稿基于旧版本，恢复后不能直接覆盖最新正式版本。可另存为新工程。' : '恢复上次未发布的编辑，或明确丢弃云草稿。'} />
+      <Space style={{ marginTop: 12 }}>
+        <Button disabled={busy} onClick={() => void run(async () => { if (!pendingDraft) return; const { desk: original, draft: stored } = pendingDraft; if (!stored.project || !stored.viewSettings || !stored.characterBindings) return; const recovered = { ...original, revisionNo: stored.baseRevisionNo, project: stored.project, viewSettings: stored.viewSettings, characterBindings: stored.characterBindings }; await restoreCloudAssets(recovered); draft.current = stored; loadDesk(recovered); draftFingerprint.current = JSON.stringify({ projectSchemaVersion: 1, project: stored.project, viewSettings: stored.viewSettings, characterBindings: stored.characterBindings }); setDraftStatus(stored.conflict ? '草稿基础版本冲突，请另存副本' : '草稿已恢复，尚未发布'); setPendingDraft(null) })}>恢复草稿</Button>
+        <Button danger disabled={busy} onClick={() => void run(async () => { if (!pendingDraft) return; draft.current = await api.discardDraft(pendingDraft.desk.id, pendingDraft.draft.draftRevisionNo); await restoreCloudAssets(pendingDraft.desk); loadDesk(pendingDraft.desk); setPendingDraft(null) })}>丢弃草稿并打开正式版</Button>
+        <Button onClick={() => setPendingDraft(null)}>取消</Button>
       </Space>
-      <List loading={busy} dataSource={items} locale={{ emptyText: '暂无云工程' }} renderItem={(item) => <List.Item actions={[
-        <Button key="open" disabled={busy} onClick={() => confirmDiscard(async () => activate(await api.detail(item.id)))}>打开</Button>,
-        <Popconfirm key="delete" title="删除云工程？历史产物会保留。" onConfirm={() => run(async () => { await api.delete(item.id); if (desk && String(desk.id) === String(item.id)) setDesk({ ...desk, deleted: true }); await refresh() })}><Button danger disabled={busy}>删除</Button></Popconfirm>,
-      ]}><List.Item.Meta avatar={item.coverUrl ? <Image width={72} src={item.coverUrl} /> : undefined} title={item.name} description={`修订 ${item.revisionNo} · ${item.segmentId == null ? '独立工程' : `片段 ${item.segmentId}`} · ${item.updatedAt}`} /></List.Item>} />
-      <Pagination current={page} total={total} pageSize={12} showSizeChanger={false} disabled={busy} onChange={(value) => void run(() => refresh(value))} />
+    </Modal>
+    {draftStatus.includes('失败') && desk && <Button disabled={busy} onClick={() => confirmDiscard(async () => { await activate(await api.detail(desk.id)) })}>核对云端草稿（保留当前场景请先另存）</Button>}
+    <Modal title={<div className="director-cloud-library__title"><CloudOutlined /><span>{chooseSegment ? '选择片段云工程' : '云工程'}</span></div>} open={open} onCancel={() => !busy && setOpen(false)} footer={null} width={920} className="director-cloud-library">
+      <Typography.Paragraph type="secondary" className="director-cloud-library__intro">管理云端场景，或将当前布局保存为新的工程。</Typography.Paragraph>
+      <div className="director-cloud-library__layout">
+        <section className="director-cloud-library__browser" aria-label="云工程列表">
+          <div className="director-cloud-library__search">
+            <Input.Search aria-label="搜索云工程" placeholder="搜索工程名称" allowClear value={keyword} onChange={(event) => setKeyword(event.target.value)} onSearch={() => void run(() => refresh(1))} disabled={busy} />
+            <span className="director-cloud-library__count">{total} 个工程</span>
+          </div>
+          <List className="director-cloud-library__list" loading={busy} dataSource={items} locale={{ emptyText: keyword.trim() ? '没有找到匹配的工程，试试其他名称' : '还没有云工程，可在右侧新建或保存当前场景' }} renderItem={(item) => {
+            const isCurrent = !!desk && String(desk.id) === String(item.id)
+            return <List.Item className={`director-cloud-library__item${isCurrent ? ' is-current' : ''}`}>
+              <div className="director-cloud-library__cover">{item.coverUrl ? <Image width={64} height={64} style={{ objectFit: 'cover' }} src={item.coverUrl} alt={item.name} /> : <FolderOpenOutlined />}</div>
+              <div className="director-cloud-library__details">
+                <div className="director-cloud-library__item-title"><Typography.Text ellipsis title={item.name}>{item.name}</Typography.Text>{isCurrent && <span className="director-cloud-library__current">当前</span>}</div>
+                <div className="director-cloud-library__metadata"><span>修订 {item.revisionNo}</span><span>{item.segmentId == null ? '独立工程' : `片段 ${item.segmentId}`}</span></div>
+                <div className="director-cloud-library__updated">更新于 {item.updatedAt}</div>
+              </div>
+              <div className="director-cloud-library__item-actions">
+                <Button disabled={busy} onClick={() => confirmDiscard(async () => initialSegmentId && chooseSegment ? activate((await api.openForSegment(initialSegmentId, item.id)).desk!) : activate(await api.detail(item.id)))}>打开</Button>
+                <Popconfirm title="删除云工程？" description="历史产物会保留。" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => run(async () => { await api.delete(item.id); if (desk && String(desk.id) === String(item.id)) setDesk({ ...desk, deleted: true }); await refresh() })}><Button type="text" icon={<DeleteOutlined />} aria-label={`删除工程 ${item.name}`} title="删除工程" disabled={busy} /></Popconfirm>
+              </div>
+            </List.Item>
+          }} />
+          <div className="director-cloud-library__pagination"><Pagination current={page} total={total} pageSize={12} showSizeChanger={false} hideOnSinglePage size="small" disabled={busy} onChange={(value) => void run(() => refresh(value))} /></div>
+        </section>
+        <aside className="director-cloud-library__create" aria-label="创建云工程">
+          <span className="director-cloud-library__create-icon"><PlusOutlined /></span>
+          <Typography.Title level={5}>创建新工程</Typography.Title>
+          <Typography.Paragraph type="secondary">从空场景开始，或保留当前人物站位与镜头布局。</Typography.Paragraph>
+          <label htmlFor="director-new-project-name">工程名称</label>
+          <Input id="director-new-project-name" placeholder="例如：餐厅双人对话" maxLength={128} value={newProjectName} onChange={(event) => setNewProjectName(event.target.value)} disabled={busy} />
+          <Button block type="primary" icon={<PlusOutlined />} disabled={busy || !newProjectName.trim()} onClick={() => confirmDiscard(async () => { await activate(await api.create(newProjectName.trim(), initialSegmentId || undefined)); setNewProjectName('') })}>新建空工程</Button>
+          <Button block icon={<CopyOutlined />} disabled={busy || !newProjectName.trim()} onClick={() => void run(async () => {
+            const snapshot = readDirectorSnapshot()
+            const created = await api.create(newProjectName.trim(), initialSegmentId || undefined)
+            // Preserve the newly created ID even if the following snapshot save fails.
+            try { snapshot.project = await copyCloudAssets(created.id, snapshot.project); await activate(await api.save({ ...snapshot, id: created.id, expectedRevisionNo: created.revisionNo, characterBindings: bindings })); setNewProjectName('') }
+            catch (error) { await refresh(1); throw error }
+          })}>当前场景另存为</Button>
+          <span className="director-cloud-library__create-note">{initialSegmentId ? `新工程将关联片段 ${initialSegmentId}` : '新工程将保存为独立工程'}</span>
+        </aside>
+      </div>
     </Modal>
     <Modal title="角色与造型绑定" open={bindingOpen} onCancel={() => !busy && setBindingOpen(false)} footer={null}>
       <Alert type="info" message="按场景人物绑定角色图；生成时仍需描述画面位置与参考图的对应关系。" />
-      <Button style={{ margin: '12px 0' }} loading={busy} disabled={!segmentId.trim()} onClick={() => void run(async () => {
-        const request = StudioAssetGenerationApi.requestStoryboardVideoReferenceOptions({ segmentId: segmentId.trim(), source: 'character' })
-        setOptions(await request.promise)
-      })}>加载目标片段的角色候选</Button>
+      <Button style={{ margin: '12px 0' }} loading={optionsLoading} disabled={!validTarget || optionsLoading} onClick={refreshCharacterOptions}>刷新角色候选</Button>
+      {optionsError && <Alert type="error" showIcon message={`角色候选加载失败：${optionsError}`} description="可点击刷新角色候选重试。" />}
+      {bindingStatusError && <Alert type="warning" message={`绑定状态检查失败：${bindingStatusError}`} />}
+      {bindingStatuses.filter((item) => item.status !== 'valid').map((item) => <Alert key={item.objectId} type="warning" message={`${item.objectId}：${item.message}`} />)}
       {objects.filter((object) => object.kind === 'character').map((object) => {
         const binding = bindings.find((item) => item.objectId === object.id)
         return <div key={object.id} style={{ marginBottom: 12 }}><Typography.Text>{object.name || object.id}</Typography.Text>
           {binding && <div><Typography.Text type="secondary">已绑定角色 {binding.assetId} / 图片 {binding.referenceFileId ?? '未指定'}</Typography.Text></div>}
-          <Select style={{ width: '100%' }} allowClear disabled={busy} placeholder="选择角色造型参考图" value={binding ? options.findIndex((option) => String(option.assetId) === String(binding.assetId) && String(option.fileId) === String(binding.referenceFileId)) >= 0 ? options.findIndex((option) => String(option.assetId) === String(binding.assetId) && String(option.fileId) === String(binding.referenceFileId)) : undefined : undefined}
+          <Select style={{ width: '100%' }} allowClear loading={optionsLoading} disabled={busy || optionsLoading || !validTarget} placeholder={optionsLoading ? '角色候选加载中…' : '选择角色造型参考图'} value={binding ? options.findIndex((option) => String(option.assetId) === String(binding.assetId) && String(option.fileId) === String(binding.referenceFileId)) >= 0 ? options.findIndex((option) => String(option.assetId) === String(binding.assetId) && String(option.fileId) === String(binding.referenceFileId)) : undefined : undefined}
             options={options.map((option, index) => ({ value: index, label: option.displayName, disabled: !option.selectable || option.assetId == null || option.fileId == null }))}
             onChange={(index: number | undefined) => {
               const option = index == null ? undefined : options[index]
               setBindings((current) => [...current.filter((item) => item.objectId !== object.id), ...(option?.assetId != null ? [{ objectId: object.id, assetId: option.assetId, characterLookId: option.characterLookId, referenceFileId: option.fileId }] : [])])
+              const characterName = option?.characterName?.trim() || option?.assetName?.trim()
+              if (option?.assetId != null && characterName) {
+                useDirectorStore.getState().updateObjectName(object.id, characterName)
+              }
             }} />
           {binding && <Button type="link" disabled={busy} onClick={() => setBindings((current) => current.filter((item) => item.objectId !== object.id))}>解除绑定</Button>}
         </div>
@@ -214,8 +383,8 @@ export default function DirectorDeskCloudPanel({ editorRoot, initialSegmentId, o
       <Typography.Text type="secondary">绑定修改需点击“保存云工程”保存。</Typography.Text>
     </Modal>
     <Modal title="垫图参考" open={referenceOpen} onCancel={() => !busy && setReferenceOpen(false)} footer={null}>
-      {reference?.fileUrl && <Image src={reference.fileUrl} width="100%" />}
-      <Alert type="info" message="上传仅新增候选素材。视频需追加到参考区，再回到片段生成面板；图片可在下方直接生成。" />
+      {reference?.fileUrl && (reference.referenceType === 5 ? <Image src={reference.fileUrl} width="100%" /> : <video src={reference.fileUrl} controls style={{ width: '100%' }} />)}
+      <Alert type="info" message="选择应用到片段图片或视频。应用只保存参考与来源，不会发起生成；失败后可重试当前产物，无需重新上传。" />
       <Space wrap style={{ marginTop: 12 }}>
         <Button disabled={busy} onClick={() => void run(async () => setVideoModels(await StudioModelsApi.getVideoModels()))}>加载视频模型</Button>
         <Select aria-label="视频模型" style={{ minWidth: 180 }} placeholder="选择视频模型" value={modelId ?? undefined} options={videoModels.map((item) => ({ label: item.name, value: item.id }))} disabled={busy} onChange={(value) => { setModelId(value); setSelection(null) }} />
@@ -224,31 +393,35 @@ export default function DirectorDeskCloudPanel({ editorRoot, initialSegmentId, o
           const current = await api.references(referenceSegment, modelId)
           setSelection(current)
         })}>读取参考区</Button>
-        <Button disabled={busy || !selection || !reference} onClick={() => void run(async () => {
-          if (!selection || !reference) return
-          const additions = [reference, ...referenceBindings.filter((binding) => binding.referenceFileId != null).map((binding) => ({ referenceType: 1, fileId: binding.referenceFileId!, displayName: `角色 ${binding.assetId}` }))]
-          const unique = additions.filter((item, index) => additions.findIndex((other) => other.referenceType === item.referenceType && String(other.fileId) === String(item.fileId)) === index && !selection.references.some((other) => other.referenceType === item.referenceType && String(other.fileId) === String(item.fileId)))
-          if (!unique.length) { message.info('参考区已包含这些素材'); return }
-          try { setSelection(await api.addReferences(referenceSegment, selection.revisionNo, unique)); message.success('已追加垫图与绑定角色图，原有参考保留') }
-          catch (error) { setSelection(null); throw error }
-        })}>追加垫图与角色参考</Button>
+        <Checkbox checked={includeCharacters} disabled={busy} onChange={(event) => setIncludeCharacters(event.target.checked)}>附带角色参考图</Checkbox>
+        <Button disabled={busy || !modelId || !reference} onClick={() => void run(async () => {
+          if (!modelId || !reference) return
+          const applications = await api.segmentApplications(referenceSegment)
+          const current = await api.references(referenceSegment, modelId)
+          const applied = await api.applyCapture({ segmentId: referenceSegment, fileId: reference.fileId, target: 'video', modelId, includeCharacters, expectedApplicationRevisionNo: applications.video.applicationRevisionNo, expectedReferenceRevisionNo: current.revisionNo })
+          setSelection(applied.videoReferenceSelection)
+          message.success('已应用到片段视频，原有参考保留；可返回片段发起生成')
+        })}>应用到片段视频</Button>
       </Space>
       {selection && <List dataSource={selection.references} renderItem={(item) => <List.Item>{item.referenceToken || `参考 ${item.referenceIndex ?? ''}`} · {item.displayName}</List.Item>} />}
-      {referenceOpen && reference?.referenceType === 5 && <DirectorCaptureImageForm key={String(reference.fileId)} reference={reference} bindings={referenceBindings} segmentId={referenceSegment} aspectRatio={referenceAspectRatio} />}
+      {referenceOpen && reference?.referenceType === 5 && <DirectorCaptureImageForm key={String(reference.fileId)} reference={reference} bindings={includeCharacters ? referenceBindings : []} includeCharacters={includeCharacters} segmentId={referenceSegment} aspectRatio={referenceAspectRatio} />}
     </Modal>
     <Modal title="产物与历史追溯" open={historyOpen} onCancel={() => !busy && setHistoryOpen(false)} footer={null} width={800}>
-      <Space><InputNumber min={1} precision={0} value={revision} onChange={setRevision} placeholder="历史修订号" /><Button disabled={busy || !revision} onClick={() => confirmDiscard(async () => { if (desk && revision) activate(await api.detail(desk.id, revision)) })}>读取历史修订</Button><Button disabled={busy} onClick={() => confirmDiscard(async () => { if (desk) activate(await api.detail(desk.id)) })}>读取最新版本</Button></Space>
+      <Space><InputNumber min={1} precision={0} value={revision} onChange={setRevision} placeholder="历史修订号" /><Button disabled={busy || !revision} onClick={() => confirmDiscard(async () => { if (desk && revision) await activate(await api.detail(desk.id, revision), true) })}>读取历史修订</Button><Button disabled={busy} onClick={() => confirmDiscard(async () => { if (desk) await activate(await api.detail(desk.id)) })}>读取最新版本</Button></Space>
+      <Button disabled={busy || !desk} onClick={() => confirmDiscard(async () => { if (desk) await activate(await api.forkRevision(desk.id, desk.revisionNo, initialSegmentId)) })}>复制当前修订继续编辑</Button>
+      <List dataSource={revisionItems} renderItem={(item) => <List.Item><Button disabled={busy} onClick={() => confirmDiscard(async () => { if (desk) await activate(await api.detail(desk.id, item.revisionNo), true) })}>查看修订 {item.revisionNo}</Button>{item.createdAt}</List.Item>} />
+      <Pagination current={revisionPage} pageSize={20} total={revisionTotal} showSizeChanger={false} onChange={(value) => void run(async () => { if (!desk) return; const result = await api.revisions(desk.id, value); setRevisionItems(result.items); setRevisionPage(value) })} />
       <List dataSource={captures} renderItem={(item) => <List.Item actions={[
-        <Button key="revision" disabled={busy} onClick={() => confirmDiscard(async () => activate(await api.detail(item.directorDeskId, item.directorRevisionNo)))}>查看来源修订</Button>,
-        ...(item.fileType === 'image' ? [
+        <Button key="revision" disabled={busy} onClick={() => confirmDiscard(async () => activate(await api.detail(item.directorDeskId, item.directorRevisionNo), true))}>查看来源修订</Button>,
+        ...([
           <Button key="reference" disabled={busy} onClick={() => void run(async () => {
             const source = await api.detail(item.directorDeskId, item.directorRevisionNo)
-            setReference({ referenceType: 5, fileId: item.fileId, fileUrl: item.fileUrl, displayName: item.fileName })
+            setReference({ referenceType: item.fileType === 'image' ? 5 : 7, fileId: item.fileId, fileUrl: item.fileUrl, displayName: item.fileName })
             setReferenceSegment(String(item.segmentId)); setReferenceBindings(source.characterBindings); setReferenceAspectRatio(source.viewSettings.viewportAspectRatio)
             setSelection(null); setHistoryOpen(false); setReferenceOpen(true)
-          })}>使用垫图</Button>,
-          <Button key="cover" disabled={busy || desk?.deleted} onClick={() => void run(async () => { await save(readDirectorSnapshot(), item.fileId); message.success('已保存工程并更新封面') })}>设为封面</Button>,
-        ] : []),
+          })}>{item.fileType === 'image' ? '使用垫图' : '使用参考视频'}</Button>,
+          <Button key="cover" disabled={busy || desk?.deleted || item.fileType !== 'image'} onClick={() => void run(async () => { await save(readDirectorSnapshot(), item.fileId); message.success('已保存工程并更新封面') })}>设为封面</Button>,
+        ]),
       ]}><List.Item.Meta title={<a href={item.fileUrl} target="_blank" rel="noreferrer">{item.fileName}</a>} description={`修订 ${item.directorRevisionNo} · 文件 ${item.fileId} · 片段 ${item.segmentId} · ${item.fileType}`} /></List.Item>} />
     </Modal>
   </>
