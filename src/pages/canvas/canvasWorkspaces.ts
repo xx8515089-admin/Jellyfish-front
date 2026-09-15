@@ -1,139 +1,60 @@
+import { StudioCanvases, canvasRequestId, type CanvasSummary } from '../../services/studioCanvases'
+
 export interface CanvasWorkspace {
-  id: string
-  name: string
-  createdAt: string
-  updatedAt: string
+  id: string; name: string; createdAt: string; updatedAt: string; revisionNo: number
 }
-
-const CANVAS_REGISTRY_KEY = 'jellyfish_canvas_workspaces_v1'
-
-const canUseBrowserStorage = () => typeof window !== 'undefined' && Boolean(window.localStorage)
-
-const createWorkspaceId = () => {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
+const revisions = new Map<string, number>()
+const workspace = (item: CanvasSummary): CanvasWorkspace => {
+  const id = String(item.canvasId)
+  revisions.set(id, item.currentRevisionNo ?? item.revisionNo)
+  return { id, name: item.name, createdAt: item.createdAt, updatedAt: item.updatedAt, revisionNo: item.revisionNo }
+}
+export const getCanvasStoragePrefix = (id: string) => `jellyfish_canvas:${encodeURIComponent(id)}:`
+export async function listCanvasWorkspaces(): Promise<CanvasWorkspace[]> {
+  const capabilities = await StudioCanvases.capabilities()
+  if (!capabilities.storageReady) throw new Error('画布存储尚未初始化，请联系管理员')
+  const items: CanvasWorkspace[] = []
+  for (let page = 1; ; page++) {
+    const result = await StudioCanvases.list(page, 100)
+    items.push(...result.items.map(workspace))
+    if (!result.items.length || items.length >= result.total) return [...items, ...listLegacyCanvasWorkspaces()]
   }
-  return `canvas-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+let pendingCreate: { name: string; id: string } | null = null
+export async function createCanvasWorkspace(name: string) {
+  if (!pendingCreate || pendingCreate.name !== name) pendingCreate = { name, id: canvasRequestId('create') }
+  const result = workspace(await StudioCanvases.create(name, pendingCreate.id))
+  pendingCreate = null
+  return result
+}
+export async function renameCanvasWorkspace(id: string, name: string) {
+  if (getLegacyCanvasWorkspace(id)) return changeLegacy(id, name)
+  const revision = revisions.get(id)
+  if (!revision) throw new Error('请刷新画布列表后重试')
+  return workspace(await StudioCanvases.rename(id, revision, name, canvasRequestId('rename')))
+}
+export async function deleteCanvasWorkspace(id: string) {
+  if (getLegacyCanvasWorkspace(id)) { changeLegacy(id); return }
+  const revision = revisions.get(id)
+  if (!revision) throw new Error('请刷新画布列表后重试')
+  await StudioCanvases.delete(id, revision)
+  revisions.delete(id)
 }
 
-const parseWorkspaceRegistry = (value: string | null): CanvasWorkspace[] => {
-  if (!value) return []
+const LEGACY_REGISTRY_KEY = 'jellyfish_canvas_workspaces_v1'
+export function listLegacyCanvasWorkspaces(): CanvasWorkspace[] {
   try {
-    const workspaces = JSON.parse(value) as unknown
-    if (!Array.isArray(workspaces)) return []
-    return workspaces.filter((workspace): workspace is CanvasWorkspace => (
-      typeof workspace === 'object' &&
-      workspace !== null &&
-      typeof (workspace as CanvasWorkspace).id === 'string' &&
-      typeof (workspace as CanvasWorkspace).name === 'string' &&
-      typeof (workspace as CanvasWorkspace).createdAt === 'string' &&
-      typeof (workspace as CanvasWorkspace).updatedAt === 'string'
-    ))
-  } catch {
-    return []
-  }
+    const items: unknown = JSON.parse(window.localStorage.getItem(LEGACY_REGISTRY_KEY) || '[]')
+    if (!Array.isArray(items)) return []
+    return items.filter((item) => item && typeof item.id === 'string' && !/^[1-9]\d*$/.test(item.id) && typeof item.name === 'string')
+      .map((item) => ({ ...item, revisionNo: 0 }))
+  } catch { return [] }
 }
-
-const saveCanvasWorkspaces = (workspaces: CanvasWorkspace[]) => {
-  if (!canUseBrowserStorage()) return
-  window.localStorage.setItem(CANVAS_REGISTRY_KEY, JSON.stringify(workspaces))
-}
-
-export const getCanvasStoragePrefix = (workspaceId: string) =>
-  `jellyfish_canvas:${encodeURIComponent(workspaceId)}:`
-
-export const listCanvasWorkspaces = (): CanvasWorkspace[] => {
-  if (!canUseBrowserStorage()) return []
-  return parseWorkspaceRegistry(window.localStorage.getItem(CANVAS_REGISTRY_KEY))
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-}
-
-export const getCanvasWorkspace = (workspaceId: string) =>
-  listCanvasWorkspaces().find((workspace) => workspace.id === workspaceId) ?? null
-
-export const createCanvasWorkspace = (name: string): CanvasWorkspace => {
-  const now = new Date().toISOString()
-  const workspace: CanvasWorkspace = {
-    id: createWorkspaceId(),
-    name: name.trim(),
-    createdAt: now,
-    updatedAt: now,
-  }
-  saveCanvasWorkspaces([workspace, ...listCanvasWorkspaces()])
-
-  if (canUseBrowserStorage()) {
-    const prefix = getCanvasStoragePrefix(workspace.id)
-    window.localStorage.setItem(`${prefix}tapnow_project_name`, workspace.name)
-  }
-  return workspace
-}
-
-export const renameCanvasWorkspace = (workspaceId: string, name: string) => {
-  const nextName = name.trim()
-  if (!nextName) return null
-
-  const now = new Date().toISOString()
-  let renamedWorkspace: CanvasWorkspace | null = null
-  const workspaces = listCanvasWorkspaces().map((workspace) => {
-    if (workspace.id !== workspaceId) return workspace
-    renamedWorkspace = { ...workspace, name: nextName, updatedAt: now }
-    return renamedWorkspace
-  })
-  if (!renamedWorkspace) return null
-
-  saveCanvasWorkspaces(workspaces)
-
-  if (canUseBrowserStorage()) {
-    const prefix = getCanvasStoragePrefix(workspaceId)
-    window.localStorage.setItem(`${prefix}tapnow_project_name`, nextName)
-  }
-
-  return renamedWorkspace
-}
-
-export const touchCanvasWorkspace = (workspaceId: string) => {
-  const now = new Date().toISOString()
-  const workspaces = listCanvasWorkspaces().map((workspace) => (
-    workspace.id === workspaceId ? { ...workspace, updatedAt: now } : workspace
-  ))
-  saveCanvasWorkspaces(workspaces)
-}
-
-const deleteScopedDatabases = async (prefix: string) => {
-  if (typeof indexedDB === 'undefined') return
-
-  const databaseFactory = indexedDB as IDBFactory & {
-    databases?: () => Promise<Array<{ name?: string }>>
-  }
-  if (databaseFactory.databases) {
-    const databases = await databaseFactory.databases()
-    await Promise.all(
-      databases
-        .map((database) => database.name)
-        .filter((name): name is string => Boolean(name?.startsWith(prefix)))
-        .map((name) => new Promise<void>((resolve) => {
-          const request = indexedDB.deleteDatabase(name)
-          request.onsuccess = () => resolve()
-          request.onerror = () => resolve()
-          request.onblocked = () => resolve()
-        })),
-    )
-    return
-  }
-
-  for (const databaseName of ['tapnow_images_db', 'tapnow_autosave_db']) {
-    indexedDB.deleteDatabase(`${prefix}${databaseName}`)
-  }
-}
-
-export const deleteCanvasWorkspace = async (workspaceId: string) => {
-  saveCanvasWorkspaces(listCanvasWorkspaces().filter((workspace) => workspace.id !== workspaceId))
-  if (!canUseBrowserStorage()) return
-
-  const prefix = getCanvasStoragePrefix(workspaceId)
-  const scopedKeys = Array.from({ length: window.localStorage.length }, (_, index) => (
-    window.localStorage.key(index)
-  )).filter((key): key is string => Boolean(key?.startsWith(prefix)))
-  scopedKeys.forEach((key) => window.localStorage.removeItem(key))
-  await deleteScopedDatabases(prefix)
+export const getLegacyCanvasWorkspace = (id: string) => listLegacyCanvasWorkspaces().find((item) => item.id === id)
+function changeLegacy(id: string, name?: string) {
+  const items = listLegacyCanvasWorkspaces()
+  const result = name ? items.map((item) => item.id === id ? { ...item, name, updatedAt: new Date().toISOString() } : item) : items.filter((item) => item.id !== id)
+  window.localStorage.setItem(LEGACY_REGISTRY_KEY, JSON.stringify(result))
+  if (name) window.localStorage.setItem(`${getCanvasStoragePrefix(id)}tapnow_project_name`, name)
+  return result.find((item) => item.id === id)
 }

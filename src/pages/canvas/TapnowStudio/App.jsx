@@ -1,3 +1,5 @@
+import { useCanvasCloud } from './useCanvasCloud';
+import { canvasModelConfigs } from './canvasCloud';
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { marked } from 'marked';
@@ -258,7 +260,7 @@ import {
     Lightbox
 } from './freeCanvasShared';
 
-function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appLanguage, onLanguageChange, onWorkspaceChanged } = {}) {
+function TapnowApp({ cloudDocument, cloudModels = [], workspaceId = 'default', workspaceName = '', language: appLanguage, onLanguageChange, onWorkspaceChanged } = {}) {
     const localStorage = useMemo(
         () => createCanvasStorage(workspaceId, onWorkspaceChanged),
         [workspaceId, onWorkspaceChanged]
@@ -443,6 +445,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
     }, []);
 
     const [nodes, setNodes] = useState(() => {
+        if (cloudDocument) return cloudDocument.project.nodes || [];
         try {
             const meta = readAutoSaveMeta();
             if (meta?.storage === 'idb') return [];
@@ -457,6 +460,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         } catch (e) { return []; }
     });
     const [connections, setConnections] = useState(() => {
+        if (cloudDocument) return cloudDocument.project.connections || [];
         try {
             const meta = readAutoSaveMeta();
             if (meta?.storage === 'idb') return [];
@@ -473,7 +477,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
 
     useEffect(() => {
         const meta = readAutoSaveMeta();
-        if (meta?.storage !== 'idb') return;
+        if (cloudDocument || meta?.storage !== 'idb') return;
         let cancelled = false;
         const loadAutoSave = async () => {
             const saved = await readAutoSaveFromIdb();
@@ -850,7 +854,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [undo, redo]);
     // === 撤销/重做功能结束 ===
-    const [view, setView] = useState(() => ({ ...DEFAULT_VIEW }));
+    const [view, setView] = useState(() => ({ ...(cloudDocument?.project.view || DEFAULT_VIEW) }));
     const normalizeViewState = (candidate) => {
         if (!candidate || typeof candidate !== 'object') return { ...DEFAULT_VIEW };
         const x = Number.isFinite(candidate.x) ? candidate.x : DEFAULT_VIEW.x;
@@ -1003,6 +1007,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
     }, [getNativeMultiImageCapabilityKey]);
 
     const [apiConfigs, setApiConfigs] = useState(() => {
+        if (cloudDocument) return canvasModelConfigs(cloudModels);
         const saved = localStorage.getItem('tapnow_api_configs');
 
         // V3.6.0: 如果有存量数据，直接使用（不再合并默认模型）
@@ -1209,6 +1214,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
 
     // V3.4.7: 项目名称状态 - 新项目（无节点）始终显示"未命名项目"
     const [projectName, setProjectName] = useState(() => {
+        if (cloudDocument) return cloudDocument.project.projectName || cloudDocument.name;
         try {
             const saved = localStorage.getItem('tapnow_project_name');
             if (saved) return saved;
@@ -2005,9 +2011,11 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
     const [nodeTimers, setNodeTimers] = useState({});
     // V3.4.8: 记住上次使用的模型
     const [lastUsedImageModel, setLastUsedImageModel] = useState(() => {
+        if (cloudDocument) { const model = cloudModels.find((model) => model.type === 2 && model.defaultModel) || cloudModels.find((model) => model.type === 2); return model ? `studio-${model.id}` : ''; }
         try { return localStorage.getItem('tapnow_last_image_model') || 'nano-banana'; } catch { return 'nano-banana'; }
     });
     const [lastUsedVideoModel, setLastUsedVideoModel] = useState(() => {
+        if (cloudDocument) { const model = cloudModels.find((model) => model.type === 3 && model.defaultModel) || cloudModels.find((model) => model.type === 3); return model ? `studio-${model.id}` : ''; }
         try { return localStorage.getItem('tapnow_last_video_model') || 'sora-2'; } catch { return 'sora-2'; }
     });
     const [lastUsedRatio, setLastUsedRatio] = useState(() => {
@@ -5036,7 +5044,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         const config = getApiConfigByKey(modelId);
         if (config?.ratioLimits && Array.isArray(config.ratioLimits) && config.ratioLimits.length > 0) {
             const normalized = config.ratioLimits.map((ratio) => String(ratio));
-            return normalized.includes('Auto') ? normalized : ['Auto', ...normalized];
+            return cloudDocument ? normalized.filter((value) => value !== 'Auto') : normalized.includes('Auto') ? normalized : ['Auto', ...normalized];
         }
         const resolvedId = config?.id || modelId;
         return getDefaultRatiosForModel(resolvedId);
@@ -5049,7 +5057,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
             const normalized = config.resolutionLimits
                 .map((res) => normalizeResolutionOption(res))
                 .filter(Boolean);
-            const withAuto = normalized.includes('Auto') ? normalized : ['Auto', ...normalized];
+            const withAuto = cloudDocument ? normalized.filter((value) => value !== 'Auto') : normalized.includes('Auto') ? normalized : ['Auto', ...normalized];
             return Array.from(new Set(withAuto));
         }
         const resolvedId = config?.id || modelId;
@@ -5064,7 +5072,7 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         const normalized = baseOptions
             .map((res) => normalizeVideoResolution(res))
             .filter(Boolean);
-        const withAuto = normalized.includes('Auto') ? normalized : ['Auto', ...normalized];
+        const withAuto = cloudDocument ? normalized.filter((value) => value !== 'Auto') : normalized.includes('Auto') ? normalized : ['Auto', ...normalized];
         return Array.from(new Set(withAuto));
     }, [getApiConfigByKey]);
 
@@ -11736,7 +11744,16 @@ function TapnowApp({ workspaceId = 'default', workspaceName = '', language: appL
         }
     };
 
+    const canvasCloud = useCanvasCloud({
+        document: cloudDocument, models: cloudModels, nodes, connections, view, projectName, workspaceId,
+        setNodes, setConnections, setView, setProjectName,
+        resolveMedia: async (value) => {
+            if (LocalImageManager.isImageId(value)) return await LocalImageManager.getImage(value);
+            return await resolveSpecialUrl(value);
+        }
+    });
     const startGeneration = async (prompt, type, sourceImages, nodeId, options = {}) => {
+        if (cloudDocument) return canvasCloud.generate(nodeId, options);
         // V3.5.20: 优先解析 IndexedDB 图片键 (img_xxx)
         // 解决 "Failed to fetch" 错误，确保所有 img_ 键都转换为 Blob URL
         let resolvedSourceImages = [];
@@ -24931,6 +24948,7 @@ ${inputText.substring(0, 15000)} ... (截断)
 
     return (
         <>
+            {canvasCloud.controls}
             {/* 极简艺术进度条 */}
             <ArtisticProgress
                 visible={progressState.visible}

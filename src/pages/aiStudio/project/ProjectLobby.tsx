@@ -34,6 +34,7 @@ import {
   createCanvasWorkspace,
   deleteCanvasWorkspace,
   listCanvasWorkspaces,
+  listLegacyCanvasWorkspaces,
   renameCanvasWorkspace,
   type CanvasWorkspace,
 } from '../../canvas/canvasWorkspaces'
@@ -197,13 +198,19 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
   useEffect(() => {
     if (workspaceView !== 'canvas') return
 
-    const reloadCanvasWorkspaces = () => {
-      setCanvasWorkspaces(listCanvasWorkspaces())
+    let active = true
+    const reloadCanvasWorkspaces = async () => {
+      setLoading(true)
+      try {
+        const items = await listCanvasWorkspaces()
+        if (active) setCanvasWorkspaces(items)
+      } catch (error) {
+        if (active) { setCanvasWorkspaces(listLegacyCanvasWorkspaces()); message.error(error instanceof Error ? error.message : '画布加载失败') }
+      } finally { if (active) setLoading(false) }
     }
-
-    reloadCanvasWorkspaces()
+    void reloadCanvasWorkspaces()
     window.addEventListener('focus', reloadCanvasWorkspaces)
-    return () => window.removeEventListener('focus', reloadCanvasWorkspaces)
+    return () => { active = false; window.removeEventListener('focus', reloadCanvasWorkspaces) }
   }, [workspaceView])
 
   const getProjectStatus = (p: ProjectView): 'draft' | 'inProgress' | 'completed' => {
@@ -224,7 +231,7 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
       stats: { chapters: 0, roles: 0, scenes: 0, props: 0 },
       updatedAt: workspace.updatedAt,
       createdAt: workspace.createdAt,
-      creatorName: l('本地工作区', 'Local workspace'),
+      creatorName: workspace.revisionNo ? l('云端画布', 'Cloud canvas') : l('本地画布', 'Local canvas'),
     }))
   ), [canvasWorkspaces, l])
 
@@ -251,9 +258,10 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
 
   const handleOpenCreate = async () => {
     if (workspaceView === 'canvas') {
-      const workspace = createCanvasWorkspace(l('未命名画布', 'Untitled canvas'))
-      setCanvasWorkspaces(listCanvasWorkspaces())
-      navigate(`/canvas/${workspace.id}`)
+      try {
+        const workspace = await createCanvasWorkspace(l('未命名画布', 'Untitled canvas'))
+        navigate(`/canvas/${workspace.id}`)
+      } catch (error) { message.error(error instanceof Error ? error.message : '创建画布失败') }
       return
     }
     const draftsCleared = await clearProjectCreationDrafts()
@@ -298,9 +306,9 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
     setRenameSubmitting(true)
     try {
       if (workspaceView === 'canvas') {
-        const updated = renameCanvasWorkspace(renamingProject.id, values.name.trim())
+        const updated = await renameCanvasWorkspace(renamingProject.id, values.name.trim())
         if (!updated) throw new Error('empty canvas')
-        setCanvasWorkspaces(listCanvasWorkspaces())
+        setCanvasWorkspaces(await listCanvasWorkspaces())
         message.success(l('画布已重命名', 'Canvas renamed'))
         setRenameModalOpen(false)
         setRenamingProject(null)
@@ -326,7 +334,7 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
     try {
       if (workspaceView === 'canvas') {
         await deleteCanvasWorkspace(project.id)
-        const nextWorkspaces = listCanvasWorkspaces()
+        const nextWorkspaces = await listCanvasWorkspaces()
         setCanvasWorkspaces(nextWorkspaces)
         message.success(l('画布已删除', 'Canvas deleted'))
         if ((page - 1) * CANVAS_PAGE_SIZE >= nextWorkspaces.length && page > 1) {
