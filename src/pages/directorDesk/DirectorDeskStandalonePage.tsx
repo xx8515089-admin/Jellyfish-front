@@ -21,6 +21,8 @@ export default function DirectorDeskStandalonePage({ embeddedHome = false }: Dir
   const navigate = useNavigate()
   const { projectId, chapterId, deskId } = useParams()
   const [searchParams] = useSearchParams()
+  const styleParam = Number(searchParams.get('visualStyleId'))
+  const initialVisualStyleId = Number.isSafeInteger(styleParam) && styleParam > 0 ? styleParam : null
   const hostRef = useRef<HTMLDivElement>(null)
   const [mountNode, setMountNode] = useState<HTMLDivElement | null>(null)
   const [cloudDesk, setCloudDesk] = useState<DirectorDesk>()
@@ -87,6 +89,7 @@ export default function DirectorDeskStandalonePage({ embeddedHome = false }: Dir
         key={panelKey}
         editorRoot={hostRef}
         initialSegmentId={searchParams.get('segmentId') || undefined}
+        initialVisualStyleId={initialVisualStyleId}
         initialSegmentLabel={searchParams.get('segmentLabel') || undefined}
         cloudReady={cloudReady}
         onDirtyChange={(value) => { dirtyRef.current = value }}

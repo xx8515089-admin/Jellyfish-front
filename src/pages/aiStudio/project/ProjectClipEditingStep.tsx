@@ -4429,10 +4429,11 @@ export default function ProjectClipEditingStep({
             if (!activeClip) return
             const segmentId = String(toStoryboardSegmentRequestId(activeClip.id))
             const params = new URLSearchParams({ segmentId, segmentLabel: activeClip.title, returnTo: `${window.location.pathname}${window.location.search}` })
+            params.set('visualStyleId', selectedVisualStyleIdForGeneration == null ? 'none' : String(selectedVisualStyleIdForGeneration))
             window.open(`/director-desk/workspace/segment-${encodeURIComponent(segmentId)}?${params}`, '_blank', 'noopener')
           }}>{l('3D 导演台', '3D Director Desk')}</Button>
-          {activeClip && !activeClip.id.startsWith('clip-') && <DirectorSegmentApplication key={activeClip.id} segmentId={String(toStoryboardSegmentRequestId(activeClip.id))} />}
-          {activeHistoryItem?.generationRecordId && activeClip && <DirectorGenerationOrigins segmentLabel={activeClip.title} generationId={activeHistoryItem.generationRecordId} generationType={activeHistoryItem.mediaType === 'video' ? 'video' : 'image'} segmentId={String(toStoryboardSegmentRequestId(activeClip.id))} />}
+          {activeClip && !activeClip.id.startsWith('clip-') && <DirectorSegmentApplication visualStyleId={selectedVisualStyleIdForGeneration == null ? null : Number(selectedVisualStyleIdForGeneration)} key={activeClip.id} segmentId={String(toStoryboardSegmentRequestId(activeClip.id))} />}
+          {activeHistoryItem?.generationRecordId && activeClip && <DirectorGenerationOrigins visualStyleId={selectedVisualStyleIdForGeneration == null ? null : Number(selectedVisualStyleIdForGeneration)} segmentLabel={activeClip.title} generationId={activeHistoryItem.generationRecordId} generationType={activeHistoryItem.mediaType === 'video' ? 'video' : 'image'} segmentId={String(toStoryboardSegmentRequestId(activeClip.id))} />}
           <Button onClick={() => { setSegmentDetailRefreshToken((value) => value + 1); setMediaHistoryRefreshToken((value) => value + 1) }}>
             {l('刷新参考与产物', 'Refresh references and media')}
           </Button>

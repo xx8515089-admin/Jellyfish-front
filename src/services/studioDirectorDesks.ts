@@ -153,6 +153,6 @@ export const StudioDirectorDesks = {
   references: (segmentId: DirectorId, modelId: DirectorId) => get<DirectorReferenceSelection>('storyboards/videos/references', { segmentId, modelId }),
   addReferences: (segmentId: DirectorId, expectedRevisionNo: number, references: DirectorReference[]) =>
     post<DirectorReferenceSelection>('storyboards/videos/references/add', { segmentId, expectedRevisionNo, references }),
-  generateImage: (body: { segmentId: DirectorId; modelId: number; prompt: string; aspectRatio: string; resolution: number; quality?: number; visualStyleId: number; references: DirectorImageReference[] }) =>
+  generateImage: (body: { segmentId: DirectorId; modelId: number; prompt: string; aspectRatio: string; resolution: number; quality?: number; visualStyleId: number | null; references: DirectorImageReference[] }) =>
     post<unknown>('storyboards/images/generate', body),
 }

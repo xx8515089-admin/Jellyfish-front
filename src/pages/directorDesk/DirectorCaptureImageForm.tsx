@@ -2,11 +2,27 @@ import { useEffect, useState } from 'react'
 import { Alert, Button, Input, Select, Space, Typography, message } from 'antd'
 import { StudioModelsApi, type StudioGenerationModel } from '../../services/studioModels'
 import { StudioDirectorDesks, buildDirectorImageReferences, type DirectorImageReference, type DirectorBinding, type DirectorReference } from '../../services/studioDirectorDesks'
+import { StudioStylesApi, type StudioStyleOption } from '../../services/studioStyles'
 import { getApiErrorMessage } from '../../services/apiErrors'
 
-export default function DirectorCaptureImageForm({ reference, bindings, segmentId, aspectRatio, includeCharacters, savedReferences }: {
-  reference: DirectorReference; bindings: DirectorBinding[]; segmentId: string; aspectRatio: string; includeCharacters: boolean; savedReferences?: DirectorImageReference[]
+export default function DirectorCaptureImageForm({ reference, bindings, segmentId, aspectRatio, includeCharacters, savedReferences, visualStyleId = null }: {
+  reference: DirectorReference; bindings: DirectorBinding[]; segmentId: string; aspectRatio: string; includeCharacters: boolean; savedReferences?: DirectorImageReference[]; visualStyleId?: number | null
 }) {
+  const [selectedVisualStyleId, setSelectedVisualStyleId] = useState<number | null>(visualStyleId)
+  const [styles, setStyles] = useState<StudioStyleOption[]>([])
+  const [stylesLoading, setStylesLoading] = useState(false)
+  const [stylesError, setStylesError] = useState('')
+  const [styleRetry, setStyleRetry] = useState(0)
+  useEffect(() => { setSelectedVisualStyleId(visualStyleId) }, [visualStyleId, segmentId])
+  useEffect(() => {
+    let active = true
+    setStylesLoading(true)
+    setStylesError('')
+    void StudioStylesApi.getOptions(1).then((items) => { if (active) setStyles(items) })
+      .catch((reason) => { if (active) setStylesError(getApiErrorMessage(reason)) })
+      .finally(() => { if (active) setStylesLoading(false) })
+    return () => { active = false }
+  }, [styleRetry])
   const [appliedReferences, setAppliedReferences] = useState<DirectorImageReference[] | null>(null)
   const [models, setModels] = useState<StudioGenerationModel[]>([])
   const [modelId, setModelId] = useState<number>()
@@ -42,6 +58,13 @@ export default function DirectorCaptureImageForm({ reference, bindings, segmentI
       const next = models.find((item) => item.id === id)
       setModelId(id); setResolution(next?.imageCapabilities?.resolutions[0]); setQuality(next?.imageCapabilities?.qualities[0])
     }} />
+    <label htmlFor="director-image-visual-style">视觉风格</label>
+    <Select id="director-image-visual-style" aria-label="视觉风格" style={{ width: '100%' }} loading={stylesLoading} disabled={busy || submitted} value={selectedVisualStyleId ?? 'none'} options={[
+      { value: 'none', label: '无风格' },
+      ...styles.filter((item) => Number.isSafeInteger(Number(item.id)) && Number(item.id) > 0).map((item) => ({ value: Number(item.id), label: item.name })),
+      ...(selectedVisualStyleId != null && !styles.some((item) => Number(item.id) === selectedVisualStyleId) ? [{ value: selectedVisualStyleId, label: `片段所选风格（${selectedVisualStyleId}）` }] : []),
+    ]} onChange={(value) => setSelectedVisualStyleId(value === 'none' ? null : Number(value))} />
+    {stylesError && <Alert type="warning" message={`风格列表加载失败：${stylesError}`} action={<Button onClick={() => setStyleRetry((value) => value + 1)}>重试</Button>} />}
     <Space>
       <Typography.Text>画幅 {aspectRatio}</Typography.Text>
       <Select aria-label="图片分辨率" style={{ minWidth: 100 }} placeholder="分辨率" value={resolution} disabled={busy || submitted} options={capabilities?.resolutions.map((value) => ({ label: `${value}K`, value }))} onChange={setResolution} />
@@ -65,7 +88,7 @@ export default function DirectorCaptureImageForm({ reference, bindings, segmentI
       if (!appliedReferences || busy || submitted || !modelId || resolution == null || !supported) return
       setBusy(true)
       try {
-        await StudioDirectorDesks.generateImage({ segmentId, modelId, resolution, quality, prompt: prompt.trim(), aspectRatio, visualStyleId: 5, references })
+        await StudioDirectorDesks.generateImage({ segmentId, modelId, resolution, quality, prompt: prompt.trim(), aspectRatio, visualStyleId: selectedVisualStyleId, references })
         setSubmitted(true)
         message.success('图片生成任务已提交，可在目标片段的生成历史中查看结果')
       } catch (reason) { message.error(getApiErrorMessage(reason)) }

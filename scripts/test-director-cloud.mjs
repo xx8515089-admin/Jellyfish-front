@@ -184,3 +184,18 @@ test('draft, publication and application keep independent versions and propagate
   assert.equal(calls[2].body.expectedApplicationRevisionNo, 7)
   assert.equal(calls[2].body.expectedReferenceRevisionNo, 20)
 })
+
+
+test('director image generation preserves the selected visual style and explicit no-style value', async () => {
+  const calls = []
+  const { StudioDirectorDesks: api } = load('../src/services/studioDirectorDesks.ts', {
+    './generated': { OpenAPI: {} },
+    './generated/core/request': { request: async (_, options) => { calls.push(options); return { code: 200, data: {} } } },
+  })
+  for (const visualStyleId of [12, 27, null]) {
+    await api.generateImage({ segmentId: 101, modelId: 2, prompt: '人物对话', aspectRatio: '16:9', resolution: 2, visualStyleId, references: [] })
+    const body = calls.at(-1).body
+    assert.equal(body.visualStyleId, visualStyleId)
+    assert.equal(JSON.parse(JSON.stringify(body)).visualStyleId, visualStyleId)
+  }
+})

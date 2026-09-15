@@ -16,6 +16,7 @@ import { saveAndUploadDirectorFrame } from './directorCloudUpload'
 
 interface Props {
   editorRoot: React.RefObject<HTMLDivElement>
+  initialVisualStyleId?: number | null
   initialSegmentLabel?: string
   initialSegmentId?: string
   onOpen: (desk: DirectorDesk) => void
@@ -28,7 +29,7 @@ const bindingIdentity = (binding?: DirectorBinding) => binding
   : ''
 const fingerprint = (bindings: DirectorBinding[]) => JSON.stringify({ ...readDirectorSnapshot(), characterBindings: bindings })
 
-export default function DirectorDeskCloudPanel({ editorRoot, initialSegmentId, initialSegmentLabel, onOpen, cloudReady, onDirtyChange }: Props) {
+export default function DirectorDeskCloudPanel({ editorRoot, initialSegmentId, initialSegmentLabel, initialVisualStyleId, onOpen, cloudReady, onDirtyChange }: Props) {
   const draft = useRef<DirectorDraft | null>(null)
   const draftFingerprint = useRef('')
   const [draftStatus, setDraftStatus] = useState('')
@@ -431,7 +432,7 @@ export default function DirectorDeskCloudPanel({ editorRoot, initialSegmentId, i
       </div>
       {selection && <List dataSource={selection.references} renderItem={(item) => <List.Item>{item.referenceToken || `参考 ${item.referenceIndex ?? ''}`} · {item.displayName}</List.Item>} />}
       </section>
-      {referenceOpen && reference?.referenceType === 5 && <DirectorCaptureImageForm key={String(reference.fileId)} reference={reference} bindings={includeCharacters ? referenceBindings : []} includeCharacters={includeCharacters} segmentId={referenceSegment} aspectRatio={referenceAspectRatio} />}
+      {referenceOpen && reference?.referenceType === 5 && <DirectorCaptureImageForm key={String(reference.fileId)} reference={reference} bindings={includeCharacters ? referenceBindings : []} includeCharacters={includeCharacters} visualStyleId={referenceSegment === initialSegmentId ? initialVisualStyleId : null} segmentId={referenceSegment} aspectRatio={referenceAspectRatio} />}
       </div>
       </div>
     </Modal>
