@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react'
 import { Button, Card, Space, Tabs } from 'antd'
 import { FileTextOutlined, LinkOutlined, ThunderboltOutlined, UploadOutlined } from '@ant-design/icons'
 import { useSearchParams } from 'react-router-dom'
-import { ActorsTab } from './tabs/ActorsTab'
-import { ScenesTab } from './tabs/ScenesTab'
-import { PropsTab } from './tabs/PropsTab'
+import { AssetLibraryTab } from './tabs/AssetLibraryTab'
+
+
 import { CostumesTab } from './tabs/CostumesTab'
 import { BatchAssetUploadModal } from './components/BatchAssetUploadModal'
 import { AssetBibleImportModal } from './components/AssetBibleImportModal'
@@ -84,9 +84,9 @@ const AssetManager = () => {
             if (isValidTab(k)) setTabInUrl(k)
           }}
           items={[
-            { key: 'actor', label: l('演员', 'Actors'), children: <ActorsTab refreshToken={refreshTick} /> },
-            { key: 'scene', label: l('场景', 'Scenes'), children: <ScenesTab refreshToken={refreshTick} /> },
-            { key: 'prop', label: l('道具', 'Props'), children: <PropsTab refreshToken={refreshTick} /> },
+            { key: 'actor', label: l('演员', 'Actors'), children: <AssetLibraryTab assetType={1} refreshToken={refreshTick} /> },
+            { key: 'scene', label: l('场景', 'Scenes'), children: <AssetLibraryTab assetType={2} refreshToken={refreshTick} /> },
+            { key: 'prop', label: l('道具', 'Props'), children: <AssetLibraryTab assetType={3} refreshToken={refreshTick} /> },
             { key: 'costume', label: l('服装', 'Costumes'), children: <CostumesTab refreshToken={refreshTick} /> },
           ]}
         />
