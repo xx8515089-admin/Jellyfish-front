@@ -199,3 +199,141 @@ test('director image generation preserves the selected visual style and explicit
     assert.equal(JSON.parse(JSON.stringify(body)).visualStyleId, visualStyleId)
   }
 })
+
+
+test('reference preview uses readable names, preserves bindings and does not merge same-name characters', () => {
+  const { buildDirectorImageReferences } = load('../src/services/studioDirectorDesks.ts', {
+    './generated': { OpenAPI: {} }, './generated/core/request': {},
+  })
+  const bindings = [
+    { objectId: 'a', assetId: 1694, characterLookId: 613, referenceFileId: 134 },
+    { objectId: 'b', assetId: 1695, characterLookId: 614, referenceFileId: 135 },
+    { objectId: 'c', assetId: 1696, referenceFileId: 136 },
+  ]
+  const options = [
+    { assetId: '1694', characterLookId: '613', fileId: '134', assetName: '沈清', characterName: '备用名称', lookName: '晚宴礼服', characterLookName: '备用造型' },
+    { assetId: 1695, characterLookId: 614, fileId: 135, characterName: '沈清', characterLookName: '晚宴礼服' },
+  ]
+  const refs = buildDirectorImageReferences({ referenceType: 5, fileId: 263, displayName: '导演台3版本5产物263' }, bindings, options)
+  assert.equal(refs.length, 4)
+  assert.equal(refs[0].displayName, '沈清 · 晚宴礼服 · 外观参考')
+  assert.equal(refs[1].displayName, refs[0].displayName)
+  assert.equal(refs[2].displayName, '角色参考图 3 · 外观参考')
+  assert.equal(refs[3].displayName, '导演台 · 构图参考')
+  assert.equal(refs[0].assetId, 1694)
+  assert.equal(refs[0].characterLookId, 613)
+  assert.equal(refs[0].fileId, 134)
+  assert.equal(refs[3].referenceType, 5)
+  assert.equal(refs[3].useOnly, '人物站位、朝向、姿势、位置关系和镜头构图')
+  const alone = buildDirectorImageReferences({ referenceType: 5, fileId: 263 }, [])
+  assert.equal(alone.length, 1)
+  assert.equal(alone[0].displayName, '导演台 · 构图参考')
+  const long = buildDirectorImageReferences({ referenceType: 5, fileId: 263 }, bindings.slice(0, 1), [{ ...options[0], assetName: '@{沈清} '.repeat(50) }])[0]
+  assert.ok(long.displayName.length <= 128)
+  assert.doesNotMatch(long.displayName, /[@{}]/)
+  const main = buildDirectorImageReferences({ referenceType: 5, fileId: 263 }, bindings.slice(0, 1), [{ assetId: 1694, characterLookId: 613, fileId: 134, assetName: '陆沉', defaultLook: true }])[0]
+  assert.equal(main.displayName, '陆沉 · 主图 · 外观参考')
+})
+
+test('refreshed and idempotent application responses preserve custom reference text and full generation payload', async () => {
+  const refs = [
+    { referenceType: 1, fileId: 135, assetId: 1695, characterLookId: 614, fileUrl: '/api/v1/studio/files/content?id=135', displayName: '同名参考', useOnly: '用户指定用途', doNotUse: '用户指定约束' },
+    { referenceType: 1, fileId: 134, assetId: 1694, characterLookId: 613, displayName: '同名参考', useOnly: '另一用途', doNotUse: '另一约束' },
+    { referenceType: 5, fileId: 263, displayName: '我的构图标题', useOnly: '我的构图用途', doNotUse: '我的限制' },
+  ]
+  const application = { imageReferences: refs, alreadyApplied: true, applicationRevisionNo: 7 }
+  const calls = []
+  const { StudioDirectorDesks: api } = load('../src/services/studioDirectorDesks.ts', {
+    './generated': { OpenAPI: {} },
+    './generated/core/request': { request: async (_, options) => { calls.push(options); return { code: 200, data: options.method === 'GET' ? { image: application } : application } } },
+  })
+  const current = await api.segmentApplications(101)
+  assert.equal(current.image.imageReferences, refs)
+  assert.equal(calls.length, 1)
+  const result = await api.applyCapture({ segmentId: 101, target: 'image', fileId: 263, expectedApplicationRevisionNo: 7, includeCharacters: true })
+  assert.equal(result.alreadyApplied, true)
+  assert.equal(result.imageReferences, refs)
+  await api.generateImage({ segmentId: 101, modelId: 2, prompt: '人物对话', aspectRatio: '16:9', resolution: 2, visualStyleId: null, references: result.imageReferences })
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[2].body.references)), refs.map(({ fileUrl, ...item }) => item))
+  assert.equal('referenceFileIds' in calls[2].body, false)
+  assert.equal(calls[2].body.references[0].fileId, 135)
+})
+
+
+test('reference image URLs use the configured API prefix and only authenticate the trusted media endpoint', () => {
+  const { resolveDirectorImageSource: resolve } = load('../src/pages/directorDesk/directorImageSource.ts', {
+    '../../services/generated': { OpenAPI: {} }, '../../services/generated/core/request': {},
+  }, { URL })
+  const base = 'https://api.example.com/jellyfish'
+  const page = 'http://localhost:5173/director-desk'
+  assert.equal(resolve('/api/v1/studio/files/content?id=134', base, page).url, `${base}/api/v1/studio/files/content?id=134`)
+  assert.equal(resolve('/api/v1/studio/files/content?id=134', base, page).authenticated, true)
+  assert.equal(resolve(`${base}/api/v1/studio/files/content?id=134`, base, page).authenticated, true)
+  assert.equal(resolve('https://cdn.example.com/134.png', base, page).authenticated, false)
+  assert.equal(resolve('https://other.example.com/jellyfish/api/v1/studio/files/content?id=134', base, page).authenticated, false)
+  assert.equal(resolve('https://api.example.com/jellyfish/api/v1/studio/files/content-extra?id=134', base, page).authenticated, false)
+  assert.throws(() => resolve('javascript:alert(1)', base, page), /图片地址无效/)
+})
+
+test('public images bypass credential requests; authenticated images support cancellation and revoke their Blob URL', async () => {
+  let requests = 0
+  let headersRead = 0
+  let revoked = ''
+  let requestOptions
+  const { loadDirectorImage } = load('../src/pages/directorDesk/directorImageSource.ts', {
+    '../../services/generated': { OpenAPI: { BASE: 'https://api.example.com/jellyfish' } },
+    '../../services/generated/core/request': { getHeaders: async () => { headersRead++; return new Headers({ Authorization: 'test-token' }) } },
+  }, {
+    window: { location: { href: 'http://localhost:5173/director-desk' } },
+    URL: class extends URL { static createObjectURL() { return 'blob:loaded-image' } static revokeObjectURL(url) { revoked = url } },
+    fetch: async (_, options) => { requests++; requestOptions = options; return { ok: true, blob: async () => new Blob(['png'], { type: 'image/png' }) } },
+  })
+  const controller = new AbortController()
+  const publicImage = await loadDirectorImage('https://cdn.example.com/p.png', controller.signal)
+  assert.equal(publicImage.url, 'https://cdn.example.com/p.png')
+  assert.equal(requests, 0)
+  assert.equal(headersRead, 0)
+  const privateImage = await loadDirectorImage('/api/v1/studio/files/content?id=1', controller.signal)
+  assert.equal(requestOptions.headers.get('Authorization'), 'test-token')
+  assert.equal(requestOptions.signal, controller.signal)
+  assert.equal(requestOptions.redirect, 'error')
+  assert.equal(privateImage.url, 'blob:loaded-image')
+  privateImage.release()
+  assert.equal(revoked, 'blob:loaded-image')
+  controller.abort()
+  await assert.rejects(loadDirectorImage('/api/v1/studio/files/content?id=1', controller.signal), /已取消/)
+})
+
+
+test('reported OSS image stays unchanged and video references use video MIME validation', async () => {
+  let mime = 'video/mp4'
+  let calls = 0
+  let accept
+  let released = false
+  const { loadDirectorMedia, directorReferenceMediaType } = load('../src/pages/directorDesk/directorImageSource.ts', {
+    '../../services/generated': { OpenAPI: { BASE: 'https://api.example.com/jellyfish' } },
+    '../../services/generated/core/request': { getHeaders: async () => new Headers() },
+  }, {
+    window: { location: { href: 'http://localhost:5173/director-desk' } },
+    URL: class extends URL { static createObjectURL() { return 'blob:video' } static revokeObjectURL() { released = true } },
+    fetch: async (_, options) => { calls++; accept = options.headers.get('Accept'); return { ok: true, blob: async () => new Blob(['media'], { type: mime }) } },
+  })
+  const signal = new AbortController().signal
+  const reported = 'https://oss.composer.mangamixbox.com/2026/09/04/0d9e5c2a-3264-4ec7-b1db-e30aa96b65bd.png'
+  assert.equal((await loadDirectorMedia(reported, signal)).url, reported)
+  assert.equal(calls, 0)
+  assert.equal(directorReferenceMediaType({ referenceType: 5 }), 'image')
+  assert.equal(directorReferenceMediaType({ referenceType: 7 }), 'video')
+  assert.equal(directorReferenceMediaType({ referenceType: 6 }), 'audio')
+  const endpoint = '/api/v1/studio/files/content?id=7'
+  const video = await loadDirectorMedia(endpoint, signal, 'video')
+  assert.equal(accept, 'video/*,application/octet-stream')
+  assert.equal(video.url, 'blob:video')
+  video.release()
+  assert.equal(released, true)
+  await assert.rejects(loadDirectorMedia(endpoint, signal, 'image'), /返回的内容不是/)
+  mime = 'application/json'
+  await assert.rejects(loadDirectorMedia(endpoint, signal, 'video'), /返回的内容不是/)
+  mime = 'application/octet-stream'
+  assert.equal((await loadDirectorMedia(endpoint, signal, 'video')).url, 'blob:video')
+})

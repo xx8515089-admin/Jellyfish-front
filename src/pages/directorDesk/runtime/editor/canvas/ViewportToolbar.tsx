@@ -1104,7 +1104,7 @@ export function ViewportToolbar({
                             alt=""
                             aria-hidden="true"
                             className="model-library-thumb-image"
-                            loading="lazy"
+                            loading="lazy" decoding="async"
                             src={item.thumbUrl}
                           />
                         ) : (
@@ -1143,7 +1143,7 @@ export function ViewportToolbar({
                           alt=""
                           aria-hidden="true"
                           className="model-library-thumb-image"
-                          loading="lazy"
+                          loading="lazy" decoding="async"
                           src={item.thumbUrl}
                         />
                       ) : (

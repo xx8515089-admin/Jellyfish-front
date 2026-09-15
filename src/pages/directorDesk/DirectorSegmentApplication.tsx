@@ -23,7 +23,7 @@ export default function DirectorSegmentApplication({ segmentId, visualStyleId }:
       } catch (error) { message.error(getApiErrorMessage(error)) }
       finally { setBusy(false) }
     }}>导演台图片参考</Button>
-    <Modal className="director-segment-application-modal" width={620} centered title="片段已应用的导演台图片" open={open} onCancel={() => setOpen(false)} footer={null} destroyOnClose>
+    <Modal className="director-segment-application-modal" width={620} centered title="片段参考图" open={open} onCancel={() => setOpen(false)} footer={null} destroyOnClose>
       {application?.fileId != null ? <DirectorCaptureImageForm
         key={`${segmentId}-${application.applicationRevisionNo}`}
         segmentId={segmentId} visualStyleId={visualStyleId} aspectRatio={aspectRatio} includeCharacters={application.imageReferences.some((item) => item.referenceType === 1)}

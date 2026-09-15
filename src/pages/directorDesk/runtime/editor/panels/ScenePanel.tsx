@@ -181,7 +181,7 @@ export function ScenePanel() {
         <div className="panorama-control-card">
           {panoramaAsset && resolvedPanoramaUrl ? (
             <div className="panorama-thumbnail-card">
-              <img
+              <img loading="lazy" decoding="async"
                 alt={text("当前全景图", "Current panorama")}
                 className="panorama-thumbnail-image"
                 src={resolvedPanoramaUrl}

@@ -382,7 +382,7 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
                 onMouseEnter={() => setHoveredCaptureId(capture.id)}
                 onMouseLeave={() => setHoveredCaptureId((current) => (current === capture.id ? null : current))}
               >
-                <img
+                <img loading="lazy" decoding="async"
                   className="camera-capture-thumb"
                   alt={text(`${capture.name} 缩略图`, `${capture.name} thumbnail`)}
                   src={capture.dataUrl}
@@ -574,7 +574,7 @@ function CameraPanelContent({ camera }: { camera: DirectorCameraShot }) {
           </button>
         </div>
         <div className="camera-capture-viewer-stage">
-          <img
+          <img decoding="async"
             className={viewerImageClassName}
             alt={text(`${viewerCapture.name} 查看大图`, `View ${viewerCapture.name}`)}
             src={viewerCapture.dataUrl}

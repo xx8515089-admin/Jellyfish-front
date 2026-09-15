@@ -153,7 +153,7 @@
 .director-capture-image-form textarea.ant-input { resize: vertical; min-height: 110px; line-height: 1.65; }
 .director-capture-references { display: grid; gap: 10px; max-height: 145px; overflow: auto; padding: 12px; border-radius: 7px; background: rgba(0,0,0,.14); }
 .director-capture-references > div { display: flex; align-items: flex-start; gap: 9px; min-width: 0; }
-.director-capture-references > div > span { display: grid; place-items: center; flex: 0 0 20px; height: 20px; border-radius: 5px; background: rgba(255,255,255,.07); font-size: 11px; }
+.director-capture-references > div > span { display: grid; place-items: center; flex: 0 0 62px; min-height: 24px; padding: 2px 4px; border-radius: 5px; background: rgba(255,255,255,.07); font-size: 11px; }
 .director-capture-references strong { display: block; overflow-wrap: anywhere; font-size: 12px; font-weight: 500; }
 .director-capture-references small { display: block; margin-top: 3px; color: var(--jf-muted, #999); line-height: 1.6; }
 .director-capture-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding-top: 4px; }
@@ -161,3 +161,9 @@
   .director-reference-layout { grid-template-columns: minmax(0, 1fr); padding: 16px; gap: 16px; }
   .director-reference-preview-media img, .director-reference-preview-media video { max-height: 230px; }
 }
+
+.director-capture-reference-help.ant-typography { margin: -4px 0 0; font-size: 12px; line-height: 1.7; }
+.director-capture-references > div > div { min-width: 0; }
+
+.director-capture-references .director-reference-text { flex: 1; min-width: 0; }
+.director-capture-references .director-reference-number { display: block; margin-bottom: 4px; color: #89949e; font-size: 11px; line-height: 16px; }

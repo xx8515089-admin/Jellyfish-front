@@ -49,13 +49,15 @@ export interface DirectorCapture {
 export interface DirectorReference {
   referenceType: number
   fileId: DirectorId
-  fileUrl?: string
+  fileUrl?: string | null
   displayName: string
   referenceIndex?: number
   referenceToken?: string
 }
 export interface DirectorReferenceSelection { revisionNo: number; references: DirectorReference[] }
 export interface DirectorImageReference extends DirectorReference {
+  assetId?: DirectorId | null
+  characterLookId?: DirectorId | null
   useOnly: string
   doNotUse: string
 }
@@ -91,15 +93,39 @@ export interface DirectorAssetFile {
   id: number; relativePath: string; sha256: string; byteSize: number; contentType: string; dependencies: string[]
 }
 
-export function buildDirectorImageReferences(reference: DirectorReference, bindings: DirectorBinding[]): DirectorImageReference[] {
+export interface DirectorCharacterReferenceOption {
+  fileUrl?: string | null
+  assetId?: DirectorId | null
+  characterLookId?: DirectorId | null
+  fileId?: DirectorId | null
+  assetName?: string | null
+  characterName?: string | null
+  lookName?: string | null
+  characterLookName?: string | null
+  defaultLook?: boolean
+}
+
+/** Only builds the preview before application. Server-returned references must remain unchanged. */
+export function buildDirectorImageReferences(reference: DirectorReference, bindings: DirectorBinding[], options: DirectorCharacterReferenceOption[] = []): DirectorImageReference[] {
   if (reference.referenceType !== 5) throw new Error('生图垫图必须是图片，不能使用视频参考类型')
-  const characters = bindings.filter((binding) => binding.referenceFileId != null).map((binding) => ({
-    referenceType: 1, fileId: binding.referenceFileId!, displayName: `角色 ${binding.assetId}`,
-    useOnly: '角色身份、面部、发型和服装', doNotUse: '背景、姿势、构图和机位',
-  }))
-  return [...characters.filter((item, index) => characters.findIndex((other) => String(other.fileId) === String(item.fileId)) === index), {
-    referenceType: 5, fileId: reference.fileId, displayName: reference.displayName,
-    useOnly: '人物站位、姿势、镜头构图和空间关系', doNotUse: '占位模型的面部、材质和角色身份',
+  const clean = (value?: string | null) => (value ?? '').replace(/[\r\n@{}]/g, ' ').replace(/\s+/g, ' ').trim()
+  const identity = (binding: DirectorBinding) => JSON.stringify([String(binding.assetId), String(binding.characterLookId ?? ''), String(binding.referenceFileId)])
+  const unique = bindings.filter((binding, index) => binding.referenceFileId != null && bindings.findIndex((other) => identity(other) === identity(binding)) === index)
+  const characters = unique.map((binding, index) => {
+    const option = options.find((item) => String(item.assetId) === String(binding.assetId) && String(item.fileId) === String(binding.referenceFileId) && (binding.characterLookId == null || String(item.characterLookId) === String(binding.characterLookId)))
+    const characterName = clean(option?.assetName) || clean(option?.characterName) || `角色参考图 ${index + 1}`
+    const lookName = clean(option?.lookName) || clean(option?.characterLookName) || (option?.defaultLook ? '主图' : '')
+    const suffix = ' · 外观参考'
+    const title = [characterName, lookName].filter(Boolean).join(' · ')
+    return {
+      referenceType: 1, fileId: binding.referenceFileId!, fileUrl: option?.fileUrl ?? null, assetId: binding.assetId, characterLookId: binding.characterLookId ?? null,
+      displayName: title.slice(0, 128 - suffix.length).trimEnd() + suffix,
+      useOnly: '人物长相、发型、服装和配饰', doNotUse: '原图站位、原图姿态和原图背景',
+    }
+  })
+  return [...characters, {
+    referenceType: 5, fileId: reference.fileId, fileUrl: reference.fileUrl ?? null, displayName: '导演台 · 构图参考',
+    useOnly: '人物站位、朝向、姿势、位置关系和镜头构图', doNotUse: '人偶外观、材质和辅助标记',
   }]
 }
 
@@ -154,5 +180,5 @@ export const StudioDirectorDesks = {
   addReferences: (segmentId: DirectorId, expectedRevisionNo: number, references: DirectorReference[]) =>
     post<DirectorReferenceSelection>('storyboards/videos/references/add', { segmentId, expectedRevisionNo, references }),
   generateImage: (body: { segmentId: DirectorId; modelId: number; prompt: string; aspectRatio: string; resolution: number; quality?: number; visualStyleId: number | null; references: DirectorImageReference[] }) =>
-    post<unknown>('storyboards/images/generate', body),
+    post<unknown>('storyboards/images/generate', { ...body, references: body.references.map(({ referenceType, fileId, assetId, characterLookId, displayName, useOnly, doNotUse }) => ({ referenceType, fileId, assetId, characterLookId, displayName, useOnly, doNotUse })) }),
 }

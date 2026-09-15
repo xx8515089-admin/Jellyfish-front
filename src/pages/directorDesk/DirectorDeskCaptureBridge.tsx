@@ -1,5 +1,6 @@
+import LazyDirectorImage from './LazyDirectorImage'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Button, Image, Modal, Select, Typography, message } from 'antd'
+import { Button, Modal, Select, Typography, message } from 'antd'
 import type {
   Body_upload_file_api_api_v1_studio_files_upload_post,
   ShotFrameImageRead,
@@ -186,7 +187,7 @@ export default function DirectorDeskCaptureBridge({
   return (
     <Modal
       centered
-      destroyOnClose={false}
+      destroyOnClose
       footer={null}
       open={open}
       title="导演台截图"
@@ -195,8 +196,8 @@ export default function DirectorDeskCaptureBridge({
     >
       <div className="grid min-h-[320px] grid-cols-[minmax(0,1fr)_260px] gap-4 max-md:grid-cols-1">
         <div className="min-w-0 rounded border border-white/10 bg-black/40 p-3">
-          {activeCapture ? (
-            <Image className="max-h-[440px] object-contain" preview src={activeCapture.dataUrl} width="100%" />
+          {open && activeCapture ? (
+            <LazyDirectorImage className="max-h-[440px] object-contain" preview src={activeCapture.dataUrl} width="100%" />
           ) : null}
           {captures.length > 1 ? (
             <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
@@ -209,7 +210,7 @@ export default function DirectorDeskCaptureBridge({
                   type="button"
                   onClick={() => setActiveCaptureIndex(index)}
                 >
-                  <img alt={capture.fileName} className="h-full w-full object-cover" src={capture.dataUrl} />
+                  <img loading="lazy" decoding="async" width={80} height={56} alt={capture.fileName} className="h-full w-full object-cover" src={capture.dataUrl} />
                 </button>
               ))}
             </div>

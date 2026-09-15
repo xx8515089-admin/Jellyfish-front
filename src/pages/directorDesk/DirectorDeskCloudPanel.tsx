@@ -1,7 +1,10 @@
+import LazyDirectorVideo from './LazyDirectorVideo'
+import { directorReferenceMediaType } from './directorImageSource'
+import LazyDirectorImage from './LazyDirectorImage'
 import { BookOutlined, PlusOutlined, CopyOutlined, CloudOutlined, SaveOutlined, TeamOutlined, FolderOpenOutlined, UploadOutlined, HistoryOutlined, DownOutlined, FileOutlined, DeleteOutlined } from '@ant-design/icons'
 import './directorCloudPanel.css'
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Button, Checkbox, Dropdown, Image, Input, InputNumber, List, Modal, Pagination, Popconfirm, Select, Space, Typography, message } from 'antd'
+import { Alert, Button, Checkbox, Dropdown, Input, InputNumber, List, Modal, Pagination, Popconfirm, Select, Space, Typography, message } from 'antd'
 import { StudioDirectorDesks as api, type DirectorDraft, type DirectorBinding, type DirectorCapture, type DirectorDesk, type DirectorDeskSummary, type DirectorReference, type DirectorReferenceSelection } from '../../services/studioDirectorDesks'
 import { useDirectorCharacterOptions } from './useDirectorCharacterOptions'
 import { getApiErrorMessage } from '../../services/apiErrors'
@@ -328,7 +331,7 @@ export default function DirectorDeskCloudPanel({ editorRoot, initialSegmentId, i
       </Space>
     </Modal>
     {draftStatus.includes('失败') && desk && <Button disabled={busy} onClick={() => confirmDiscard(async () => { await activate(await api.detail(desk.id)) })}>核对云端草稿（保留当前场景请先另存）</Button>}
-    <Modal title={<div className="director-cloud-library__title"><CloudOutlined /><span>{chooseSegment ? '选择片段云工程' : '云工程'}</span></div>} open={open} onCancel={() => !busy && setOpen(false)} footer={null} width={920} className="director-cloud-library">
+    <Modal title={<div className="director-cloud-library__title"><CloudOutlined /><span>{chooseSegment ? '选择片段云工程' : '云工程'}</span></div>} open={open} destroyOnClose onCancel={() => !busy && setOpen(false)} footer={null} width={920} className="director-cloud-library">
       <Typography.Paragraph type="secondary" className="director-cloud-library__intro">管理云端场景，或将当前布局保存为新的工程。</Typography.Paragraph>
       <div className="director-cloud-library__layout">
         <section className="director-cloud-library__browser" aria-label="云工程列表">
@@ -339,7 +342,7 @@ export default function DirectorDeskCloudPanel({ editorRoot, initialSegmentId, i
           <List className="director-cloud-library__list" loading={busy} dataSource={items} locale={{ emptyText: keyword.trim() ? '没有找到匹配的工程，试试其他名称' : '还没有云工程，可在右侧新建或保存当前场景' }} renderItem={(item) => {
             const isCurrent = !!desk && String(desk.id) === String(item.id)
             return <List.Item className={`director-cloud-library__item${isCurrent ? ' is-current' : ''}`}>
-              <div className="director-cloud-library__cover">{item.coverUrl ? <Image width={64} height={64} style={{ objectFit: 'cover' }} src={item.coverUrl} alt={item.name} /> : <FolderOpenOutlined />}</div>
+              <div className="director-cloud-library__cover">{item.coverUrl ? <LazyDirectorImage width={64} height={64} style={{ objectFit: 'cover' }} src={item.coverUrl} alt={item.name} /> : <FolderOpenOutlined />}</div>
               <div className="director-cloud-library__details">
                 <div className="director-cloud-library__item-title"><Typography.Text ellipsis title={item.name}>{item.name}</Typography.Text>{isCurrent && <span className="director-cloud-library__current">当前</span>}</div>
                 <div className="director-cloud-library__metadata"><span>修订 {item.revisionNo}</span><span>{item.segmentId == null ? '独立工程' : `片段 ID：${item.segmentId}`}</span></div>
@@ -402,11 +405,11 @@ export default function DirectorDeskCloudPanel({ editorRoot, initialSegmentId, i
       <Typography.Text type="secondary">绑定修改需点击“保存”发布，发布后重新检查绑定状态。</Typography.Text>
       <Button type="primary" style={{ marginLeft: 12 }} loading={busy} disabled={!desk || desk.deleted || !dirty} onClick={() => void run(async () => { await save(); message.success('角色绑定已保存并发布') })}>保存</Button>
     </Modal>
-    <Modal title="垫图参考" width={960} centered className="director-reference-modal" open={referenceOpen} onCancel={() => !busy && setReferenceOpen(false)} footer={null}>
+    <Modal title="参考素材" width={960} centered className="director-reference-modal" destroyOnClose open={referenceOpen} onCancel={() => !busy && setReferenceOpen(false)} footer={null}>
       <div className="director-reference-layout">
       <section className="director-reference-preview">
         <div className="director-reference-section-heading">参考预览</div>
-        <div className="director-reference-preview-media">{reference?.fileUrl && (reference.referenceType === 5 ? <Image src={reference.fileUrl} width="100%" /> : <video src={reference.fileUrl} controls style={{ width: '100%' }} />)}</div>
+        <div className="director-reference-preview-media">{referenceOpen && reference?.fileUrl && (reference.referenceType === 5 ? <LazyDirectorImage src={reference.fileUrl} width="100%" /> : <LazyDirectorVideo key={reference.fileUrl} src={reference.fileUrl} alt={reference.displayName} width="100%" height={180} mediaType={directorReferenceMediaType(reference) === 'audio' ? 'audio' : 'video'} />)}</div>
         <p>应用后保存参考与来源，不会立即生成。失败时可重试，无需重新上传。</p>
         <Checkbox checked={includeCharacters} disabled={busy} onChange={(event) => setIncludeCharacters(event.target.checked)}>附带角色参考图</Checkbox>
       </section>
@@ -430,9 +433,12 @@ export default function DirectorDeskCloudPanel({ editorRoot, initialSegmentId, i
           message.success('已应用到片段视频，原有参考保留；可返回片段发起生成')
         })}>应用到片段视频</Button>
       </div>
-      {selection && <List dataSource={selection.references} renderItem={(item) => <List.Item>{item.referenceToken || `参考 ${item.referenceIndex ?? ''}`} · {item.displayName}</List.Item>} />}
+      {selection && <List dataSource={selection.references} renderItem={(item) => <List.Item>{directorReferenceMediaType(item) === 'image'
+        ? <LazyDirectorImage src={item.fileUrl} alt={item.displayName} width={96} height={72} style={{ objectFit: 'contain' }} />
+        : <LazyDirectorVideo key={`${item.fileId}-${item.fileUrl}`} src={item.fileUrl} alt={item.displayName} mediaType={directorReferenceMediaType(item) === 'audio' ? 'audio' : 'video'} />}
+        <span style={{ flex: 1, marginLeft: 12 }}>{item.referenceToken || `参考 ${item.referenceIndex ?? ''}`} · {item.displayName}</span></List.Item>} />}
       </section>
-      {referenceOpen && reference?.referenceType === 5 && <DirectorCaptureImageForm key={String(reference.fileId)} reference={reference} bindings={includeCharacters ? referenceBindings : []} includeCharacters={includeCharacters} visualStyleId={referenceSegment === initialSegmentId ? initialVisualStyleId : null} segmentId={referenceSegment} aspectRatio={referenceAspectRatio} />}
+      {referenceOpen && reference?.referenceType === 5 && <DirectorCaptureImageForm key={String(reference.fileId)} reference={reference} bindings={includeCharacters ? referenceBindings : []} characterOptions={referenceSegment === segmentId.trim() ? options : []} includeCharacters={includeCharacters} visualStyleId={referenceSegment === initialSegmentId ? initialVisualStyleId : null} segmentId={referenceSegment} aspectRatio={referenceAspectRatio} />}
       </div>
       </div>
     </Modal>
