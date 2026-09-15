@@ -1412,6 +1412,9 @@
   font-size: 13px;
   transition: background-color 140ms ease, border-color 140ms ease;
 }
+.project-clip-editor__generate-label { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.project-clip-editor__generate-price { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+
 .project-clip-editor__reference-drop.is-over {
   border-color: var(--jf-text, #eee);
   background: rgba(255, 255, 255, 0.09);
@@ -4516,4 +4519,35 @@
 
 .project-clip-character-modal .project-clip-character-modal__selected-delete .anticon:active {
   transform: scale(0.96);
+}
+
+/* Keep dubbing model controls consistent with the editor's dark controls. */
+.project-clip-editor__voice-model-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 12px;
+}
+.project-clip-editor__voice-model-controls > .studio-select:first-child {
+  flex: 1 1 130px;
+  min-width: 0;
+}
+.project-clip-editor__voice-model-controls > .studio-select,
+.project-clip-editor__voice-model-controls > .ant-btn {
+  height: 36px;
+}
+.project-clip-editor__voice-model-controls > .ant-btn {
+  padding-inline: 12px;
+  border: 1px solid var(--jf-border, #323237);
+  border-radius: 7px;
+  background: var(--jf-panel-2, #202023);
+  color: var(--jf-text-soft, #d5d5d8);
+  font-size: 12px;
+  box-shadow: none;
+}
+.project-clip-editor__voice-model-controls > .ant-btn:not(:disabled):hover {
+  background: var(--jf-panel-3, #29292d);
+  border-color: var(--jf-accent-border, rgba(255, 255, 255, 0.18));
+  color: var(--jf-text, #f2f2f2);
 }

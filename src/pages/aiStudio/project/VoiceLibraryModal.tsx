@@ -24,6 +24,7 @@ type VoiceLibraryModalProps = {
   preload?: boolean
   currentVoiceId?: number
   onApply?: (voice: SystemVoiceRead) => Promise<void> | void
+  onUnbind?: () => Promise<void>
 }
 
 type NumericFilter<T extends number> = 'all' | T
@@ -41,6 +42,7 @@ export default function VoiceLibraryModal({
   preload = false,
   currentVoiceId,
   onApply,
+  onUnbind,
 }: VoiceLibraryModalProps) {
   const l = useBilingualText()
   const [gender, setGender] = useState<NumericFilter<SystemVoiceGender>>('all')
@@ -298,6 +300,12 @@ export default function VoiceLibraryModal({
       </div>
 
       <footer className="voice-library-modal__footer">
+        {onUnbind && <Button disabled={applying} onClick={async () => {
+          setApplying(true)
+          try { await onUnbind() }
+          catch (error) { message.error(getApiErrorMessage(error, l('解除绑定失败', 'Failed to unbind voice'))) }
+          finally { setApplying(false) }
+        }}>{l('解除绑定', 'Unbind')}</Button>}
         <span className="voice-library-modal__selection-status" aria-live="polite">
           {selectedVoice
             ? l(`已选择：${selectedVoice.name}`, `Selected: ${selectedVoice.name}`)

@@ -1,0 +1,89 @@
+.storyboard-export-modal.ant-modal .ant-modal-content {
+  padding: 16px 23px 14px;
+  border: 1px solid #454547 !important;
+  border-radius: 16px;
+  background: #18191b !important;
+  color: #eee;
+}
+.storyboard-export-modal.ant-modal .ant-modal-header {
+  margin-bottom: 40px;
+  background: transparent !important;
+}
+.storyboard-export-modal.ant-modal .ant-modal-title {
+  color: #f4f4f5;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+}
+.storyboard-export-modal.ant-modal .ant-modal-close {
+  top: 14px;
+  right: 16px;
+  color: #969698;
+}
+.storyboard-export-modal__body { display: flex; flex-direction: column; gap: 16px; }
+.storyboard-export-modal__section h3 { margin: 0 0 8px; color: #f0f0f1; font-size: 14px; line-height: 22px; font-weight: 600; }
+.storyboard-export-modal .storyboard-export-modal__segments {
+  display: flex;
+  width: 100%;
+  padding: 2px;
+  background: #222325;
+  border-radius: 8px;
+}
+.storyboard-export-modal .storyboard-export-modal__segments .ant-radio-button-wrapper {
+  flex: 1;
+  height: 36px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #aaa;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 36px;
+  text-align: center;
+  box-shadow: none;
+}
+.storyboard-export-modal .storyboard-export-modal__segments .ant-radio-button-wrapper::before { display: none; }
+.storyboard-export-modal .storyboard-export-modal__segments .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) {
+  background: #3a3b3d;
+  color: #f5f5f5;
+}
+.storyboard-export-modal .storyboard-export-modal__cards { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.storyboard-export-modal .storyboard-export-modal__cards .ant-radio-wrapper {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 72px;
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: #222325;
+  color: #eee;
+}
+.storyboard-export-modal .storyboard-export-modal__cards .ant-radio { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
+.storyboard-export-modal .storyboard-export-modal__cards .ant-radio + span { display: flex; flex-direction: column; gap: 4px; padding: 0; }
+.storyboard-export-modal .storyboard-export-modal__cards strong { font-size: 14px; line-height: 22px; font-weight: 600; }
+.storyboard-export-modal .storyboard-export-modal__cards small { color: #8e8e91; font-size: 12px; line-height: 20px; }
+.storyboard-export-modal .storyboard-export-modal__cards .ant-radio-wrapper-checked { border-color: #f1f1f2; }
+.storyboard-export-modal .storyboard-export-modal__segments .ant-radio-button-wrapper:focus-within { outline: 2px solid #b8b8ba; outline-offset: 2px; }
+.storyboard-export-modal .ant-radio-wrapper-disabled,
+.storyboard-export-modal .ant-radio-button-wrapper-disabled { opacity: .55; cursor: not-allowed; }
+.storyboard-export-modal__range { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; color: #aaa; font-size: 12px; }
+.storyboard-export-modal__range .ant-input-number { width: 90px; }
+.storyboard-export-modal.ant-modal .ant-modal-footer { margin-top: 40px; }
+.storyboard-export-modal.ant-modal .ant-modal-footer .ant-btn { height: 40px; padding-inline: 16px; border: 0; border-radius: 8px; font-size: 14px; box-shadow: none !important; }
+.storyboard-export-modal.ant-modal .ant-modal-footer .storyboard-export-modal__cancel { background: #333436 !important; color: #eee !important; }
+.storyboard-export-modal.ant-modal .ant-modal-footer .storyboard-export-modal__confirm { background: #fff !important; color: #202126 !important; }
+.storyboard-export-modal.ant-modal .ant-modal-footer .ant-btn:not(:disabled):hover { filter: brightness(.9); }
+.storyboard-export-modal.ant-modal .ant-modal-footer .ant-btn:disabled { opacity: .45; }
+@media (max-width: 480px) {
+  .storyboard-export-modal.ant-modal .ant-modal-content { padding-inline: 16px; }
+  .storyboard-export-modal .storyboard-export-modal__segments .ant-radio-button-wrapper { font-size: 12px; }
+}
+
+.storyboard-export-modal.ant-modal .ant-modal-body,
+.storyboard-export-modal.ant-modal .ant-modal-footer { background: transparent !important; }
+
+/* Keep a single selected border; show keyboard focus only on unselected cards. */
+.storyboard-export-modal .storyboard-export-modal__cards .ant-radio-wrapper:not(.ant-radio-wrapper-checked):has(input:focus-visible) { outline: 2px solid #b8b8ba; outline-offset: 2px; }

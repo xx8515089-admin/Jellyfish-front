@@ -1,3 +1,5 @@
+import StoryboardExportModal from './StoryboardExportModal'
+import { exportInteger, readExportSelections, writeExportSelections } from '../../../services/storyboardExport'
 import CreditIcon from '../../../components/CreditIcon'
 import type React from 'react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -659,6 +661,7 @@ const storyboardSegmentsToClipDrafts = (result: StudioEpisodeStoryboardEditorRes
 }
 
 const ProjectCreatePage: React.FC = () => {
+  const [exportOpen, setExportOpen] = useState(false)
   const l = useBilingualText()
   const navigate = useNavigate()
   const location = useLocation()
@@ -2873,7 +2876,7 @@ const ProjectCreatePage: React.FC = () => {
       }
       return
     }
-    if (currentStep === 3) message.info(l('剪辑表导出功能待接入', 'Export is not connected yet'))
+    if (currentStep === 3) setExportOpen(true)
   }
 
   const handleReturnToAssets = () => {
@@ -3543,6 +3546,16 @@ const ProjectCreatePage: React.FC = () => {
       ) : (
         <Suspense fallback={workflowChunkFallback}>
           <ProjectClipEditingStep
+            onHistorySelect={(segmentId, item) => {
+              if (scriptImportId === null || !storyboardTargetEpisodeId) return
+              const segment = storyboardEditor?.segments.find((value) => String(value.id) === segmentId)
+              const episodeIndex = storyboardEditor?.episodeIndex ?? assetStepEpisodes.find((value) => value.id === String(storyboardTargetEpisodeId))?.index
+              if (!segment || !episodeIndex) { message.warning('片段序号尚未就绪，请刷新后重新选择'); return }
+              try {
+                const selection = { segmentId: exportInteger(segmentId), generationId: exportInteger(item.generationRecordId ?? item.id), mediaType: item.mediaType, episodeId: exportInteger(storyboardTargetEpisodeId), episodeIndex, segmentIndex: segment.segmentIndex }
+                writeExportSelections(scriptImportId, [...readExportSelections(scriptImportId).filter((value) => value.segmentId !== selection.segmentId), selection])
+              } catch (error) { message.error(getApiErrorMessage(error, '保存导出版本选择失败')) }
+            }}
             episodes={clipEditingEpisodes}
             initialClips={storyboardClips}
             ratio={ratio}
@@ -3558,6 +3571,12 @@ const ProjectCreatePage: React.FC = () => {
         </Suspense>
       )}
 
+      {scriptImportId !== null && exportOpen && <StoryboardExportModal
+        open={exportOpen} onCancel={() => setExportOpen(false)} scriptImportId={scriptImportId}
+        episodeId={storyboardTargetEpisodeId}
+        episodeMax={Math.max(0, ...assetStepEpisodes.map((episode) => episode.index))}
+        segmentMax={Math.max(0, ...(storyboardEditor?.segments.map((segment) => segment.segmentIndex) ?? []))}
+      />}
       <CustomStyleModal
         open={customStyleModalOpen}
         category={styleCategory}

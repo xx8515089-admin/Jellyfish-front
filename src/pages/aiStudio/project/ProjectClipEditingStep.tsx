@@ -3,11 +3,9 @@ import DirectorSegmentApplication from '../../directorDesk/DirectorSegmentApplic
 import DirectorGenerationOrigins from '../../directorDesk/DirectorGenerationOrigins'
 import {
   Fragment,
-  forwardRef,
   memo,
   useCallback,
   useEffect,
-  useImperativeHandle,
   useMemo,
   useRef,
   useState,
@@ -28,16 +26,12 @@ import {
   HistoryOutlined,
   InfoCircleOutlined,
   MenuUnfoldOutlined,
-  MessageOutlined,
   MergeCellsOutlined,
   PictureOutlined,
-  PlayCircleFilled,
   PlusOutlined,
-  PlusCircleOutlined,
   QuestionCircleFilled,
   ReloadOutlined,
   SearchOutlined,
-  SettingOutlined,
   StopOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons'
@@ -68,7 +62,7 @@ import { useWorkflowMedia, workflowData, workflowHistoryItem } from './useWorkfl
 import WorkflowThumbnail from './WorkflowThumbnail'
 import ImageToVideoModal from './ImageToVideoModal'
 import StudioSelect from './StudioSelect'
-import VoiceLibraryModal from './VoiceLibraryModal'
+import StoryboardDubbingPanel from './StoryboardDubbingPanel'
 import { schedulePollWhenVisible, type PollTimerCancel } from './assetBatchGenerationPolling'
 import { downloadMediaFile, normalizeMediaFileId, resolveAssetUrl } from '../assets/utils'
 import {
@@ -101,6 +95,7 @@ type ProjectClipEditingStepProps = {
     name: string
     coverUrl?: string
   }>
+  onHistorySelect?: (segmentId: string, item: StudioStoryboardMediaHistoryItem) => void
   onStoryboardEditorRefresh?: () => void
 }
 
@@ -233,21 +228,6 @@ const isClipManuallyDeletable = (
   Boolean(clip.manuallyAdded || clip.id.startsWith('clip-')),
 )
 
-type VoiceLineDraft = {
-  id: string
-  character: string
-  voice: string
-  text: string
-  audioUrl?: string
-  volume: number
-  speed: number
-  expressionPanel: 'pause' | 'interjection' | null
-  customPauseExpanded: boolean
-  customPauseSeconds: string
-  emotion: string
-  emotionExpanded: boolean
-}
-
 type ClipEditingDraft = {
   sourceSignature: string
   clips: ClipDraft[]
@@ -264,9 +244,6 @@ type ClipEditingDraft = {
   selectedStyle: string
   storyboardSkillEnabled: boolean
   historyIndexByClip: Record<string, number>
-  voiceVolume: number
-  voiceSpeed: number
-  voiceLines: VoiceLineDraft[]
 }
 
 const isGenerationMode = (value: unknown): value is GenerationMode => (
@@ -281,42 +258,10 @@ const toStoryboardSegmentRequestId = (clipId: string): string | number => (
   /^\d+$/.test(clipId) ? Number(clipId) : clipId
 )
 
-const INITIAL_VOICE_LINES: VoiceLineDraft[] = [
-  { id: 'voice-line-1', character: '楚青', voice: '温润男声', text: '拼个桌，不介意吧？', volume: 1, speed: 1, expressionPanel: 'interjection', customPauseExpanded: false, customPauseSeconds: '', emotion: '害怕', emotionExpanded: true },
-  { id: 'voice-line-2', character: '姜萤', voice: '元气甜妹', text: '', volume: 1, speed: 1, expressionPanel: null, customPauseExpanded: false, customPauseSeconds: '', emotion: '自动', emotionExpanded: false },
-  { id: 'voice-line-3', character: '旁白', voice: '解说小美', text: '1', volume: 1, speed: 1, expressionPanel: null, customPauseExpanded: false, customPauseSeconds: '', emotion: '自动', emotionExpanded: false },
-]
-
-const VOICE_BINDINGS = [
-  { character: '旁白', voice: '解说小美', adjustable: false },
-  { character: '姜萤', voice: '元气甜妹', adjustable: false },
-  { character: '食客群体', voice: '油腻大叔', adjustable: false },
-  { character: '楚青', voice: '温润男声', adjustable: true },
-]
-
 const normalizeVoiceReferenceCharacter = (value: string) => {
   const name = value.trim()
   return name === '姜萱' ? '姜萤' : name
 }
-
-const VOICE_PAUSE_OPTIONS = [
-  { label: '0.25s', token: '<#0.25#>' },
-  { label: '0.5s', token: '<#0.5#>' },
-  { label: '1s', token: '<#1#>' },
-  { label: '1.5s', token: '<#1.5#>' },
-]
-
-const VOICE_INTERJECTION_OPTIONS = [
-  ['笑声', 'Laughter'], ['轻笑', 'Chuckling'], ['咳嗽', 'Cough'], ['清嗓子', 'Clear throat'], ['呻吟', 'Groan'],
-  ['换气', 'Breath'], ['喘气', 'Panting'], ['吸气', 'Inhale'], ['呼气', 'Exhale'], ['倒吸气', 'Gasp'],
-  ['吸鼻子', 'Sniff'], ['叹气', 'Sigh'], ['喷鼻息', 'Snort'], ['打嗝', 'Hiccup'], ['咀嚼', 'Chewing'],
-  ['哼唱', 'Humming'], ['嘶吼声', 'Roar'], ['嗯', 'Hmm'], ['喷嚏', 'Sneeze'],
-] as const
-
-const VOICE_EMOTIONS = [
-  ['自动', 'Auto'], ['高兴', 'Happy'], ['悲伤', 'Sad'], ['愤怒', 'Angry'],
-  ['害怕', 'Fearful'], ['厌恶', 'Disgusted'], ['惊讶', 'Surprised'], ['中性', 'Neutral'],
-] as const
 
 const PREVIEW_IMAGES = [
   '/assets/project-create/tone-suspense.jpg',
@@ -327,7 +272,6 @@ const PREVIEW_IMAGES = [
 
 const NO_STYLE_VALUE = '__no_style__'
 const NO_TONE_VALUE = '__no_tone__'
-const formatVoiceRate = (value: number) => `${Number.isInteger(value) ? value : value.toFixed(1)}x`
 const formatCreditCost = (value: number | undefined) => {
   if (value === undefined) return '--'
   return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/\.?0+$/, '')
@@ -1134,321 +1078,6 @@ const PromptMentionEditor = memo(function PromptMentionEditor({
   )
 })
 
-const VOICE_INLINE_TOKEN_PATTERN = /(<#[^#\n]+#>|<[^<>\n]+>)/g
-const VOICE_PAUSE_TOKEN_EXACT_PATTERN = /^<#[^#\n]+#>$/
-const VOICE_INTERJECTION_TOKEN_EXACT_PATTERN = /^<[^#<>\n][^<>\n]*>$/
-const VOICE_EDITOR_TOKEN_SELECTOR = '[data-voice-inline-token="true"]'
-
-type VoiceTextEditorProps = {
-  value: string
-  maxLength: number
-  placeholder: string
-  onChange: (value: string) => void
-}
-
-type VoiceTextEditorHandle = {
-  insertToken: (token: string) => void
-}
-
-const VOICE_EDITOR_BLOCK_TAGS = new Set(['DIV', 'P', 'LI'])
-
-const readVoiceEditorNode = (node: Node): string => {
-  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? ''
-  if (!(node instanceof HTMLElement)) return ''
-  if (node.tagName === 'BR') return '\n'
-  if (node.matches(VOICE_EDITOR_TOKEN_SELECTOR)) return node.textContent ?? ''
-
-  let value = ''
-  Array.from(node.childNodes).forEach((child, index, siblings) => {
-    const isBlock = child instanceof HTMLElement && VOICE_EDITOR_BLOCK_TAGS.has(child.tagName)
-    if (isBlock && value && !value.endsWith('\n')) value += '\n'
-    value += readVoiceEditorNode(child)
-    if (isBlock && index < siblings.length - 1 && !value.endsWith('\n')) value += '\n'
-  })
-  return value
-}
-
-const readVoiceTextEditorValue = (editor: HTMLDivElement) => (
-  readVoiceEditorNode(editor).replace(/\r\n?/g, '\n')
-)
-
-const isVoiceEditorToken = (node: Node | null): node is HTMLElement => (
-  node instanceof HTMLElement && node.matches(VOICE_EDITOR_TOKEN_SELECTOR)
-)
-
-const getVoiceEditorTokenFromNode = (node: Node | null) => {
-  const element = node instanceof HTMLElement ? node : node?.parentElement
-  return element?.closest<HTMLElement>(VOICE_EDITOR_TOKEN_SELECTOR) ?? null
-}
-
-const placeVoiceEditorCaretAtTokenBoundary = (
-  editor: HTMLDivElement,
-  token: HTMLElement,
-  side: 'before' | 'after',
-) => {
-  const parent = token.parentNode
-  if (!parent) return
-  const selection = window.getSelection()
-  if (!selection) return
-  const tokenIndex = Array.prototype.indexOf.call(parent.childNodes, token) as number
-  const range = document.createRange()
-  range.setStart(parent, tokenIndex + (side === 'after' ? 1 : 0))
-  range.collapse(true)
-  selection.removeAllRanges()
-  selection.addRange(range)
-  editor.focus({ preventScroll: true })
-}
-
-const getSelectedVoiceEditorToken = (editor: HTMLDivElement) => {
-  const selection = window.getSelection()
-  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null
-  const range = selection.getRangeAt(0)
-  if (range.startContainer !== range.endContainer || !editor.contains(range.startContainer)) return null
-  if (range.endOffset - range.startOffset !== 1) return null
-  const selectedNode = range.startContainer.childNodes[range.startOffset] ?? null
-  return isVoiceEditorToken(selectedNode) ? selectedNode : null
-}
-
-const getAdjacentVoiceEditorToken = (
-  editor: HTMLDivElement,
-  direction: 'backward' | 'forward',
-) => {
-  const selection = window.getSelection()
-  if (!selection || !selection.isCollapsed || !selection.anchorNode || !editor.contains(selection.anchorNode)) return null
-
-  const anchor = selection.anchorNode
-  const offset = selection.anchorOffset
-  let candidate: Node | null = null
-
-  if (anchor.nodeType === Node.TEXT_NODE) {
-    const textLength = anchor.textContent?.length ?? 0
-    const isAtEdge = direction === 'backward' ? offset === 0 : offset === textLength
-    if (!isAtEdge) return null
-    candidate = direction === 'backward' ? anchor.previousSibling : anchor.nextSibling
-  } else {
-    candidate = direction === 'backward'
-      ? anchor.childNodes[offset - 1] ?? null
-      : anchor.childNodes[offset] ?? null
-  }
-
-  return isVoiceEditorToken(candidate) ? candidate : null
-}
-
-const getVoiceEditorTokenAtSelection = (editor: HTMLDivElement) => {
-  const selection = window.getSelection()
-  if (!selection || selection.rangeCount === 0) return null
-  const token = getVoiceEditorTokenFromNode(selection.anchorNode)
-  return token && editor.contains(token) ? token : null
-}
-
-const removeVoiceEditorToken = (editor: HTMLDivElement, token: HTMLElement) => {
-  const parent = token.parentNode
-  if (!parent) return
-  const tokenIndex = Array.prototype.indexOf.call(parent.childNodes, token) as number
-  token.remove()
-
-  const selection = window.getSelection()
-  if (!selection) return
-  const range = document.createRange()
-  range.setStart(parent, Math.min(tokenIndex, parent.childNodes.length))
-  range.collapse(true)
-  selection.removeAllRanges()
-  selection.addRange(range)
-  editor.focus({ preventScroll: true })
-}
-
-const createVoiceEditorToken = (value: string) => {
-  const isPauseToken = VOICE_PAUSE_TOKEN_EXACT_PATTERN.test(value)
-  const isInterjectionToken = VOICE_INTERJECTION_TOKEN_EXACT_PATTERN.test(value)
-  if (!isPauseToken && !isInterjectionToken) return null
-
-  const token = document.createElement('span')
-  token.className = `project-clip-editor__voice-inline-token ${isPauseToken ? 'is-pause' : 'is-interjection'}`
-  token.contentEditable = 'false'
-  token.dataset.voiceInlineToken = 'true'
-  token.textContent = value
-  return token
-}
-
-const renderVoiceTextEditorValue = (editor: HTMLDivElement, value: string) => {
-  editor.replaceChildren()
-  value.split(VOICE_INLINE_TOKEN_PATTERN).forEach((part) => {
-    if (!part) return
-    const token = createVoiceEditorToken(part)
-    if (token) {
-      editor.append(token)
-      return
-    }
-    editor.append(document.createTextNode(part))
-  })
-  editor.dataset.value = value
-}
-
-const VoiceTextEditor = forwardRef<VoiceTextEditorHandle, VoiceTextEditorProps>(function VoiceTextEditor(
-  { value, maxLength, placeholder, onChange },
-  ref,
-) {
-  const editorRef = useRef<HTMLDivElement>(null)
-  const counterRef = useRef<HTMLElement>(null)
-  const savedRangeRef = useRef<Range | null>(null)
-
-  useEffect(() => {
-    const editor = editorRef.current
-    if (!editor) return
-    const hasEditableToken = Array.from(
-      editor.querySelectorAll<HTMLElement>(VOICE_EDITOR_TOKEN_SELECTOR),
-    ).some((token) => token.contentEditable !== 'false')
-    if (editor.dataset.value !== value || hasEditableToken) {
-      renderVoiceTextEditorValue(editor, value)
-    }
-    if (counterRef.current) counterRef.current.textContent = `${value.length}/${maxLength}`
-  }, [maxLength, value])
-
-  const syncValue = (publish = false) => {
-    const editor = editorRef.current
-    if (!editor) return
-    const nextValue = readVoiceTextEditorValue(editor).slice(0, maxLength)
-    editor.dataset.value = nextValue
-    if (counterRef.current) counterRef.current.textContent = `${nextValue.length}/${maxLength}`
-    if (!nextValue) editor.replaceChildren()
-    if (publish && nextValue !== value) onChange(nextValue)
-  }
-
-  const rememberSelection = () => {
-    const editor = editorRef.current
-    const selection = window.getSelection()
-    if (!editor || !selection || selection.rangeCount === 0) return
-    const range = selection.getRangeAt(0)
-    if (!editor.contains(range.startContainer) || !editor.contains(range.endContainer)) return
-    savedRangeRef.current = range.cloneRange()
-  }
-
-  const insertToken = (tokenValue: string) => {
-    const editor = editorRef.current
-    const token = createVoiceEditorToken(tokenValue)
-    if (!editor || !token) return
-
-    const selection = window.getSelection()
-    const liveRange = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null
-    const range = liveRange
-      && editor.contains(liveRange.startContainer)
-      && editor.contains(liveRange.endContainer)
-      ? liveRange.cloneRange()
-      : savedRangeRef.current?.cloneRange()
-
-    const insertionRange = range
-      && editor.contains(range.startContainer)
-      && editor.contains(range.endContainer)
-      ? range
-      : document.createRange()
-
-    if (!range || !editor.contains(range.startContainer) || !editor.contains(range.endContainer)) {
-      insertionRange.selectNodeContents(editor)
-      insertionRange.collapse(false)
-    }
-
-    const currentLength = readVoiceTextEditorValue(editor).length
-    if (currentLength - insertionRange.toString().length + tokenValue.length > maxLength) return
-
-    insertionRange.deleteContents()
-    insertionRange.insertNode(token)
-    placeVoiceEditorCaretAtTokenBoundary(editor, token, 'after')
-    rememberSelection()
-    syncValue()
-  }
-
-  useImperativeHandle(ref, () => ({ insertToken }))
-
-  return (
-    <>
-      <div
-        ref={editorRef}
-        className="project-clip-editor__voice-rich-input"
-        contentEditable
-        suppressContentEditableWarning
-        role="textbox"
-        aria-multiline="true"
-        aria-label={placeholder}
-        tabIndex={0}
-        spellCheck={false}
-        data-placeholder={placeholder}
-        onMouseDown={(event) => {
-          const target = event.target as HTMLElement
-          const token = target.closest<HTMLElement>(VOICE_EDITOR_TOKEN_SELECTOR)
-          if (!token || !editorRef.current?.contains(token)) return
-          event.preventDefault()
-          const bounds = token.getBoundingClientRect()
-          placeVoiceEditorCaretAtTokenBoundary(
-            editorRef.current,
-            token,
-            event.clientX < bounds.left + bounds.width / 2 ? 'before' : 'after',
-          )
-          rememberSelection()
-        }}
-        onKeyDown={(event) => {
-          const editor = editorRef.current
-          if (!editor || event.nativeEvent.isComposing) return
-
-          if (!event.shiftKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
-            const tokenAtSelection = getVoiceEditorTokenAtSelection(editor)
-            if (tokenAtSelection) {
-              event.preventDefault()
-              placeVoiceEditorCaretAtTokenBoundary(
-                editor,
-                tokenAtSelection,
-                event.key === 'ArrowLeft' ? 'before' : 'after',
-              )
-              rememberSelection()
-              return
-            }
-
-            const direction = event.key === 'ArrowLeft' ? 'backward' : 'forward'
-            const adjacentToken = getAdjacentVoiceEditorToken(editor, direction)
-            if (adjacentToken) {
-              event.preventDefault()
-              placeVoiceEditorCaretAtTokenBoundary(
-                editor,
-                adjacentToken,
-                direction === 'backward' ? 'before' : 'after',
-              )
-              rememberSelection()
-              return
-            }
-          }
-
-          if (event.key !== 'Backspace' && event.key !== 'Delete') return
-          const selectedToken = getSelectedVoiceEditorToken(editor)
-          const adjacentToken = selectedToken ?? getVoiceEditorTokenAtSelection(editor) ?? getAdjacentVoiceEditorToken(
-            editor,
-            event.key === 'Backspace' ? 'backward' : 'forward',
-          )
-          if (!adjacentToken) return
-          event.preventDefault()
-          removeVoiceEditorToken(editor, adjacentToken)
-          rememberSelection()
-          syncValue()
-        }}
-        onInput={() => {
-          syncValue()
-          rememberSelection()
-        }}
-        onFocus={rememberSelection}
-        onMouseUp={rememberSelection}
-        onKeyUp={rememberSelection}
-        onBlur={() => {
-          rememberSelection()
-          syncValue(true)
-        }}
-        onPaste={(event) => {
-          event.preventDefault()
-          document.execCommand('insertText', false, event.clipboardData.getData('text/plain'))
-        }}
-      />
-      <small ref={counterRef}>{value.length}/{maxLength}</small>
-    </>
-  )
-})
-
 const splitIntoClips = (episodes: EpisodeDraft[]): ClipDraft[] => {
   const source = episodes[0]?.rawText.trim() ?? ''
   const paragraphs = source
@@ -1491,6 +1120,7 @@ export default function ProjectClipEditingStep({
   visualStyleOptions = [],
   toneStyleOptions = [],
   onStoryboardEditorRefresh,
+  onHistorySelect,
 }: ProjectClipEditingStepProps) {
   const l = useBilingualText()
   const fallbackPromptMentionAssets = useMemo<PromptMentionAsset[]>(() => [
@@ -1656,11 +1286,6 @@ export default function ProjectClipEditingStep({
   )
   const [previewImageRatio, setPreviewImageRatio] = useState(() => getRatioValue(ratio || '9:16'))
   const [imageToVideoSource, setImageToVideoSource] = useState<{ clipId: string; item: StudioStoryboardMediaHistoryItem } | null>(null)
-  const [voiceInfoVisible, setVoiceInfoVisible] = useState(true)
-  const [voiceConfigExpanded, setVoiceConfigExpanded] = useState(true)
-  const [voiceBasicsExpanded, setVoiceBasicsExpanded] = useState(true)
-  const [voiceVolume, setVoiceVolume] = useState(canRestoreDraft ? restoredDraft.voiceVolume : 1)
-  const [voiceSpeed, setVoiceSpeed] = useState(canRestoreDraft ? restoredDraft.voiceSpeed : 1)
   const [imageModels, setImageModels] = useState<StudioGenerationModel[]>([])
   const [imageModelsLoading, setImageModelsLoading] = useState(true)
   const [imageModelsError, setImageModelsError] = useState<unknown>()
@@ -1678,19 +1303,6 @@ export default function ProjectClipEditingStep({
   const [promptRegenerationByClipId, setPromptRegenerationByClipId] = useState<Record<string, PromptRegenerationState>>({})
   const [videoGenerationByClipId, setVideoGenerationByClipId] = useState<Record<string, VideoGenerationState>>({})
   const [storyboardImageSkillByClipId, setStoryboardImageSkillByClipId] = useState<Record<string, StoryboardImageSkillState>>({})
-  const initialVoiceLines = (
-    canRestoreDraft && Array.isArray(restoredDraft.voiceLines)
-      ? restoredDraft.voiceLines
-      : INITIAL_VOICE_LINES
-  )
-  const [voiceLines, setVoiceLines] = useState<VoiceLineDraft[]>(initialVoiceLines)
-  const voiceEditorRefs = useRef(new Map<string, VoiceTextEditorHandle>())
-  const [expandedVoiceLineId, setExpandedVoiceLineId] = useState<string | null>(
-    initialVoiceLines[0]?.id ?? null,
-  )
-  const [playingVoiceLineId, setPlayingVoiceLineId] = useState<string | null>(null)
-  const voicePreviewAudioRef = useRef<HTMLAudioElement | null>(null)
-  const [voiceLibraryOpen, setVoiceLibraryOpen] = useState(false)
   const sourceSignatureRef = useRef(sourceSignature)
   const ratioPropRef = useRef(ratio)
   const styleNamePropRef = useRef(styleName)
@@ -1737,12 +1349,6 @@ export default function ProjectClipEditingStep({
   segmentDetailsByClipIdRef.current = segmentDetailsByClipId
   const mediaHistoryByClipIdRef = useRef(mediaHistoryByClipId)
   mediaHistoryByClipIdRef.current = mediaHistoryByClipId
-  const persistableVoiceLines = useMemo(() => voiceLines.map((line) => ({
-    ...line,
-    expressionPanel: null,
-    customPauseExpanded: false,
-    emotionExpanded: false,
-  })), [voiceLines])
 
   useProjectCreationDraft(PROJECT_CREATION_DRAFT_KEYS.clips, {
     sourceSignature,
@@ -1760,9 +1366,6 @@ export default function ProjectClipEditingStep({
     selectedStyle,
     storyboardSkillEnabled,
     historyIndexByClip,
-    voiceVolume,
-    voiceSpeed,
-    voiceLines: persistableVoiceLines,
   })
   const activeClip = clips.find((clip) => clip.id === activeClipId) ?? clips[0]
   const [draggedHistory, setDraggedHistory] = useState<StudioStoryboardMediaHistoryItem | null>(null)
@@ -2302,9 +1905,6 @@ export default function ProjectClipEditingStep({
       ))}
     </div>
   )
-  const videoGenerationButtonText = isActiveVideoGenerating
-    ? `${activeVideoGenerationStatusText}${activeVideoGenerationProgressText}`
-    : `${l('生视频', 'Generate video')} · ${videoGenerateCreditCostText}`
   const generationButtonDisabled = !prompt.trim()
     || (mode === 'image' && (
       !selectedImageModel
@@ -2320,15 +1920,6 @@ export default function ProjectClipEditingStep({
       || !normalizeVideoResolutionValue(videoResolution)
       || isActiveVideoGenerating
     ))
-  const voiceRoleOptions = VOICE_BINDINGS.map(({ character, voice, adjustable }) => ({
-    value: `${character}|${voice}`,
-    label: (
-      <span className="project-clip-editor__voice-option-label">
-        <span><strong>{character}</strong><i />{l('音色', 'Voice')}：{voice}</span>
-        {adjustable && <em>{l('可调情绪', 'Adjustable')}</em>}
-      </span>
-    ),
-  }))
 
   useEffect(() => {
     if (sourceSignatureRef.current === sourceSignature) return
@@ -2901,14 +2492,6 @@ export default function ProjectClipEditingStep({
     setSelectedTone(NO_TONE_VALUE)
   }, [canRestoreDraft, toneStyleName])
 
-  useEffect(() => () => {
-    const audio = voicePreviewAudioRef.current
-    if (!audio) return
-    audio.pause()
-    audio.removeAttribute('src')
-    audio.load()
-    voicePreviewAudioRef.current = null
-  }, [])
 
   const updatePrompt = useCallback((value: string) => {
     if (!activePromptDraftKey) return
@@ -4142,123 +3725,6 @@ export default function ProjectClipEditingStep({
     removeManualClip(deleteConfirmClip)
   }
 
-  const updateVoiceLine = (id: string, patch: Partial<VoiceLineDraft>) => {
-    setVoiceLines((current) => current.map((line) => (line.id === id ? { ...line, ...patch } : line)))
-  }
-
-  const stopVoicePreview = () => {
-    const audio = voicePreviewAudioRef.current
-    if (audio) {
-      audio.onended = null
-      audio.onerror = null
-      audio.pause()
-      audio.currentTime = 0
-      voicePreviewAudioRef.current = null
-    }
-    setPlayingVoiceLineId(null)
-  }
-
-  const previewVoiceLine = (line: VoiceLineDraft) => {
-    if (playingVoiceLineId === line.id) {
-      stopVoicePreview()
-      return
-    }
-
-    if (!line.audioUrl) {
-      message.warning(l('当前台词还没有可预览的配音文件', 'This line does not have preview audio yet'))
-      return
-    }
-
-    stopVoicePreview()
-    const audio = new Audio(line.audioUrl)
-    voicePreviewAudioRef.current = audio
-    setPlayingVoiceLineId(line.id)
-
-    const resetPreview = () => {
-      if (voicePreviewAudioRef.current !== audio) return
-      voicePreviewAudioRef.current = null
-      setPlayingVoiceLineId(null)
-    }
-
-    audio.onended = resetPreview
-    audio.onerror = () => {
-      resetPreview()
-      message.error(l('配音文件加载失败', 'Failed to load the voice audio'))
-    }
-    void audio.play().catch(() => {
-      resetPreview()
-      message.error(l('配音文件播放失败', 'Failed to play the voice audio'))
-    })
-  }
-
-  const downloadVoiceLine = (line: VoiceLineDraft, index: number) => {
-    if (!line.audioUrl) {
-      message.warning(l('当前台词还没有可下载的配音文件', 'This line does not have downloadable audio yet'))
-      return
-    }
-
-    const path = line.audioUrl.split(/[?#]/, 1)[0]
-    const sourceExtension = path.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase()
-    const extension = sourceExtension && ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'webm'].includes(sourceExtension)
-      ? sourceExtension
-      : 'mp3'
-    const safeCharacter = (line.character || l('配音', 'voice'))
-      .replace(/[\\/:*?"<>|]/g, '-')
-      .trim()
-    const link = document.createElement('a')
-    link.href = line.audioUrl
-    link.download = `${safeCharacter || 'voice'}-${index + 1}.${extension}`
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-  }
-
-  const appendVoiceToken = (line: VoiceLineDraft, token: string) => {
-    const editor = voiceEditorRefs.current.get(line.id)
-    if (editor) {
-      editor.insertToken(token)
-      return
-    }
-    updateVoiceLine(line.id, { text: `${line.text}${token}` })
-  }
-
-  const confirmCustomPause = (line: VoiceLineDraft) => {
-    const seconds = Number(line.customPauseSeconds)
-    if (!Number.isFinite(seconds) || seconds <= 0) return
-
-    const normalizedSeconds = Number(seconds.toFixed(2))
-    appendVoiceToken(line, `<#${normalizedSeconds}#>`)
-    updateVoiceLine(line.id, {
-      customPauseExpanded: false,
-      customPauseSeconds: '',
-    })
-  }
-
-  const addVoiceLine = () => {
-    setVoiceLines((current) => [
-      ...current,
-      {
-        id: `voice-line-${Date.now()}`,
-        character: '姜萱',
-        voice: '元气甜妹',
-        text: '',
-        volume: 1,
-        speed: 1,
-        expressionPanel: null,
-        customPauseExpanded: false,
-        customPauseSeconds: '',
-        emotion: '自动',
-        emotionExpanded: false,
-      },
-    ])
-  }
-
-  const removeVoiceLine = (id: string) => {
-    if (playingVoiceLineId === id) stopVoicePreview()
-    setVoiceLines((current) => current.filter((line) => line.id !== id))
-    setExpandedVoiceLineId((current) => (current === id ? null : current))
-  }
-
   if (!activeClip) return null
 
   return (
@@ -4579,6 +4045,7 @@ export default function ProjectClipEditingStep({
                           historyPreviewTasksRef.current = next
                           setHistoryPreviewTasks(next)
                           setHistoryIndexByClip((current) => ({ ...current, [activeClip.id]: index }))
+                          onHistorySelect?.(activeClip.id, item)
                         }}
                       >
                         <WorkflowThumbnail mediaType={item.mediaType} id={item.id} ready={item.status === 3} />
@@ -4615,334 +4082,7 @@ export default function ProjectClipEditingStep({
         </div>
 
         {mode === 'voice' ? (
-          <div className="project-clip-editor__voice-panel">
-            {voiceInfoVisible && (
-              <section className="project-clip-editor__voice-notice" role="status">
-                <InfoCircleOutlined />
-                <div>
-                  <strong>{l('配音导出说明', 'Voiceover export')}</strong>
-                  <span>{l('生成的配音为 AI 合成音频，导出后将作为独立音频文件，用于导入剪映等工具进行剪辑。此功能与视频生成相互独立。', 'Generated voiceover is exported as a separate AI audio file for editing and remains independent from video generation.')}</span>
-                </div>
-                <button type="button" aria-label={l('关闭说明', 'Dismiss notice')} onClick={() => setVoiceInfoVisible(false)}>
-                  <CloseOutlined />
-                </button>
-              </section>
-            )}
-
-            <section className="project-clip-editor__voice-accordion">
-              <button
-                type="button"
-                className="project-clip-editor__voice-accordion-trigger"
-                aria-expanded={voiceConfigExpanded}
-                onClick={() => setVoiceConfigExpanded((current) => !current)}
-              >
-                <span>
-                  <strong>{l('音色配置', 'Voice assignment')}</strong>
-                  <small>{l('绑定专属音色，全剧同步变更', 'Bind character voices and sync them across the project')}</small>
-                </span>
-                <DownOutlined />
-              </button>
-              {voiceConfigExpanded && (
-                <div className="project-clip-editor__voice-binding-list">
-                  {VOICE_BINDINGS.map(({ character, voice }) => (
-                    <button key={character} type="button" onClick={() => setVoiceLibraryOpen(true)}>
-                      <span>{character}：</span>
-                      <strong>{voice}</strong>
-                      <DownOutlined />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="project-clip-editor__voice-accordion">
-              <button
-                type="button"
-                className="project-clip-editor__voice-accordion-trigger"
-                aria-expanded={voiceBasicsExpanded}
-                onClick={() => setVoiceBasicsExpanded((current) => !current)}
-              >
-                <span><strong>{l('基础设置', 'Basic settings')}</strong></span>
-                <DownOutlined />
-              </button>
-              {voiceBasicsExpanded && (
-                <div className="project-clip-editor__voice-basics">
-                  <label>
-                    <span>{l('音量', 'Volume')}</span>
-                    <div className="project-clip-editor__voice-slider-control">
-                      <Slider min={0} max={2} step={0.1} value={voiceVolume} tooltip={{ open: false }} onChange={setVoiceVolume} />
-                      <output>{formatVoiceRate(voiceVolume)}</output>
-                    </div>
-                  </label>
-                  <label>
-                    <span>{l('音速', 'Speed')}</span>
-                    <div className="project-clip-editor__voice-slider-control">
-                      <Slider min={0.5} max={2} step={0.1} value={voiceSpeed} tooltip={{ open: false }} onChange={setVoiceSpeed} />
-                      <output>{formatVoiceRate(voiceSpeed)}</output>
-                    </div>
-                  </label>
-                </div>
-              )}
-            </section>
-
-            <section className="project-clip-editor__voice-lines">
-              <div className="project-clip-editor__voice-lines-title">
-                <strong>{l('台词配音', 'Dialogue voiceover')}</strong>
-                <span>{voiceLines.length} {l('条', 'lines')}</span>
-              </div>
-              <div className="project-clip-editor__voice-line-list">
-                {voiceLines.map((line, index) => {
-                  const adjustableVoice = VOICE_BINDINGS.some(({ character, voice, adjustable }) => (
-                    adjustable && character === line.character && voice === line.voice
-                  ))
-                  return (
-                    <article key={line.id} className={`project-clip-editor__voice-line-card${adjustableVoice ? ' has-adjustable-voice' : ''}`}>
-                    <header>
-                      <strong>{l('分镜台词', 'Storyboard line')}{index + 1}</strong>
-                      <span>
-                        <button
-                          type="button"
-                          className={expandedVoiceLineId === line.id ? 'is-active' : ''}
-                          aria-label={expandedVoiceLineId === line.id ? l('收起台词设置', 'Collapse line settings') : l('展开台词设置', 'Expand line settings')}
-                          aria-expanded={expandedVoiceLineId === line.id}
-                          onClick={() => setExpandedVoiceLineId((current) => (current === line.id ? null : line.id))}
-                        >
-                          <SettingOutlined />
-                        </button>
-                        <button type="button" aria-label={l('删除台词', 'Delete line')} disabled={voiceLines.length === 1} onClick={() => removeVoiceLine(line.id)}><DeleteOutlined /></button>
-                      </span>
-                    </header>
-                    <label>
-                      <span>{l('角色', 'Character')}</span>
-                      <StudioSelect
-                        value={`${line.character}|${line.voice}`}
-                        options={voiceRoleOptions}
-                        aria-label={l('选择角色与音色', 'Select character and voice')}
-                        onChange={(value) => {
-                          const [character, voice] = String(value).split('|')
-                          updateVoiceLine(line.id, { character, voice })
-                        }}
-                      />
-                    </label>
-                    <div className="project-clip-editor__voice-copy-field">
-                      <span className="project-clip-editor__voice-copy-label">
-                        <span>{l('台词', 'Dialogue')}</span>
-                        <span>
-                          <button
-                            type="button"
-                            className={playingVoiceLineId === line.id ? 'is-playing' : ''}
-                            aria-label={playingVoiceLineId === line.id ? l('停止试听', 'Stop preview') : l('试听台词', 'Preview line')}
-                            title={playingVoiceLineId === line.id ? l('停止试听', 'Stop preview') : l('预览此条配音', 'Preview this voice line')}
-                            onClick={() => previewVoiceLine(line)}
-                          >
-                            <PlayCircleFilled />
-                          </button>
-                          <button
-                            type="button"
-                            aria-label={l('下载此条配音', 'Download this voice line')}
-                            title={l('下载此条配音', 'Download this voice line')}
-                            onClick={() => downloadVoiceLine(line, index)}
-                          >
-                            <DownloadOutlined />
-                          </button>
-                        </span>
-                      </span>
-                      <span className="project-clip-editor__voice-copy-editor">
-                        <VoiceTextEditor
-                          ref={(editor) => {
-                            if (editor) voiceEditorRefs.current.set(line.id, editor)
-                            else voiceEditorRefs.current.delete(line.id)
-                          }}
-                          value={line.text}
-                          maxLength={1000}
-                          placeholder={l('输入文字描述你想创作的内容', 'Enter dialogue to synthesize')}
-                          onChange={(text) => updateVoiceLine(line.id, { text })}
-                        />
-                      </span>
-                    </div>
-                    {adjustableVoice && (
-                      <div className="project-clip-editor__voice-expression">
-                        <div className="project-clip-editor__voice-expression-toolbar">
-                          <button
-                            type="button"
-                            className={line.expressionPanel === 'pause' ? 'is-active' : ''}
-                            aria-expanded={line.expressionPanel === 'pause'}
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={() => updateVoiceLine(line.id, {
-                              expressionPanel: line.expressionPanel === 'pause' ? null : 'pause',
-                              customPauseExpanded: line.expressionPanel === 'pause' ? false : line.customPauseExpanded,
-                              customPauseSeconds: line.expressionPanel === 'pause' ? '' : line.customPauseSeconds,
-                            })}
-                          >
-                            <ClockCircleOutlined />
-                            <span>{l('添加停顿', 'Add pause')}</span>
-                          </button>
-                          <button
-                            type="button"
-                            className={line.expressionPanel === 'interjection' ? 'is-active' : ''}
-                            aria-expanded={line.expressionPanel === 'interjection'}
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={() => updateVoiceLine(line.id, {
-                              expressionPanel: line.expressionPanel === 'interjection' ? null : 'interjection',
-                              customPauseExpanded: false,
-                              customPauseSeconds: '',
-                            })}
-                          >
-                            <MessageOutlined />
-                            <span>{l('添加语气词', 'Add expression')}</span>
-                          </button>
-                        </div>
-                        {line.expressionPanel === 'pause' && (
-                          <div className="project-clip-editor__voice-token-grid is-pauses">
-                            {VOICE_PAUSE_OPTIONS.map(({ label, token }) => (
-                              <button
-                                key={label}
-                                type="button"
-                                onMouseDown={(event) => event.preventDefault()}
-                                onClick={() => appendVoiceToken(line, token)}
-                              >
-                                {label}
-                              </button>
-                            ))}
-                            <button
-                              type="button"
-                              className={line.customPauseExpanded ? 'is-active' : ''}
-                              aria-expanded={line.customPauseExpanded}
-                              onMouseDown={(event) => event.preventDefault()}
-                              onClick={() => updateVoiceLine(line.id, {
-                                customPauseExpanded: !line.customPauseExpanded,
-                                customPauseSeconds: line.customPauseExpanded ? '' : line.customPauseSeconds,
-                              })}
-                            >
-                              {l('自定义', 'Custom')}
-                            </button>
-                            {line.customPauseExpanded && (
-                              <div className="project-clip-editor__voice-custom-pause">
-                                <input
-                                  type="text"
-                                  inputMode="decimal"
-                                  autoFocus
-                                  value={line.customPauseSeconds}
-                                  aria-label={l('自定义停顿时长', 'Custom pause duration')}
-                                  placeholder={l('请输入停顿时长（秒）', 'Enter pause duration in seconds')}
-                                  onChange={(event) => {
-                                    const value = event.target.value.trim()
-                                    if (/^\d*(?:\.\d{0,2})?$/.test(value)) {
-                                      updateVoiceLine(line.id, { customPauseSeconds: value })
-                                    }
-                                  }}
-                                  onKeyDown={(event) => {
-                                    if (event.key === 'Enter') {
-                                      event.preventDefault()
-                                      confirmCustomPause(line)
-                                    }
-                                    if (event.key === 'Escape') {
-                                      updateVoiceLine(line.id, {
-                                        customPauseExpanded: false,
-                                        customPauseSeconds: '',
-                                      })
-                                    }
-                                  }}
-                                />
-                                <button
-                                  type="button"
-                                  className="project-clip-editor__voice-custom-pause-confirm"
-                                  disabled={!Number.isFinite(Number(line.customPauseSeconds)) || Number(line.customPauseSeconds) <= 0}
-                                  onMouseDown={(event) => event.preventDefault()}
-                                  onClick={() => confirmCustomPause(line)}
-                                >
-                                  {l('确认', 'Confirm')}
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        {line.expressionPanel === 'interjection' && (
-                          <div className="project-clip-editor__voice-token-grid is-interjections">
-                            {VOICE_INTERJECTION_OPTIONS.map(([zhLabel, enLabel]) => (
-                              <button
-                                key={zhLabel}
-                                type="button"
-                                onMouseDown={(event) => event.preventDefault()}
-                                onClick={() => appendVoiceToken(line, `<${zhLabel}>`)}
-                              >
-                                {l(zhLabel, enLabel)}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {adjustableVoice && (
-                      <div className={`project-clip-editor__voice-emotion${line.emotionExpanded ? ' is-expanded' : ''}`}>
-                        <button
-                          type="button"
-                          className="project-clip-editor__voice-emotion-trigger"
-                          aria-expanded={line.emotionExpanded}
-                          onClick={() => updateVoiceLine(line.id, { emotionExpanded: !line.emotionExpanded })}
-                        >
-                          <span><InfoCircleOutlined />{l(line.emotion, VOICE_EMOTIONS.find(([zhLabel]) => zhLabel === line.emotion)?.[1] ?? line.emotion)}</span>
-                          <DownOutlined />
-                        </button>
-                        {line.emotionExpanded && (
-                          <div className="project-clip-editor__voice-emotion-options">
-                            {VOICE_EMOTIONS.map(([zhLabel, enLabel]) => (
-                              <button
-                                key={zhLabel}
-                                type="button"
-                                className={line.emotion === zhLabel ? 'is-selected' : ''}
-                                aria-pressed={line.emotion === zhLabel}
-                                onClick={() => updateVoiceLine(line.id, { emotion: zhLabel })}
-                              >
-                                {l(zhLabel, enLabel)}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {expandedVoiceLineId === line.id && (
-                      <div className="project-clip-editor__voice-line-settings">
-                        <label>
-                          <span>{l('音量', 'Volume')}</span>
-                          <div className="project-clip-editor__voice-slider-control">
-                            <Slider
-                              min={0}
-                              max={2}
-                              step={0.1}
-                              value={line.volume}
-                              tooltip={{ open: false }}
-                              onChange={(value) => updateVoiceLine(line.id, { volume: value })}
-                            />
-                            <output>{formatVoiceRate(line.volume)}</output>
-                          </div>
-                        </label>
-                        <label>
-                          <span>{l('音速', 'Speed')}</span>
-                          <div className="project-clip-editor__voice-slider-control">
-                            <Slider
-                              min={0.5}
-                              max={2}
-                              step={0.1}
-                              value={line.speed}
-                              tooltip={{ open: false }}
-                              onChange={(value) => updateVoiceLine(line.id, { speed: value })}
-                            />
-                            <output>{formatVoiceRate(line.speed)}</output>
-                          </div>
-                        </label>
-                      </div>
-                    )}
-                    </article>
-                  )
-                })}
-              </div>
-              <button type="button" className="project-clip-editor__add-voice-line" onClick={addVoiceLine}>
-                <PlusCircleOutlined />
-                {l('添加出镜角色', 'Add on-screen character')}
-              </button>
-            </section>
-          </div>
+          <StoryboardDubbingPanel key={activeClip.id} segmentId={toStoryboardSegmentRequestId(activeClip.id)} />
         ) : (
           <>
         <section className="project-clip-editor__reference-section">
@@ -5267,7 +4407,6 @@ export default function ProjectClipEditingStep({
           <Button
             type="primary"
             size="large"
-            icon={<CreditIcon />}
             loading={mediaSubmitting || (mode === 'video' && isActiveVideoGenerating)}
             disabled={generationButtonDisabled || mediaSubmitting || Boolean(workflow.pending) || (mode === 'image' ? imageGenerateCreditCost === undefined || imageGenerateEstimateLoading || Boolean(imageGenerateEstimateError) : !videoGenerateEstimate || videoGenerateEstimateLoading || Boolean(videoGenerateEstimateError))}
             onClick={() => {
@@ -5278,18 +4417,22 @@ export default function ProjectClipEditingStep({
               void generateStoryboardImage()
             }}
           >
-            {mode === 'video'
-              ? videoGenerationButtonText
-              : `${l('生成图片', 'Generate image')} · ${imageGenerateEstimateLoading ? '…' : formatCreditCost(imageGenerateCreditCost)}`}
+            {mode === 'video' && isActiveVideoGenerating
+              ? `${activeVideoGenerationStatusText}${activeVideoGenerationProgressText}`
+              : <span className="project-clip-editor__generate-label">
+                  <span>{mode === 'video' ? l('生视频', 'Generate video') : l('生成图片', 'Generate image')}</span>
+                  <span aria-hidden="true">·</span>
+                  <span className="project-clip-editor__generate-price"><CreditIcon />{mode === 'video' ? videoGenerateCreditCostText : imageGenerateEstimateLoading ? '…' : formatCreditCost(imageGenerateCreditCost)}</span>
+                </span>}
           </Button>
           <Button disabled={!hasRemoteInitialClips || !activeClip || activeClip.id.startsWith('clip-')} onClick={() => {
             if (!activeClip) return
             const segmentId = String(toStoryboardSegmentRequestId(activeClip.id))
-            const params = new URLSearchParams({ segmentId, returnTo: `${window.location.pathname}${window.location.search}` })
+            const params = new URLSearchParams({ segmentId, segmentLabel: activeClip.title, returnTo: `${window.location.pathname}${window.location.search}` })
             window.open(`/director-desk/workspace/segment-${encodeURIComponent(segmentId)}?${params}`, '_blank', 'noopener')
           }}>{l('3D 导演台', '3D Director Desk')}</Button>
           {activeClip && !activeClip.id.startsWith('clip-') && <DirectorSegmentApplication key={activeClip.id} segmentId={String(toStoryboardSegmentRequestId(activeClip.id))} />}
-          {activeHistoryItem?.generationRecordId && activeClip && <DirectorGenerationOrigins generationId={activeHistoryItem.generationRecordId} generationType={activeHistoryItem.mediaType === 'video' ? 'video' : 'image'} segmentId={String(toStoryboardSegmentRequestId(activeClip.id))} />}
+          {activeHistoryItem?.generationRecordId && activeClip && <DirectorGenerationOrigins segmentLabel={activeClip.title} generationId={activeHistoryItem.generationRecordId} generationType={activeHistoryItem.mediaType === 'video' ? 'video' : 'image'} segmentId={String(toStoryboardSegmentRequestId(activeClip.id))} />}
           <Button onClick={() => { setSegmentDetailRefreshToken((value) => value + 1); setMediaHistoryRefreshToken((value) => value + 1) }}>
             {l('刷新参考与产物', 'Refresh references and media')}
           </Button>
@@ -5894,7 +5037,6 @@ export default function ProjectClipEditingStep({
       alt={activeClip.title}
       onClose={() => setImageViewerOpen(false)}
     />
-    <VoiceLibraryModal open={voiceLibraryOpen} onCancel={() => setVoiceLibraryOpen(false)} />
     </>
   )
 }

@@ -42,6 +42,17 @@ export type StudioGenerationModel = {
   billingRules?: unknown[] | null
   imageCapabilities?: StudioImageModelCapabilities | null
   videoCapabilities?: StudioVideoModelCapabilities | null
+  speechCapabilities?: {
+    languages?: string[]
+    formats?: string[]
+    minSpeechRate?: number
+    maxSpeechRate?: number
+    minVolume?: number
+    maxVolume?: number
+    maxInputCharacters?: number
+    defaultFormat?: string
+    voiceProviderCode?: string
+  } | null
 }
 
 function getStudioModels(type = 2): CancelablePromise<ApiEnvelope<StudioGenerationModel[]>> {
@@ -127,6 +138,9 @@ function loadCachedStudioModels(
 }
 
 export const StudioModelsApi = {
+  async getSpeechModels(force = false): Promise<StudioGenerationModel[]> {
+    return loadCachedStudioModels(4, 'Speech model loading failed', force)
+  },
   /** 查询图片生成模型；默认固定为后端模型类型 2，并合并 StrictMode 等并发请求。 */
   async getImageModels(force = false): Promise<StudioGenerationModel[]> {
     return loadCachedStudioModels(2, 'Image model loading failed', force)

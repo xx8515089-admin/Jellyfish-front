@@ -577,7 +577,7 @@ code {
 .asset-generation-workspace__ai-notice,
 .asset-generation-workspace__description,
 .asset-generation-workspace__history h2,
-.project-clip-editor__rail > header span {
+.project-clip-editor__rail > header span:not(.credit-icon) {
   color: var(--jf-muted) !important;
 }
 
