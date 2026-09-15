@@ -87,6 +87,7 @@ export default function DirectorDeskStandalonePage({ embeddedHome = false }: Dir
         key={panelKey}
         editorRoot={hostRef}
         initialSegmentId={searchParams.get('segmentId') || undefined}
+        initialSegmentLabel={searchParams.get('segmentLabel') || undefined}
         cloudReady={cloudReady}
         onDirtyChange={(value) => { dirtyRef.current = value }}
         onOpen={(detail) => { setCloudDesk(detail); setCloudLoad((value) => value + 1) }}

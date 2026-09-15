@@ -3,8 +3,8 @@ import { Alert, Button, List, Modal, message } from 'antd'
 import { StudioDirectorDesks as api, type DirectorOrigin } from '../../services/studioDirectorDesks'
 import { getApiErrorMessage } from '../../services/apiErrors'
 
-export default function DirectorGenerationOrigins({ generationId, generationType, segmentId }: {
-  generationId: string | number; generationType: 'image' | 'video'; segmentId: string
+export default function DirectorGenerationOrigins({ generationId, generationType, segmentId, segmentLabel }: {
+  generationId: string | number; generationType: 'image' | 'video'; segmentId: string; segmentLabel?: string
 }) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -20,6 +20,7 @@ export default function DirectorGenerationOrigins({ generationId, generationType
       <Alert type="info" message="查看生成时使用的准确修订；继续编辑可在导演台复制该修订。" />
       <List dataSource={items} locale={{ emptyText: '此生成记录未使用导演台产物' }} renderItem={(item) => {
         const params = new URLSearchParams({ cloudDeskId: String(item.directorDeskId), revisionNo: String(item.directorRevisionNo), segmentId, returnTo: `${window.location.pathname}${window.location.search}` })
+        if (segmentLabel) params.set('segmentLabel', segmentLabel)
         return <List.Item><a href={`/director-desk/workspace/source-${item.directorDeskId}?${params}`} target="_blank" rel="noreferrer">{item.name} · 修订 {item.directorRevisionNo}{item.deleted ? '（已删除，仍可查看历史）' : ''}</a></List.Item>
       }} />
     </Modal>

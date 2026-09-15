@@ -35,8 +35,8 @@ export default function DirectorCaptureImageForm({ reference, bindings, segmentI
     return () => { active = false }
   }, [retry])
   const supported = !!capabilities && capabilities.aspectRatios.includes(aspectRatio) && references.length <= capabilities.maxReferenceImages
-  return <Space direction="vertical" style={{ width: '100%', marginTop: 16 }}>
-    <Typography.Title level={5}>使用垫图生成图片</Typography.Title>
+  return <section className="director-capture-image-form">
+    <div className="director-reference-section-heading">使用垫图生成图片</div>
     {error && <Alert type="error" message={error} action={<Button onClick={() => setRetry((value) => value + 1)}>重试加载</Button>} />}
     <Select aria-label="图片模型" style={{ width: '100%' }} placeholder="选择图片模型" value={modelId} disabled={busy || submitted} options={models.map((item) => ({ label: item.name, value: item.id }))} onChange={(id) => {
       const next = models.find((item) => item.id === id)
@@ -48,8 +48,9 @@ export default function DirectorCaptureImageForm({ reference, bindings, segmentI
       {!!capabilities?.qualities.length && <Select aria-label="图片质量" style={{ minWidth: 100 }} placeholder="质量" value={quality} disabled={busy || submitted} options={capabilities.qualities.map((value) => ({ label: String(value), value }))} onChange={setQuality} />}
     </Space>
     {!supported && model && <Alert type="warning" message="此模型不支持当前垫图画幅、参考数量，或未提供图片能力配置。请选择其他模型。" />}
-    {references.map((item, index) => <Typography.Text key={`${item.referenceType}-${item.fileId}`}>第 {index + 1} 张：{item.displayName}；仅用于{item.useOnly}</Typography.Text>)}
+    <div className="director-capture-references">{references.map((item, index) => <div key={`${item.referenceType}-${item.fileId}`}><span>{index + 1}</span><div><strong>{item.displayName}</strong><small>仅用于{item.useOnly}</small></div></div>)}</div>
     <Input.TextArea aria-label="生成图片提示词" rows={4} value={prompt} disabled={busy || submitted} maxLength={capabilities?.maxPromptCharacters || undefined} placeholder="描述最终画面，并确认对应关系，例如：画面左侧人物使用第 1 张角色图，右侧人物使用第 2 张角色图……" onChange={(event) => setPrompt(event.target.value)} />
+    <div className="director-capture-actions">
     <Button loading={busy} disabled={busy || !modelId || submitted} onClick={async () => {
       setBusy(true)
       try {
@@ -70,5 +71,6 @@ export default function DirectorCaptureImageForm({ reference, bindings, segmentI
       } catch (reason) { message.error(getApiErrorMessage(reason)) }
       finally { setBusy(false) }
     }}>{submitted ? '图片生成任务已提交' : '生成图片'}</Button>
-  </Space>
+    </div>
+  </section>
 }

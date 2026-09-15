@@ -34,6 +34,7 @@ const ChapterShotEditPage = lazy(() =>
     default: module.ChapterShotEditPage,
   })),
 )
+const DirectorDeskManualPage = lazy(() => import('./pages/directorDesk/DirectorDeskManualPage'))
 const DirectorDeskStandalonePage = lazy(() => import('./pages/directorDesk/DirectorDeskStandalonePage'))
 const Login = lazy(() => import('./pages/Login'))
 const AdminUsers = lazy(() => import('./pages/AdminUsers'))
@@ -54,6 +55,7 @@ const App = () => {
           <Route element={<RequireAuth><Outlet /></RequireAuth>}>
             <Route path="/projects/create" element={<ProjectCreatePage />} />
             <Route path="/canvas/:canvasId" element={<CanvasStudioPage />} />
+            <Route path="/director-desk/manual" element={<DirectorDeskManualPage />} />
             <Route path="/director-desk/workspace/:deskId" element={<DirectorDeskStandalonePage />} />
             <Route path="/projects/:projectId/chapters/:chapterId/director-stage" element={<DirectorDeskStandalonePage />} />
             <Route path="/efficiency-overview" element={<EfficiencyOverview />} />

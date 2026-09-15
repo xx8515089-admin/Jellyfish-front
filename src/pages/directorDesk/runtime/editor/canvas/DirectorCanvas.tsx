@@ -1190,7 +1190,14 @@ export function DirectorCanvas() {
   useEffect(() => {
     setReferenceVideoExportHandler(async ({ fileName, fps, quality }) => {
       if (mediaExportInProgressRef.current) throw new Error(text("已有导出任务正在进行，请稍后再试", "An export is already in progress. Please try again shortly."));
+      // Validate scene prerequisites separately from browser support before allocating the export canvas.
+      if (!activeCamera) throw new Error(text("请先选择活动相机，再导出参考视频", "Select an active camera before exporting a reference video."));
+      if (!activeCameraMotionPath || activeCameraMotionPath.keyframes.length < 2) throw new Error(text("当前相机至少需要 2 个运镜轨迹点，请在运镜工作台添加起点和终点后再导出", "Add at least two camera motion keyframes (start and end) in the motion studio before exporting."));
+      if (!Number.isFinite(activeMotionDuration) || activeMotionDuration <= 0) throw new Error(text("运镜时长无效，请设置大于 0 秒的时长", "Set a camera motion duration greater than zero."));
+      const mimeType = getSupportedReferenceVideoMimeType();
+      if (!mimeType) throw new Error(text("当前浏览器不支持 MP4 录制，请使用支持 MP4 录制的 Chrome 或 Edge", "This browser does not support MP4 recording. Use a Chrome or Edge version with MP4 recording support."));
       mediaExportInProgressRef.current = true;
+      let exportStream: MediaStream | undefined;
       const originalProgress = getRuntimePlaybackProgress();
       const originalPlaying = useDirectorStore.getState().cameraMotionPlaying;
       flushSync(() => {
@@ -1203,12 +1210,11 @@ export function DirectorCanvas() {
           await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
         }
         const canvas = referenceVideoCanvasRef.current;
-        const mimeType = getSupportedReferenceVideoMimeType();
-        if (!canvas || !mimeType || !activeCamera || !activeCameraMotionPath || activeCameraMotionPath.keyframes.length < 2) {
-          throw new Error(text("当前浏览器无法导出参考视频", "This browser cannot export the reference video."));
-        }
+        if (!canvas) throw new Error(text("导出画布尚未准备好，请等待场景加载完成后重试", "The export canvas is not ready. Wait for the scene to load and retry."));
+        if (typeof canvas.captureStream !== "function") throw new Error(text("当前浏览器不支持画布录制", "This browser does not support canvas recording."));
 
         const stream = canvas.captureStream(fps);
+        exportStream = stream;
         const recorder = new MediaRecorder(stream, {
           mimeType,
           videoBitsPerSecond: quality === "1080p" ? 12_000_000 : 6_000_000,
@@ -1251,6 +1257,7 @@ export function DirectorCanvas() {
           width: canvas.width,
         };
       } finally {
+        exportStream?.getTracks().forEach((track) => track.stop());
         restoreMediaExportPlayback(
           { playing: originalPlaying, progress: originalProgress },
           setCameraMotionPlaying,

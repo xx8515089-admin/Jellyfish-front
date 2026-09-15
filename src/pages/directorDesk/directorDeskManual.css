@@ -1,0 +1,22 @@
+.director-manual { height: 100dvh; overflow: auto; background: #141414; color: #dedede; }
+.director-manual__header { display: flex; flex-wrap: wrap; gap: 12px 24px; padding: 20px 32px; border-bottom: 1px solid #333; }
+.director-manual__header span { color: #999; font-size: 13px; }
+.director-manual__layout { display: grid; grid-template-columns: 240px minmax(0, 900px); gap: 40px; max-width: 1250px; margin: auto; padding: 32px; }
+.director-manual nav { position: sticky; top: 24px; align-self: start; max-height: calc(100dvh - 48px); overflow: auto; font-size: 13px; }
+.director-manual nav a { display: block; padding: 7px 0; color: #aaa; }
+.director-manual nav a:hover { color: #8fc9e8; }
+.director-manual article { min-width: 0; line-height: 1.85; overflow-wrap: anywhere; }
+.director-manual article h1 { font-size: 28px; margin-top: 0; }
+.director-manual article h2 { font-size: 22px; margin-top: 36px; scroll-margin-top: 24px; }
+.director-manual article h3 { font-size: 17px; margin-top: 24px; }
+.director-manual article p, .director-manual article ul, .director-manual article ol { margin: 12px 0; }
+.director-manual article ul, .director-manual article ol { padding-left: 24px; }
+.director-manual article ul { list-style: disc; }
+.director-manual article ol { list-style: decimal; }
+.director-manual article blockquote { margin: 16px 0; padding: 4px 18px; border-left: 3px solid #8fc9e8; background: #202124; color: #bdbdbd; }
+.director-manual article table { display: block; overflow-x: auto; border-collapse: collapse; margin: 20px 0; }
+.director-manual article th, .director-manual article td { border: 1px solid #3b3b3b; padding: 10px 14px; text-align: left; }
+.director-manual article th { background: #242424; }
+.director-manual article hr { border: 0; border-top: 1px solid #333; margin: 32px 0; }
+.director-manual article code { background: #292929; padding: 2px 5px; border-radius: 4px; }
+@media (max-width: 760px) { .director-manual__layout { grid-template-columns: 1fr; padding: 20px; gap: 24px; } .director-manual nav { position: static; max-height: 240px; } }
