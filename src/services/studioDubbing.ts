@@ -48,7 +48,7 @@ export const StudioDubbingApi = {
   addLine: (segmentId: DubbingId, fields: DubbingLineFields) => call<DubbingLine>('lines', 'POST', { segmentId, ...fields }),
   updateLine: (id: DubbingId, fields: DubbingLineFields) => call<DubbingLine>('lines/update', 'POST', { id, ...fields }),
   deleteLine: (id: DubbingId) => call<unknown>('lines/delete', 'POST', { id }),
-  generate: (lineId: DubbingId, modelId: number, outputFormat: string) => call<DubbingGeneration>('generate', 'POST', { lineId, modelId, outputFormat }),
+  generate: (lineId: DubbingId, outputFormat = 'mp3', modelId?: number) => call<DubbingGeneration>('generate', 'POST', { lineId, outputFormat, ...(modelId === undefined ? {} : { modelId }) }),
   detail: (id: DubbingId) => call<DubbingGeneration>('detail', 'GET', { id }),
   history: (lineId: DubbingId) => call<DubbingGeneration[]>('history', 'GET', { lineId }),
 }

@@ -44,7 +44,7 @@ test('line edits preserve inherited values, and deleting the final line does not
 
 test('generation sends only line/model/format and reads detail and history separately', async () => {
   const { api, calls } = setup({ id: 72, status: 1 })
-  const generation = await api.generate('8', 4, 'wav')
+  const generation = await api.generate('8', 'wav', 4)
   await api.detail(generation.id)
   await api.history('8')
   assert.deepEqual(calls[0].body, { lineId: '8', modelId: 4, outputFormat: 'wav' })
@@ -55,4 +55,12 @@ test('generation sends only line/model/format and reads detail and history separ
 test('business errors reject instead of presenting a successful mutation', async () => {
   const { api } = setup(null, 403)
   await assert.rejects(api.updateSettings({ runId: 1, volume: 1, speechRate: 1 }), /rejected/)
+})
+
+test('default voice generation omits modelId and polls the returned generation ID', async () => {
+  const { api, calls } = setup({ id: 456, status: 1 })
+  const generation = await api.generate(123)
+  await api.detail(generation.id)
+  assert.deepEqual(calls[0].body, { lineId: 123, outputFormat: 'mp3' })
+  assert.deepEqual(calls[1].query, { id: 456 })
 })

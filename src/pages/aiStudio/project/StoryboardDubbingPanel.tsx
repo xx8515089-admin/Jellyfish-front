@@ -91,9 +91,8 @@ export default function StoryboardDubbingPanel({ segmentId }: { segmentId: Dubbi
     void StudioModelsApi.getSpeechModels(true).then((data) => {
       if (!active) return
       setModels(data); setModelError('')
-      const selected = data.find((item) => item.defaultModel) ?? data[0]
-      setModelId(selected?.id)
-      setFormat(selected?.speechCapabilities?.defaultFormat || selected?.speechCapabilities?.formats?.[0] || 'mp3')
+      setModelId(undefined)
+      setFormat('mp3')
     }).catch((reason) => { if (active) setModelError(getApiErrorMessage(reason, '语音模型加载失败')) })
     return () => { active = false }
   }, [segmentId, retry])
@@ -145,12 +144,12 @@ export default function StoryboardDubbingPanel({ segmentId }: { segmentId: Dubbi
     }
   }
   function generationError(line: DubbingLine) {
-    if (!model) return '请选择语音模型'
+    if (modelId !== undefined && !model) return '所选语音模型不可用，请重新选择'
     if (!line.dialogueText.trim()) return '请先填写台词'
     const character = panel?.characters.find((item) => String(item.assetId) === String(line.characterAssetId))
     if (!character) return '请先为台词选择本集角色'
     if (!character.voiceConfigured || !character.voiceConfig) return '请先配置角色音色'
-    const cap = model.speechCapabilities
+    const cap = model?.speechCapabilities
     if (cap?.maxInputCharacters && Array.from(line.dialogueText).length > cap.maxInputCharacters) return `台词超过模型字数上限 ${cap.maxInputCharacters}`
     const voice = character.voiceConfig.voice
     if (cap?.voiceProviderCode && voice.providerCode && cap.voiceProviderCode !== voice.providerCode) return '当前音色供应商与模型不兼容'
@@ -298,16 +297,16 @@ export default function StoryboardDubbingPanel({ segmentId }: { segmentId: Dubbi
                       <output>{formatVoiceRate(voiceSpeed)}</output>
                     </div>
                   </label>
+            <div className="project-clip-editor__voice-model-controls">
+              <div className="project-clip-editor__voice-model-field"><span>语音模型</span><StudioSelect aria-label="语音模型" appearance="dark" value={modelId} allowClear placeholder="默认语音模型" options={models.map((item) => ({ value: item.id, label: item.name }))} onChange={(value) => { const id = value === undefined ? undefined : Number(value); setModelId(id); const cap = models.find((item) => item.id === id)?.speechCapabilities; setFormat(cap?.defaultFormat || cap?.formats?.[0] || 'mp3') }} /></div>
+              <div className="project-clip-editor__voice-model-field"><span>输出格式</span><StudioSelect aria-label="输出格式" appearance="dark" value={format} options={formats.map((value) => ({ value, label: value.toUpperCase() }))} onChange={(value) => setFormat(String(value))} /></div>
+              <div className="project-clip-editor__voice-settings-footer"><Button loading={busy} onClick={() => void act(async () => { await api.updateSettings(settings); if (alive.current) message.success('本集设置已保存') })}>保存设置</Button></div>
+              {modelError && <Alert type="error" message={modelError} action={<Button onClick={() => setRetry((value) => value + 1)}>重试</Button>} />}
+            </div>
                 </div>
               )}
             </section>
 
-            <div className="project-clip-editor__voice-model-controls">
-              <StudioSelect appearance="dark" value={modelId} placeholder="选择语音模型" options={models.map((item) => ({ value: item.id, label: item.name }))} onChange={(value) => { const id = Number(value); setModelId(id); const cap = models.find((item) => item.id === id)?.speechCapabilities; setFormat(cap?.defaultFormat || cap?.formats?.[0] || 'mp3') }} />
-              <StudioSelect appearance="dark" value={format} options={formats.map((value) => ({ value, label: value.toUpperCase() }))} onChange={(value) => setFormat(String(value))} />
-              <Button loading={busy} onClick={() => void act(async () => { await api.updateSettings(settings); if (alive.current) message.success('本集设置已保存') })}>保存设置</Button>
-              {modelError && <Alert type="error" message={modelError} action={<Button onClick={() => setRetry((value) => value + 1)}>重试</Button>} />}
-            </div>
             <section className="project-clip-editor__voice-lines">
               <div className="project-clip-editor__voice-lines-title">
                 <strong>{l('台词配音', 'Dialogue voiceover')}</strong>
@@ -557,18 +556,20 @@ export default function StoryboardDubbingPanel({ segmentId }: { segmentId: Dubbi
                         </label>
                       </div>
                     )}
-                    <div style={{ padding: '0 14px 12px' }}>
-                      <Space size="small" wrap>
-                        <Button size="small" disabled={busy} onClick={() => void act(async () => { const source = panel.lines.find((item) => String(item.id) === line.id)!; await api.updateLine(source.id, fieldsOf(source)); if (alive.current) message.success('台词已保存') })}>保存</Button>
-                        <Button size="small" onClick={() => void loadHistory(line.id)}>历史</Button>
-                        <Button size="small" type="primary" loading={pending(line.latestGeneration)} disabled={busy || !!generationError(line) || pending(line.latestGeneration)} title={generationError(line) || undefined} onClick={() => void act(async () => {
+                    <div className="project-clip-editor__voice-actions">
+                      <div className="project-clip-editor__voice-actions-row">
+                        <div className="project-clip-editor__voice-secondary-actions">
+                        <Button disabled={busy} onClick={() => void act(async () => { const source = panel.lines.find((item) => String(item.id) === line.id)!; await api.updateLine(source.id, fieldsOf(source)); if (alive.current) message.success('台词已保存') })}>保存</Button>
+                        <Button onClick={() => void loadHistory(line.id)}>历史</Button>
+                        </div>
+                        <Button className="project-clip-editor__voice-generate" type="primary" loading={pending(line.latestGeneration)} disabled={busy || !!generationError(line) || pending(line.latestGeneration)} title={generationError(line) || undefined} onClick={() => void act(async () => {
                           const source = panel.lines.find((item) => String(item.id) === line.id)!
                           await api.updateLine(source.id, fieldsOf(source)); await api.updateSettings(settings)
-                          const generation = await api.generate(source.id, model!.id, format)
-                          if (alive.current) setPanel((current) => current && ({ ...current, lines: current.lines.map((item) => String(item.id) === line.id ? { ...item, latestGeneration: generation } : item) }))
+                          const generation = await api.generate(source.id, format, modelId)
+                          if (alive.current) setPanel((current) => current && ({ ...current, lines: current.lines.map((item) => String(item.id) === line.id ? { ...item, latestGeneration: { ...generation, status: generation.status ?? 1 } } : item) }))
                         })}>{line.latestGeneration ? '重新生成' : '生成配音'}</Button>
-                      </Space>
-                      {line.latestGeneration && <small style={{ display: 'block', marginTop: 8 }}>{statusNames[line.latestGeneration.status]} {line.latestGeneration.errorMessage}</small>}
+                      </div>
+                      {line.latestGeneration && <small className="project-clip-editor__voice-generation-status">{statusNames[line.latestGeneration.status]} {line.latestGeneration.errorMessage}</small>}
                     </div>
                     </article>
                   )
