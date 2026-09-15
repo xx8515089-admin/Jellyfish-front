@@ -6,12 +6,12 @@ export type StoryboardPanel = {
     panelId: string;
     panelIndex: number;
     sourceShotNumber?: number | null;
-    description: string;
-    bounds: {
+    description?: string | null;
+    bounds?: {
         'x': number;
         'y': number;
         width: number;
         height: number;
-    };
+    } | null;
 };
 

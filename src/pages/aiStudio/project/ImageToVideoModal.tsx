@@ -11,7 +11,7 @@ import type { PanelVideoPrompt } from '../../../services/generated/models/PanelV
 import { getApiErrorMessage } from '../../../services/apiErrors'
 import { schedulePollWhenVisible } from './assetBatchGenerationPolling'
 import StudioSelect from './StudioSelect'
-import { buildImageToVideoRequest, imageToVideoPromptLength } from './imageToVideoContract'
+import { buildImageToVideoRequest, canGenerateImageVideoPrompt, imageToVideoPromptLength, validPanelBounds } from './imageToVideoContract'
 import './ImageToVideoModal.css'
 
 type StyleOption = { id?: string | number | null; name: string }
@@ -35,7 +35,7 @@ export default function ImageToVideoModal(props: Props) {
   const [sourceRatio, setSourceRatio] = useState(1)
   const [panelError, setPanelError] = useState('')
   const [panelReload, setPanelReload] = useState(0)
-  const [scope, setScope] = useState<'single_panel' | 'all_panels'>('single_panel')
+  const [scope, setScope] = useState<'whole_image' | 'single_panel' | 'all_panels'>('whole_image')
   const [panelId, setPanelId] = useState<string>()
   const [snapshot, setSnapshot] = useState<{ key: string; value: PanelVideoPrompt }>()
   const [promptBusy, setPromptBusy] = useState(false)
@@ -71,34 +71,41 @@ export default function ImageToVideoModal(props: Props) {
   const selectionKeyRef = useRef(selectionKey)
   selectionKeyRef.current = selectionKey
   const currentSnapshot = snapshot?.key === selectionKey ? snapshot.value : undefined
-  const confirmed = panelImage?.status === 3 && panelImage.panelStatus === 'confirmed'
+  const imageReady = panelImage?.status === 3
   const orderedPanels = [...(panelImage?.panels ?? [])].sort((a, b) => a.panelIndex - b.panelIndex)
+  const canGeneratePrompt = canGenerateImageVideoPrompt(panelImage, scope, panelId, duration)
+  const frameBounds = currentSnapshot?.firstFramePanel?.bounds
+  const cropBounds = validPanelBounds(frameBounds) ? frameBounds : undefined
+  const canSubmitFrame = Boolean(currentSnapshot && (currentSnapshot.scope === 'whole_image' || cropBounds))
   // Changing a selection invalidates the entire prompt snapshot, including late responses.
   useEffect(() => {
     selectionEpoch.current += 1; promptRequest.current?.cancel(); setPromptBusy(false)
-    setSnapshot(undefined); setPrompt('')
+    if (snapshot?.key !== selectionKey) { setSnapshot(undefined); setPrompt('') }
   }, [selectionKey])
   useEffect(() => {
     let active = true
     setPanelImage(undefined); setPanelId(undefined); setSnapshot(undefined); setPrompt(''); setQuote(undefined)
     const request = api.getPanelImage({ id: Number(props.imageGenerationId) })
-    void request.then(unwrap).then((value) => { if (active) { setPanelImage(value); setPanelError('') } })
+    void request.then(unwrap).then((value) => { if (active) { setPanelImage(value); setScope(value.panels?.length ? 'single_panel' : 'whole_image'); setPanelError('') } })
       .catch((reason) => { if (active) setPanelError(getApiErrorMessage(reason)) })
     return () => { active = false; request.cancel(); promptRequest.current?.cancel() }
   }, [props.imageGenerationId, panelReload])
   /** Generate a prompt tied to the exact image, panel revision and video settings. */
   const generatePrompt = async () => {
-    if (!confirmed || !modelId || !resolution || locked || promptBusy || (scope === 'single_panel' && !panelId)) return
+    if (!canGeneratePrompt || !modelId || !resolution || locked || promptBusy || (scope === 'single_panel' && !panelId)) return
     const epoch = ++selectionEpoch.current
     const key = selectionKey
     setPromptBusy(true); setSnapshot(undefined); setPrompt(''); setPanelError('')
     try {
-      const request = api.generatePanelPrompt({ requestBody: { imageGenerationId: Number(props.imageGenerationId), scope, ...(scope === 'single_panel' ? { panelId } : {}), panelRevision: panelImage!.panelRevision!, modelId, resolution, durationSeconds: duration } })
+      const request = api.generatePanelPrompt({ requestBody: { imageGenerationId: Number(props.imageGenerationId), scope, ...(scope === 'single_panel' ? { panelId } : {}), ...(scope === 'whole_image' ? {} : { panelRevision: panelImage!.panelRevision! }), modelId, resolution, durationSeconds: duration } })
       promptRequest.current = request
       const value = unwrap(await request)
       if (!alive.current || epoch !== selectionEpoch.current || key !== selectionKeyRef.current) return
-      if (value.imageGenerationId !== Number(props.imageGenerationId) || value.scope !== scope || value.panelRevision !== panelImage?.panelRevision || value.modelId !== modelId || value.resolution !== resolution || value.durationSeconds !== duration || (scope === 'single_panel' && value.panelId !== panelId)) throw new Error('分镜或模型参数已变化，请刷新后重新生成提示词')
-      setSnapshot({ key, value }); setPrompt(value.prompt)
+      if (value.imageGenerationId !== Number(props.imageGenerationId) || value.scope !== scope || (scope !== 'whole_image' && value.panelRevision !== panelImage?.panelRevision) || value.resolution !== resolution || value.durationSeconds !== duration || (scope === 'single_panel' && value.panelId !== panelId)) throw new Error('分镜或模型参数已变化，请刷新后重新生成提示词')
+      if (!models.some((item) => item.id === value.modelId && item.resolutions.includes(value.resolution) && item.durationSeconds.includes(value.durationSeconds))) throw new Error('返回的视频模型不可用，请重新加载模型')
+      const resolvedKey = JSON.stringify([props.imageGenerationId, scope, panelId, panelImage?.panelRevision, value.modelId, value.resolution, value.durationSeconds])
+      setModelId(value.modelId)
+      setSnapshot({ key: resolvedKey, value }); setPrompt(value.prompt)
     } catch (reason) {
       if (alive.current && epoch === selectionEpoch.current) {
         const text = getApiErrorMessage(reason)
@@ -164,7 +171,7 @@ export default function ImageToVideoModal(props: Props) {
   }, [record, pollRetry, busy])
   /** A single POST per action; ambiguous failures require task-center verification. */
   const submit = async () => {
-    if (lock.current || locked || !currentSnapshot || !validQuote || promptLength < 2 || promptLength > maxPrompt) return
+    if (lock.current || locked || !canSubmitFrame || !currentSnapshot || !validQuote || promptLength < 2 || promptLength > maxPrompt) return
     let requestBody
     try { requestBody = buildImageToVideoRequest({ imageGenerationId: String(currentSnapshot.imageGenerationId), modelId: currentSnapshot.modelId, resolution: currentSnapshot.resolution, duration: currentSnapshot.durationSeconds, scope: currentSnapshot.scope, panelId: currentSnapshot.panelId, panelRevision: currentSnapshot.panelRevision, prompt, visualStyleId, toneStyleId }) }
     catch (reason) { setSubmitError(getApiErrorMessage(reason)); return }
@@ -197,23 +204,26 @@ export default function ImageToVideoModal(props: Props) {
       {error && <Alert type="error" showIcon message={error} action={!locked && <Button onClick={() => setRetry((n) => n + 1)}>{l('重新加载', 'Reload')}</Button>} />}
       {submitError && <Alert type="error" showIcon message={submitError} />}
       {panelError && <Alert type="error" message={panelError} />}
-      <div className="image-to-video-modal__panel-controls">
-        <StudioSelect appearance="dark" aria-label="分镜范围" value={scope} disabled={locked} options={[{ value: 'single_panel', label: '单个分镜' }, { value: 'all_panels', label: '全部分镜 · 一个视频' }]} onChange={(value) => { setScope(value); setPanelId(undefined) }} />
+      {orderedPanels.length > 0 && <div className="image-to-video-modal__panel-controls">
+        <StudioSelect appearance="dark" aria-label="分镜范围" value={scope} disabled={locked} options={[{ value: 'whole_image', label: '整张图片' }, { value: 'single_panel', label: '单个分镜' }, { value: 'all_panels', label: '全部分镜 · 一个视频' }]} onChange={(value) => { setScope(value); setPanelId(undefined) }} />
         <Button disabled={locked} onClick={() => setPanelReload((n) => n + 1)}>刷新标注</Button>
-      </div>
-      {!confirmed && <Alert type="info" message={!panelImage ? '正在读取分镜标注…' : panelImage.panelStatus === 'pending' ? '分镜识别中，请稍后刷新标注' : '分镜尚未确认，请先完成检测、校准和确认后再生成视频'} />}
-      <div className="image-to-video-modal__panels">
-        {orderedPanels.map((panel) => <button type="button" key={panel.panelId} disabled={locked || !confirmed || scope === 'all_panels'} className={scope === 'all_panels' || panelId === panel.panelId ? 'is-selected' : ''} onClick={() => setPanelId(panel.panelId)}><strong>镜头 {panel.sourceShotNumber ?? panel.panelIndex}</strong><span>{panel.description}</span></button>)}
-      </div>
+      </div>}
+      {!imageReady && <Alert type="info" message={!panelImage ? '正在读取图片信息…' : '图片尚未生成成功，请稍后重试'} />}
+      {panelError && !panelImage && <Button onClick={() => setPanelReload((n) => n + 1)}>重新读取图片</Button>}
+      {scope !== 'whole_image' && <div className="image-to-video-modal__panels">
+        {orderedPanels.map((panel) => <button type="button" key={panel.panelId} disabled={locked || !imageReady || scope === 'all_panels'} className={scope === 'all_panels' || panelId === panel.panelId ? 'is-selected' : ''} onClick={() => setPanelId(panel.panelId)}><strong>镜头 {panel.sourceShotNumber ?? panel.panelIndex}</strong><span>{panel.description}</span></button>)}
+      </div>}
       {scope === 'all_panels' && <small>以第一格作为首帧，按全部分镜描述生成一个视频，不保证逐格精确复现。</small>}
-      <Button loading={promptBusy} disabled={locked || !confirmed || !modelId || !resolution || (scope === 'single_panel' ? !panelId : orderedPanels.length === 0 || orderedPanels.length > duration)} onClick={() => void generatePrompt()}>生成视频提示词</Button>
-      <small>提示词根据已确认的分镜描述编排，不额外扣除积分；生成后可编辑正文。</small>
+      <Button loading={promptBusy} disabled={locked || promptBusy || !canGeneratePrompt || !modelId || !resolution} onClick={() => void generatePrompt()}>生成视频提示词</Button>
+      <small>{scope === 'whole_image' ? '识图生成提示词，按文本模型用量计费；生成后可编辑正文。' : currentSnapshot?.generationMethod === 'panel_template' ? '模板编排，不额外扣积分；生成后可编辑正文。' : '根据已保存的分镜描述生成提示词。'}</small>
+      {promptBusy && scope === 'whole_image' && <small>正在识别图片，请耐心等待。网络中断后请先核查任务，避免重复计费。</small>}
+      {currentSnapshot && !canSubmitFrame && <Alert type="warning" message="首帧坐标缺失或无效，请先校准对应分镜，再刷新并重新生成提示词。" />}
       {scope === 'all_panels' && orderedPanels.length > duration && <small>视频秒数不能少于分镜数量，请增加时长。</small>}
       <label htmlFor="image-to-video-prompt">{l('提示词', 'Prompt')}</label>
       <div className="image-to-video-modal__editor">
         <div className="image-to-video-modal__reference">
-          {currentSnapshot && <div className="image-to-video-modal__crop" style={{ aspectRatio: sourceRatio * currentSnapshot.firstFramePanel.bounds.width / currentSnapshot.firstFramePanel.bounds.height }}><img src={props.imageUrl} alt="首帧裁剪预览" onLoad={(event) => { const image = event.currentTarget; if (image.naturalHeight) setSourceRatio(image.naturalWidth / image.naturalHeight) }} style={{ width: `${100 / currentSnapshot.firstFramePanel.bounds.width}%`, height: `${100 / currentSnapshot.firstFramePanel.bounds.height}%`, maxWidth: 'none', position: 'absolute', left: `${-100 * currentSnapshot.firstFramePanel.bounds.x / currentSnapshot.firstFramePanel.bounds.width}%`, top: `${-100 * currentSnapshot.firstFramePanel.bounds.y / currentSnapshot.firstFramePanel.bounds.height}%` }} /></div>}
-          <span>{currentSnapshot ? `首帧 · 镜头 ${currentSnapshot.firstFramePanel.panelIndex}` : '选择分镜后生成提示词'}</span>
+          {scope === 'whole_image' ? <img src={props.imageUrl} alt="整张图片首帧" style={{ width: 72, height: 72, objectFit: 'contain' }} /> : cropBounds && <div className="image-to-video-modal__crop" style={{ aspectRatio: sourceRatio * cropBounds.width / cropBounds.height }}><img src={props.imageUrl} alt="首帧裁剪预览" onLoad={(event) => { const image = event.currentTarget; if (image.naturalHeight) setSourceRatio(image.naturalWidth / image.naturalHeight) }} style={{ width: `${100 / cropBounds.width}%`, height: `${100 / cropBounds.height}%`, maxWidth: 'none', position: 'absolute', left: `${-100 * cropBounds.x / cropBounds.width}%`, top: `${-100 * cropBounds.y / cropBounds.height}%` }} /></div>}
+          <span>{scope === 'whole_image' ? '首帧 · 整张图片' : currentSnapshot?.firstFramePanel ? `首帧 · 镜头 ${currentSnapshot.firstFramePanel.panelIndex}` : '选择分镜后生成提示词'}</span>
         </div>
         <Input.TextArea id="image-to-video-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} disabled={locked || !currentSnapshot} placeholder={l('先生成视频提示词，再编辑动作和镜头运动…', 'Generate a prompt first, then edit the action and camera movement…')} />
         <div className="image-to-video-modal__styles">
@@ -228,7 +238,7 @@ export default function ImageToVideoModal(props: Props) {
         <StudioSelect appearance="dark" aria-label={l('分辨率', 'Resolution')} value={resolution || undefined} options={(model?.resolutions ?? []).map((value) => ({ value, label: value.toUpperCase() }))} disabled={locked} onChange={setResolution} />
         <StudioSelect appearance="dark" aria-label={l('时长', 'Duration')} value={duration} options={(model?.durationSeconds ?? []).map((value) => ({ value, label: `${value}s` }))} disabled={locked} onChange={setDuration} />
       </div>
-      {!record && <Button block type="primary" size="large" loading={busy} disabled={locked || !currentSnapshot || !validQuote || promptLength < 2 || promptLength > maxPrompt} onClick={() => void submit()}>{l('生成视频', 'Generate video')} <CreditIcon /> {validQuote?.creditCost ?? '--'}</Button>}
+      {!record && <Button block type="primary" size="large" loading={busy} disabled={locked || !canSubmitFrame || !currentSnapshot || !validQuote || promptLength < 2 || promptLength > maxPrompt} onClick={() => void submit()}>{l('生成视频', 'Generate video')} <CreditIcon /> {validQuote?.creditCost ?? '--'}</Button>}
       {record && <>
         <div>{l('视频记录', 'Video record')} #{record.id} · {record.statusName || record.status}</div>
         <Progress percent={record.progress ?? 0} status={record.status === 4 ? 'exception' : record.status === 3 ? 'success' : 'active'} />

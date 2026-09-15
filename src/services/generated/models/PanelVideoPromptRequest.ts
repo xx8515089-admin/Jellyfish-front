@@ -4,9 +4,9 @@
 /* eslint-disable */
 export type PanelVideoPromptRequest = {
     imageGenerationId: number;
-    scope: 'single_panel' | 'all_panels';
+    scope: 'whole_image' | 'single_panel' | 'all_panels';
     panelId?: string;
-    panelRevision: number;
+    panelRevision?: number;
     modelId?: number;
     resolution?: string;
     durationSeconds?: number;

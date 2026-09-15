@@ -10,7 +10,7 @@ export type ImageToVideoGenerate = {
     prompt: string;
     visualStyleId?: number | null;
     toneStyleId?: number | null;
-    scope?: 'single_panel' | 'all_panels';
+    scope?: 'whole_image' | 'single_panel' | 'all_panels';
     panelId?: string;
     panelRevision?: number;
 };

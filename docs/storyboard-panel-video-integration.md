@@ -1,15 +1,20 @@
-# 已确认分镜的图生视频流程
+# 图片与分镜图生视频流程
 
-图生视频弹窗读取 `images/detail?id=<imageGenerationId>` 的 `panelStatus`、`panelRevision` 和 `panels`，显示按 `panelIndex` 排序的分镜选择列表。只有图片成功且标注 confirmed 时允许生成提示词。
+依据新版 `storyboard-panel-video-flow (1).md` 接入三种 scope：whole_image、single_panel、all_panels。
 
-单格提交 scope=single_panel、panelId、panelRevision；全部提交 scope=all_panels、panelRevision，不携带 panelId。全部模式是一个视频，按总时长报价，并提示首格之外的画面不能保证逐格复现。
+## 当前行为
 
-调用 `imagetovideo/prompts/generate` 后保存完整返回快照。正文可编辑，生成视频请求使用快照中的图片、范围、修订、模型、分辨率和时长。改变选择或参数会清空旧稿；迟到的提示词响应不会覆盖新选择。首帧预览根据返回的 firstFramePanel.bounds 在浏览器显示，正式裁剪由后端执行。
+- 读取 images/detail。无 panels 时默认 whole_image，隐藏分镜选择、刷新标注与校准控件；有 panels 时提供整图、单格和全部分镜选项。
+- whole_image 的提示词及视频请求都不传 panelId、panelRevision。返回 firstFramePanel=null 时可正常编辑提示词和生成视频，首帧展示整张图片。
+- 分镜提示词根据图片 status=3、有效选择及描述存在判断，不检查 panelStatus=confirmed，也不需要 bounds。不会自动写入确认状态。
+- 分镜视频只校验提示词响应的 firstFramePanel.bounds：坐标为有限数、尺寸为正、范围在原图内。坐标缺失或无效时提示校准，保留可编辑提示词，禁止视频提交。实际像素、文件大小和模型尺寸要求仍由后端校验。
+- 生成提示词后保存完整选择快照；提交只修改 prompt 和风格，其他字段沿用快照。返回模型 ID 生效并重新报价。换图、换格、参数或修订变更时清空旧稿，迟到响应被丢弃。
+- whole_image 显示“识图生成提示词，按文本模型用量计费”；只有 panel_template 返回显示“模板编排，不额外扣积分”。不自行估算识图费用，不把识图当免费。
+- 提示词请求使用 generated fetch client，无短超时限制，能够等待后端 120 秒策略；请求期间生成按钮禁用，不自动重试。关闭或改变选择会取消前端等待，不代表后端任务被取消。
+- 视频沿用 imagetovideo/generate、videos/detail；仍按 id 查询、成功刷新历史，关闭弹窗不取消后台任务，不自动重发不确定的计费请求。
 
-视频继续使用 `imagetovideo/generate`，取响应 id 轮询 `videos/detail`。成功后刷新父页面历史，关闭弹窗停止前端查询；不取消后台任务，不自动重发不确定的计费请求。
+## 当前边界与验证
 
-## 当前接入边界
-
-- 所提供文档引用的 `storyboard-image-panels-frontend.md` 未在本地找到，目前未接检测、人工校准及确认接口。pending 可手动刷新；detected、needs_review、unavailable 显示需先完成标注的提示并阻止提交，不会静默确认，也不会回退成整图生视频。
-- 未配置有效 OpenAPI 文档地址，同步命令在联网前退出。本次依据用户提供契约更新并生成 ImageToVideoService 和 DTO，没有调用已废弃的文档接口。
-- 类型检查和请求构造回归用于验证前端；未启动服务或发起真实计费任务。
+- 分镜校准接口仍缺引用的 storyboard-image-panels-frontend.md，当前只提示缺失坐标并允许刷新，不猜测检测或标注写入接口；这不阻碍 whole_image 和具有有效坐标的分镜视频。
+- OpenAPI 同步命令在缺少显式地址时退出，不访问废弃接口。客户端根据提供文档的本地契约生成。
+- 已验证整图不带分镜字段、detected 无坐标可生成提示词、空描述/错误选择/过多镜头阻止提示词及裁剪坐标边界。未启动服务或发起真实计费生成。

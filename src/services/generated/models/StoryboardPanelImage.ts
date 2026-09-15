@@ -8,7 +8,7 @@ export type StoryboardPanelImage = {
     status: number;
     outputUrl?: string | null;
     panelStatus?: string;
-    panelRevision?: number;
+    panelRevision?: number | null;
     panels?: Array<StoryboardPanel>;
 };
 
