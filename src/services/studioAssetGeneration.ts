@@ -1031,7 +1031,7 @@ function reviewAssetImageCopyright(
 ): CancelablePromise<ApiEnvelope<unknown>> {
   return __request(OpenAPI, {
     method: 'POST',
-    url: '/api/v1/studio/assets/images/copyright-review',
+    url: '/api/v1/studio/assets/images/copyrightreview',
     body: requestBody,
     mediaType: 'application/json',
     errors: {

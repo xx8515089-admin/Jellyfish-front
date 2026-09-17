@@ -29,6 +29,7 @@ import type {
 } from '../../../services/studioAssetGeneration'
 import { downloadMediaFile, normalizeMediaFileId, resolveAssetUrl } from '../assets/utils'
 import ImageViewer from './ImageViewer'
+import AssetCopyrightReviewModal from './AssetCopyrightReviewModal'
 import StudioSelect from './StudioSelect'
 import StudioRatioOption from './StudioRatioOption'
 import AssetGenerationProgress, { hasAssetGenerationProgress } from './AssetGenerationProgress'
@@ -368,6 +369,7 @@ export default function AssetGenerationWorkspace({
   onGenerate,
 }: AssetGenerationWorkspaceProps) {
   const l = useBilingualText()
+  const [copyrightReviewTarget, setCopyrightReviewTarget] = useState<{ assetId: number; versionId: number }>()
   const numericAssetId = Number(assetId)
   const lookGenerationTask = Number.isInteger(numericAssetId) && numericAssetId > 0
     ? getAssetLookGenerationTask(numericAssetId)
@@ -648,6 +650,9 @@ export default function AssetGenerationWorkspace({
     }, ...items.map((item) => ({ ...item, isSelected: false }))]
   }, [activeLook?.coverFileId, activeLook?.imageUrl, currentImageFileIdString, imageHistoryItems, initialAsset?.imageUrl, previewImage])
   const selectedHistoryItem = resolvedImageHistoryItems.find((item) => item.isSelected)
+  const reviewVersionId = Number(selectedHistoryItem?.versionId)
+  const canReviewCopyright = Number.isInteger(numericAssetId) && numericAssetId > 0
+    && Number.isInteger(reviewVersionId) && reviewVersionId > 0
   const currentPreviewHistoryItem = resolvedImageHistoryItems.find((item) => item.isCurrent)
   const currentAssetReferenceItem = selectedHistoryItem ?? currentPreviewHistoryItem
   const selectedPastHistoryItem = selectedHistoryItem && !selectedHistoryItem.isCurrent
@@ -1331,13 +1336,6 @@ export default function AssetGenerationWorkspace({
     imageOptionsTouchedRef.current = false
   }
 
-  const notifyImageToolApiMissing = (toolName: string) => {
-    message.info(l(
-      `${toolName}接口还没配置，给我接口后我再接真实请求`,
-      `${toolName} API is not configured yet`,
-    ))
-  }
-
   useEffect(() => {
     if (!lookGenerationTask || lookTaskSnapshot.phase !== 'refreshing' || !lookTaskSnapshot.taskId) {
       return undefined
@@ -1972,6 +1970,13 @@ export default function AssetGenerationWorkspace({
               {l('内容由AI生成，仅供参考', 'AI-generated content for reference only')}
             </p>
           )}
+          {copyrightReviewTarget && (
+            <AssetCopyrightReviewModal
+              assetId={copyrightReviewTarget.assetId}
+              versionId={copyrightReviewTarget.versionId}
+              onClose={() => setCopyrightReviewTarget(undefined)}
+            />
+          )}
           <div className={`asset-generation-workspace__preview${previewImage ? ' has-image' : ''}`}>
             {previewImage ? (
               <>
@@ -1987,10 +1992,15 @@ export default function AssetGenerationWorkspace({
                   <button
                     type="button"
                     className="is-highlighted"
-                    title={l('版权审查', 'Copyright review')}
+                    disabled={!canReviewCopyright}
+                    title={canReviewCopyright
+                      ? l('版权审查', 'Copyright review')
+                      : l('当前图片缺少版本信息，暂无法审查', 'Version information is required for copyright review')}
                     onClick={(event) => {
                       event.stopPropagation()
-                      notifyImageToolApiMissing(l('版权审查', 'Copyright review'))
+                      if (canReviewCopyright) {
+                        setCopyrightReviewTarget({ assetId: numericAssetId, versionId: reviewVersionId })
+                      }
                     }}
                   >
                     <SafetyCertificateOutlined />
