@@ -1,3 +1,5 @@
+import { canvasDialogStore } from './canvasDialogs';
+import { isCanvasInteractiveTarget } from './canvasInteractions'
 // 全局屏蔽滚轮事件相关的控制台错误（在 React 渲染之前设置）
 (function () {
     if (window.parent === window) return;
@@ -154,6 +156,7 @@ const LocalImageManager = (() => {
     const initDB = () => {
         if (dbInitPromise) return dbInitPromise;
 
+        const openingWorkspace = workspaceId;
         dbInitPromise = new Promise((resolve, reject) => {
             if (!window.indexedDB) {
                 console.warn('[LocalImageManager] IndexedDB not supported, falling back to memory');
@@ -169,7 +172,13 @@ const LocalImageManager = (() => {
             };
 
             request.onsuccess = (event) => {
-                dbInstance = event.target.result;
+                const opened = event.target.result;
+                if (workspaceId !== openingWorkspace) { opened.close(); resolve(null); return; }
+                dbInstance = opened;
+                opened.onversionchange = () => {
+                    opened.close();
+                    if (dbInstance === opened) { dbInstance = null; dbInitPromise = null; }
+                };
                 console.log('[LocalImageManager] IndexedDB initialized');
                 resolve(dbInstance);
             };
@@ -192,8 +201,9 @@ const LocalImageManager = (() => {
 
     // 将图像（Base64 或 Blob）保存到 IndexedDB
     const saveImage = async (data, existingId = null) => {
+        const sourceWorkspace = workspaceId;
         const db = await initDB();
-        if (!db) return null;
+        if (!db || sourceWorkspace !== workspaceId) return null;
 
         const id = existingId || generateId();
 
@@ -247,13 +257,14 @@ const LocalImageManager = (() => {
 
     // 从 IndexedDB 读取图像并生成 Blob URL
     const getImage = async (id) => {
+        const sourceWorkspace = workspaceId;
         // 优先检查缓存
         if (blobUrlCache.has(id)) {
             return blobUrlCache.get(id);
         }
 
         const db = await initDB();
-        if (!db) return null;
+        if (!db || sourceWorkspace !== workspaceId) return null;
 
         return new Promise((resolve) => {
             try {
@@ -267,6 +278,7 @@ const LocalImageManager = (() => {
                         // V3.7.32 修复：使用 FileReader 返回 Base64，避免 file:// 协议下的 blob:null 安全错误
                         const reader = new FileReader();
                         reader.onloadend = () => {
+                            if (sourceWorkspace !== workspaceId) { resolve(null); return; }
                             const base64 = reader.result;
                             blobUrlCache.set(id, base64);
                             resolve(base64);
@@ -562,7 +574,13 @@ const LazyBase64Image = ({ src, className, alt, onError, onLoad, ...props }) => 
     );
 };
 
-const ResolvedVideo = ({ src, className, onError, onLoadedMetadata, ...props }) => {
+const ResolvedVideo = ({ src, className, onError, onLoadedMetadata, controls,
+    onPointerDown, onMouseDown, onMouseUp, onTouchStart, onClick, onDoubleClick, onKeyDown, ...props }) => {
+    // Native controls keep their default behavior while events stay out of canvas gestures.
+    const mediaEvent = handler => event => {
+        if (controls) event.stopPropagation();
+        handler?.(event);
+    };
     const [resolvedSrc, setResolvedSrc] = useState('');
     useEffect(() => {
         let active = true;
@@ -596,6 +614,14 @@ const ResolvedVideo = ({ src, className, onError, onLoadedMetadata, ...props }) 
             onError={onError}
             onLoadedMetadata={onLoadedMetadata}
             {...props}
+            controls={controls}
+            onPointerDown={mediaEvent(onPointerDown)}
+            onMouseDown={mediaEvent(onMouseDown)}
+            onMouseUp={mediaEvent(onMouseUp)}
+            onTouchStart={mediaEvent(onTouchStart)}
+            onClick={mediaEvent(onClick)}
+            onDoubleClick={mediaEvent(onDoubleClick)}
+            onKeyDown={mediaEvent(onKeyDown)}
         />
     );
 };
@@ -1507,6 +1533,7 @@ const MaskEditor = ({ nodeId, imageUrl, imageDimensions, isActive, onClose, onSa
     useEffect(() => {
         if (!isActive) return;
         const handleKeyDown = (e) => {
+            if (canvasDialogStore.getSnapshot()) return;
             if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
                 e.preventDefault();
                 handleUndo();
@@ -1678,6 +1705,11 @@ const styles = `
             backface-visibility: hidden;
             -webkit-backface-visibility: hidden;
             pointer-events: none;
+        }
+
+        /* Interactive players must receive native play, seek and volume controls. */
+        .node-wrapper video[controls] {
+            pointer-events: auto;
         }
 
         /* 连接线优化 */
@@ -4001,7 +4033,6 @@ const ASSET_BUNDLE_META_KEY = 'tapnow_asset_bundle_meta';
 
 let assetBundleMetaCache = null;
 const readAssetBundleMeta = () => {
-    if (assetBundleMetaCache) return assetBundleMetaCache;
     try {
         const raw = localStorage.getItem(ASSET_BUNDLE_META_KEY);
         assetBundleMetaCache = raw ? JSON.parse(raw) : null;
@@ -4031,19 +4062,19 @@ const getAssetBundleFallbackById = (id) => {
 };
 const AUTOSAVE_IDB_KEY = 'latest';
 
-const openAutoSaveDb = () => {
+const openAutoSaveDb = (databaseName = getCanvasDatabaseName(AUTOSAVE_IDB_NAME)) => {
     if (typeof indexedDB === 'undefined') {
         return Promise.reject(new Error('IndexedDB not available'));
     }
     return new Promise((resolve, reject) => {
-        const request = window.indexedDB.open(getCanvasDatabaseName(AUTOSAVE_IDB_NAME), 1);
+        const request = window.indexedDB.open(databaseName, 1);
         request.onupgradeneeded = () => {
             const db = request.result;
             if (!db.objectStoreNames.contains(AUTOSAVE_IDB_STORE)) {
                 db.createObjectStore(AUTOSAVE_IDB_STORE);
             }
         };
-        request.onsuccess = () => resolve(request.result);
+        request.onsuccess = () => { request.result.onversionchange = () => request.result.close(); resolve(request.result); };
         request.onerror = () => reject(request.error || new Error('IndexedDB open failed'));
     });
 };
@@ -4065,8 +4096,8 @@ const readAutoSaveFromIdb = async () => {
     }
 };
 
-const writeAutoSaveToIdb = async (payload) => {
-    const db = await openAutoSaveDb();
+const writeAutoSaveToIdb = async (payload, databaseName) => {
+    const db = await openAutoSaveDb(databaseName);
     return await new Promise((resolve, reject) => {
         const tx = db.transaction(AUTOSAVE_IDB_STORE, 'readwrite');
         const store = tx.objectStore(AUTOSAVE_IDB_STORE);
@@ -4254,6 +4285,10 @@ const ImageCompareView = React.memo(({ img1, img2, theme = 'dark', language }) =
     return (
         <div
             ref={containerRef}
+            data-canvas-interactive
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
             className={`relative w-full h-full cursor-col-resize overflow-hidden group rounded-lg select-none shadow-2xl border ${isDark
                 ? 'border-zinc-800 bg-[#09090b]'
                 : isSolarized
@@ -4481,12 +4516,13 @@ const Lightbox = ({ item, onClose, onNavigate, onShotNavigate, onHistoryNavigate
         if (!item) return;
 
         const handleKeyDown = (e) => {
+            if (canvasDialogStore.getSnapshot()) return;
             // 使用ref获取最新的item值
             const currentItem = itemRef.current;
             if (!currentItem) return;
 
             // 防止在输入框中触发
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            if (isCanvasInteractiveTarget(e.target)) return;
             // Lightbox 打开时允许全局键盘导航（仅屏蔽输入框/可编辑区域）
             if (e.repeat) return;
             const guard = navGuardRef.current;
@@ -4604,6 +4640,7 @@ const Lightbox = ({ item, onClose, onNavigate, onShotNavigate, onHistoryNavigate
             }
         };
         const handleKeyUp = (e) => {
+            if (canvasDialogStore.getSnapshot()) return;
             const normalizedKey = normalizeNavKey(e.key);
             const guard = navGuardRef.current;
             if (guard.activeKey === normalizedKey) {

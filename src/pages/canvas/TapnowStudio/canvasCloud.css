@@ -1,0 +1,156 @@
+.canvas-history-drawer .ant-drawer-content {
+  background: #17191e;
+  color: #e5e7ee;
+}
+.canvas-history-drawer .ant-drawer-header {
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid #2c3039;
+}
+.canvas-history-drawer .ant-drawer-title,
+.canvas-history-drawer .ant-drawer-close { color: #e5e7ee; }
+.canvas-history-drawer .ant-drawer-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0 24px;
+}
+.canvas-history-title { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.canvas-history-title > span { font-size: 17px; font-weight: 600; letter-spacing: .2px; }
+.canvas-history-title small { color: #9097a6; font-size: 12px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.canvas-history-drawer .ant-tabs { flex: 1; min-height: 0; }
+.canvas-history-drawer .ant-tabs-nav { flex-shrink: 0; margin: 0 0 18px; padding-top: 5px; }
+.canvas-history-drawer .ant-tabs-nav::before { border-color: #2c3039; }
+.canvas-history-drawer .ant-tabs-tab { padding: 15px 0; color: #a6adbb; font-size: 13px; }
+.canvas-history-drawer .ant-tabs-tab-active .ant-tabs-tab-btn { color: #91abff; }
+.canvas-history-drawer .ant-tabs-ink-bar { background: #91abff; }
+.canvas-history-drawer .ant-tabs-content-holder,
+.canvas-history-drawer .ant-tabs-content,
+.canvas-history-drawer .ant-tabs-tabpane { min-height: 0; height: 100%; }
+.canvas-history-panel,
+.canvas-history-assets { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.canvas-history-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; margin-bottom: 16px; }
+.canvas-history-count { font-size: 12px; color: #929aa9; }
+.canvas-history-list { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #444b59 transparent; padding: 0 2px 16px; }
+.canvas-history-card { padding: 16px; margin-bottom: 12px; background: #20232b; border: 1px solid #303541; border-radius: 12px; }
+.canvas-history-card:last-child { margin-bottom: 0; }
+.canvas-history-card__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.canvas-history-card__identity { min-width: 0; }
+.canvas-history-card__identity h3 { margin: 0 0 5px; color: #eef0f6; font-size: 14px; font-weight: 600; line-height: 1.5; }
+.canvas-history-card__identity > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #858fa1; font: 11px/1.6 ui-monospace, monospace; }
+.canvas-history-drawer .canvas-history-version { margin: 0; border: 1px solid #3c4352; border-radius: 6px; background: transparent; color: #a9b2c4; font-size: 11px; }
+.canvas-history-card__status { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.canvas-history-card__status > span:not(.ant-tag) { color: #a0a8b8; font-size: 12px; }
+.canvas-history-card__status .ant-tag { margin: 0; border-radius: 5px; }
+.canvas-history-drawer .ant-progress { margin: 2px 0 8px; }
+.canvas-history-drawer .ant-progress-inner { background: #353b48; }
+.canvas-history-drawer .ant-progress-text { color: #b6c7ff; font-size: 12px; }
+.canvas-history-time { display: block; font-size: 11px; color: #8791a3; line-height: 1.7; margin-top: 4px; }
+.canvas-history-card__actions { display: flex; justify-content: flex-end; margin-top: 14px; padding-top: 12px; border-top: 1px solid #333947; }
+.canvas-history-card p { margin: 10px 0 0; color: #b5bdcd; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.canvas-history-pagination { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid #2c3039; padding: 16px 0; color: #949eaf; font-size: 12px; }
+.canvas-history-note { flex-shrink: 0; margin: 0 0 20px; padding: 12px 14px; border-radius: 8px; background: #1e222a; color: #939daf; font-size: 12px; line-height: 1.8; }
+.canvas-history-note summary { color: #aabbdb; cursor: pointer; margin-top: 4px; }
+.canvas-history-note p { margin: 6px 0 0; }
+.canvas-history-alert { flex-shrink: 0; margin-top: 16px; }
+.canvas-history-copy { flex-shrink: 0; margin-bottom: 18px; }
+.canvas-history-revision { display: flex; justify-content: space-between; align-items: center; gap: 16px; background: #20232b; border: 1px solid #303541; border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
+.canvas-history-revision strong { font-size: 13px; color: #e0e5ee; }
+.canvas-history-asset-name { overflow-wrap: anywhere; color: #e0e5ee; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+.canvas-history-drawer .ant-empty { margin: 64px 0; }
+.canvas-history-drawer .ant-empty-description { color: #909aab; font-size: 13px; }
+.canvas-history-drawer .ant-btn-default { background: #272c36; border-color: #3a4252; color: #d1d9e9; box-shadow: none; }
+.canvas-history-drawer .ant-btn-default:not(:disabled):hover { color: #b7c8ff; border-color: #758ccb; background: #30394e; }
+.canvas-history-drawer .ant-btn-default:disabled { color: #626c7c; background: #20242c; border-color: #303541; }
+.canvas-history-drawer .ant-btn { font-size: 12px; border-radius: 7px; }
+@media (max-width: 600px) {
+  .canvas-history-drawer .ant-drawer-content-wrapper { max-width: 100vw; }
+  .canvas-history-drawer .ant-drawer-header { padding: 18px 16px; }
+  .canvas-history-drawer .ant-drawer-body { padding: 0 16px; }
+  .canvas-history-card { padding: 14px; }
+  .canvas-history-toolbar { flex-wrap: wrap; }
+}
+
+.canvas-history-inline {
+  position: relative;
+  z-index: 30;
+  flex: 0 0 340px;
+  width: 340px;
+  max-width: calc(100vw - 56px);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 16px;
+  background: #17191e;
+  color: #e5e7ee;
+  border-right: 1px solid #2c3039;
+}
+.canvas-history-inline__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: 18px 0;
+  margin-bottom: 16px;
+  border-bottom: 1px solid #2c3039;
+}
+.canvas-history-inline__header h3 { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.5; }
+.canvas-history-inline__header span { display: block; margin-top: 4px; font-size: 11px; color: #929aa9; }
+.canvas-history-inline__header button { display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #a6adbb; cursor: pointer; }
+.canvas-history-inline__header button:hover { background: #303541; color: #fff; }
+.canvas-history-inline__header button:focus-visible { outline: 2px solid #91abff; outline-offset: 2px; }
+.canvas-history-inline > .canvas-history-panel { flex: 1; height: auto; }
+.canvas-history-inline .canvas-history-alert { margin: 0 0 12px; }
+.canvas-history-inline .canvas-history-card { padding: 13px; }
+@media (max-width: 600px) {
+  .canvas-history-inline { flex-basis: 300px; width: 300px; }
+}
+
+.canvas-history-panel input, .canvas-history-panel select { max-width: 145px; background: #272c36; color: #d1d9e9; border: 1px solid #3a4252; padding: 6px 8px; border-radius: 6px; font-size: 12px; }
+
+/* Canvas save status: separate the status, regular actions and recovery actions. */
+.canvas-sync-panel {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 80;
+  width: max-content;
+  max-width: min(620px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  overflow-y: auto;
+  padding: 16px;
+  border: 1px solid #363e4d;
+  border-radius: 12px;
+  background: #1c2028;
+  color: #e5eaf3;
+  box-shadow: 0 8px 28px #0005;
+  font-size: 12px;
+}
+.canvas-sync-panel__header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px 24px; }
+.canvas-sync-panel__status { display: flex; align-items: center; gap: 10px; min-width: 150px; }
+.canvas-sync-panel__status strong { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.canvas-sync-panel__status [role="status"] { display: block; color: #a8b2c3; line-height: 1.5; }
+.canvas-sync-panel__dot { width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: #98a7be; }
+.canvas-sync-panel--error .canvas-sync-panel__dot { background: #ed9292; }
+.canvas-sync-panel--warning .canvas-sync-panel__dot { background: #e6bb71; }
+.canvas-sync-panel--busy .canvas-sync-panel__dot { background: #91b4f5; }
+.canvas-sync-panel__primary-actions, .canvas-sync-panel__recovery-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.canvas-sync-panel > .canvas-sync-panel__recovery-actions { justify-content: flex-end; margin-top: 12px; padding-top: 12px; border-top: 1px solid #323a48; }
+.canvas-sync-panel .ant-btn { height: 32px; padding: 0 12px; font-size: 12px; border-radius: 7px; box-shadow: none; }
+.canvas-sync-panel .ant-btn-default { color: #c9d4e5; background: #272f3b; border-color: #3c485b; }
+.canvas-sync-panel .ant-btn-default:not(:disabled):hover { color: #e3edff; background: #303d51; border-color: #748fb8; }
+.canvas-sync-panel .ant-btn-primary { color: #f3f6ff; background: #476aab; border-color: #5b7fbe; }
+.canvas-sync-panel .ant-btn-primary:not(:disabled):hover { background: #557dbf; border-color: #7298d5; }
+.canvas-sync-panel .ant-btn:disabled { color: #737e90; background: #242a34; border-color: #343d4b; }
+.canvas-sync-panel__notice { display: flex; align-items: flex-start; gap: 10px; margin-top: 14px; padding: 12px; border: 1px solid #654044; border-radius: 8px; background: #34262c; }
+.canvas-sync-panel__notice-icon { display: grid; place-items: center; flex-shrink: 0; width: 16px; height: 16px; margin-top: 2px; border: 1px solid #d99093; border-radius: 50%; color: #f1b2b4; font-weight: 600; font-size: 11px; }
+.canvas-sync-panel__notice strong { color: #f0bdc0; font-size: 12px; }
+.canvas-sync-panel__notice p { margin: 5px 0 0; color: #d0adb5; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.canvas-sync-panel__draft { margin-top: 14px; padding: 12px; border: 1px solid #60543b; border-radius: 8px; background: #302d25; }
+.canvas-sync-panel__draft strong { color: #dfc794; font-size: 12px; }
+.canvas-sync-panel__draft p { color: #bdb29b; font-size: 12px; margin: 5px 0 12px; line-height: 1.6; }
+@media (max-width: 600px) {
+  .canvas-sync-panel { left: 12px; bottom: 12px; max-width: calc(100% - 24px); padding: 12px; }
+  .canvas-sync-panel__primary-actions { width: 100%; }
+  .canvas-sync-panel__primary-actions .ant-btn { flex: 1; }
+}

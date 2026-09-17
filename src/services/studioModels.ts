@@ -138,6 +138,9 @@ function loadCachedStudioModels(
 }
 
 export const StudioModelsApi = {
+  async getTextModels(force = false): Promise<StudioGenerationModel[]> {
+    return loadCachedStudioModels(1, '文本模型加载失败', force)
+  },
   async getSpeechModels(force = false): Promise<StudioGenerationModel[]> {
     return loadCachedStudioModels(4, 'Speech model loading failed', force)
   },

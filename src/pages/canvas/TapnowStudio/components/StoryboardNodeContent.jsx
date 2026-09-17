@@ -1,4 +1,6 @@
-import { Fragment } from 'react';
+import { canvasConfirm, canvasAlert, canvasPrompt } from '../canvasDialogs';
+import CanvasTextModelSelect from './CanvasTextModelSelect';
+import { Fragment, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
     Check,
@@ -57,6 +59,8 @@ import {
 } from '../freeCanvasShared';
 
 function StoryboardNodeContent({ node, context }) {
+    const latestNodeRef = useRef(node);
+    latestNodeRef.current = node;
     const {
         theme,
         batchQueueItems,
@@ -83,6 +87,7 @@ function StoryboardNodeContent({ node, context }) {
         updateShot,
         deleteShot,
         addEmptyShot,
+        generateCloudBatch,
         generateSingleShot,
         generateSingleImage,
         stopRunningShot,
@@ -108,6 +113,7 @@ function StoryboardNodeContent({ node, context }) {
         runStoryboardTablePromptMerge,
         normalizeStoryboardTableData,
         runStoryboardLlmSplit,
+        cloudText,
         exportStoryboardPromptSlots,
         importStoryboardPromptSlots,
         getStoryboardPromptTemplate,
@@ -255,7 +261,7 @@ function StoryboardNodeContent({ node, context }) {
             : 'bg-zinc-200 text-zinc-500 border border-zinc-300 cursor-not-allowed';
 
     return (
-        <div className="flex h-full">
+        <div className="canvas-storyboard flex h-full">
             <div
                 className={`flex flex-col h-full rounded-xl overflow-hidden pointer-events-auto transition-colors flex-1 ${theme === 'dark'
                     ? 'bg-zinc-950 border border-zinc-800'
@@ -267,7 +273,7 @@ function StoryboardNodeContent({ node, context }) {
                 onMouseLeave={() => setIsMouseOverStoryboard(false)}
             >
                 {/* 头部 */}
-                <div className={`px-4 py-3 border-b flex items-center shrink-0 flex-nowrap overflow-x-auto no-scrollbar ${theme === 'dark'
+                <div className={`canvas-node__heading px-4 py-3 border-b flex items-center shrink-0 flex-nowrap overflow-x-auto no-scrollbar ${theme === 'dark'
                     ? 'bg-zinc-900 border-zinc-800'
                     : theme === 'solarized'
                         ? 'bg-[#eee8d5] border-[#eee8d5]'
@@ -423,10 +429,13 @@ function StoryboardNodeContent({ node, context }) {
                     <div className="flex items-center gap-2 ml-auto relative z-10 shrink-0">
                         {/* V3.5.26：清空按钮移至此处 */}
                         <button
-                            onClick={(e) => {
+                            onClick={async (e) => {
                                 e.stopPropagation();
-                                if (confirm(t('确定要清空所有镜头吗？'))) {
-                                    updateNodeSettings(node.id, { shots: [] });
+                                const shotIdsToRemove = new Set((node.settings?.shots || []).map(shot => shot.id));
+                                if (await canvasConfirm(t('确定要清空所有镜头吗？'), { danger: true })) {
+                                    setNodes(prev => prev.map(current => current.id === node.id
+                                        ? { ...current, settings: { ...current.settings, shots: (current.settings?.shots || []).filter(shot => !shotIdsToRemove.has(shot.id)) } }
+                                        : current));
                                 }
                             }}
                             className="p-1 hover:bg-red-100 hover:text-red-500 rounded text-zinc-400 transition-colors"
@@ -492,7 +501,7 @@ function StoryboardNodeContent({ node, context }) {
                                         });
                                         updateNodeSettings(node.id, { shots: mergedShots });
                                     } else {
-                                        alert(t('未在文本中找到分镜标记 (例如: #1 镜头内容)。请检查上游节点文本格式。'));
+                                        canvasAlert(t('未在文本中找到分镜标记 (例如: #1 镜头内容)。请检查上游节点文本格式。'));
                                     }
                                 } else {
                                     // 无上游节点，显示手动输入框
@@ -522,7 +531,7 @@ function StoryboardNodeContent({ node, context }) {
                                         }
 
                                         if (!canImportImage) {
-                                            alert(t('请先连接视频输入节点并选择关键帧'));
+                                            canvasAlert(t('请先连接视频输入节点并选择关键帧'));
                                             return;
                                         }
                                         const keyframes = connectedVideoNode.selectedKeyframes;
@@ -629,15 +638,17 @@ function StoryboardNodeContent({ node, context }) {
                                 title={t('并发数量 (0=全部)')}
                             />
                             <button
-                                onClick={() => {
+                                onClick={async () => {
                                     const mode = normalizeStoryboardMode(node.settings?.mode);
-                                    const allShots = node.settings?.shots || [];
+                                    let allShots = (node.settings?.shots || []).map(shot => ({ ...shot }));
+                                    const initialShotIds = new Set(allShots.map(shot => shot.id));
 
+                                    if (generateCloudBatch) { generateCloudBatch(node.id); return; }
                                     // V3.7.27: 检测是否有卡住的 generating 镜头
                                     const stuckGenerating = allShots.filter(s => s.status === 'generating');
                                     if (stuckGenerating.length > 0) {
                                         // V3.7.29: 使用 prompt 实现三选项（确定=终止/取消=跳过/空=放弃）
-                                        const userChoice = prompt(
+                                        const userChoice = await canvasPrompt(
                                             `检测到 ${stuckGenerating.length} 个镜头正在生成中。\n\n` +
                                             `可能是任务卡住或等待中。\n\n` +
                                             `请选择操作：\n` +
@@ -652,10 +663,15 @@ function StoryboardNodeContent({ node, context }) {
                                             return;
                                         }
 
+                                        // Generation may finish while the dialog is open; operate only on the original shots in their current state.
+                                        allShots = (latestNodeRef.current.settings?.shots || [])
+                                            .filter(shot => initialShotIds.has(shot.id))
+                                            .map(shot => ({ ...shot }));
+                                        const stuckIds = new Set(stuckGenerating.map(shot => shot.id));
                                         const choice = userChoice.trim().toLowerCase();
                                         if (choice === '1' || choice === 'ok' || choice === '确定') {
                                             // 强制重置为 failed，并准备重新开始
-                                            stuckGenerating.forEach(s => {
+                                            allShots.filter(shot => stuckIds.has(shot.id) && shot.status === 'generating').forEach(s => {
                                                 // V3.7.29: 立即视觉上重置为 pending，因为要重新加入队列
                                                 updateShot(node.id, s.id, { status: 'pending', errorMsg: '' });
 
@@ -681,11 +697,11 @@ function StoryboardNodeContent({ node, context }) {
                                             const isAllLocked = allShots.every(s => s.outputEnabled);
                                             const hasGenerating = allShots.some(s => s.status === 'generating');
                                             if (hasGenerating) {
-                                                alert(t('有镜头正在生成中，请等待完成后再试。'));
+                                                canvasAlert(t('有镜头正在生成中，请等待完成后再试。'));
                                             } else if (isAllLocked && allShots.length > 0) {
-                                                alert('所有镜头已锁定（灰框已勾选），无法重新生成。\n请取消勾选需要重新生成的镜头。');
+                                                canvasAlert('所有镜头已锁定（灰框已勾选），无法重新生成。\n请取消勾选需要重新生成的镜头。');
                                             } else {
-                                                alert(t('没有待生成的镜头'));
+                                                canvasAlert(t('没有待生成的镜头'));
                                             }
                                             return;
                                         }
@@ -695,7 +711,11 @@ function StoryboardNodeContent({ node, context }) {
                                     // 重新生成前请求确认
                                     if (isReroll) {
                                         const confirmMsg = `所有镜头已生成完毕。\n\n即将对 ${targetShots.length} 个未锁定（灰框未勾选）的镜头进行重新生成。\n\n● 继续批量生成会覆盖原有输出但是资产在左侧可以查看\n● 已锁定（灰框勾选）的镜头将保持不变\n\n是否继续？`;
-                                        if (!confirm(confirmMsg)) return;
+                                        if (!(await canvasConfirm(confirmMsg, { danger: true }))) return;
+                                        const latestShots = new Map((latestNodeRef.current.settings?.shots || []).map(shot => [shot.id, shot]));
+                                        targetShots = targetShots.map(shot => latestShots.get(shot.id))
+                                            .filter(shot => shot && !shot.outputEnabled && shot.status === 'done');
+                                        if (targetShots.length === 0) return;
                                     }
 
                                     // V3.8: 记录批次分组与任务编号
@@ -882,10 +902,10 @@ function StoryboardNodeContent({ node, context }) {
                                         </div>
                                         <div className="px-3 pb-2 flex gap-2">
                                             <button
-                                                onClick={() => {
+                                                onClick={async () => {
                                                     setActiveDropdown(null);
                                                     if (nodeQueueItems.length === 0) return;
-                                                    if (confirm(t('确定清空排队任务吗？'))) clearNodeQueue(node.id, false);
+                                                    if (await canvasConfirm(t('确定清空排队任务吗？'), { danger: true })) clearNodeQueue(node.id, false, { queued: nodeQueueItems, running: nodeRunningItems });
                                                 }}
                                                 className={`text-[10px] px-2 py-1 rounded ${theme === 'dark'
                                                     ? 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
@@ -894,10 +914,10 @@ function StoryboardNodeContent({ node, context }) {
                                                 {t('清空排队')}
                                             </button>
                                             <button
-                                                onClick={() => {
+                                                onClick={async () => {
                                                     setActiveDropdown(null);
                                                     if (nodeRunningItems.length === 0 && nodeQueueItems.length === 0) return;
-                                                    if (confirm(t('确定终止当前节点所有生成并清空队列吗？'))) clearNodeQueue(node.id, true);
+                                                    if (await canvasConfirm(t('确定终止当前节点所有生成并清空队列吗？'), { danger: true })) clearNodeQueue(node.id, true, { queued: nodeQueueItems, running: nodeRunningItems });
                                                 }}
                                                 className={`text-[10px] px-2 py-1 rounded ${theme === 'dark'
                                                     ? 'bg-red-900/40 text-red-300 hover:bg-red-900/60'
@@ -916,8 +936,8 @@ function StoryboardNodeContent({ node, context }) {
                                                             <div className="flex items-center gap-1 shrink-0">
                                                                 <span className="text-green-500">{t('运行')}</span>
                                                                 <button
-                                                                    onClick={() => {
-                                                                        if (confirm(t('确定终止该生成任务吗？'))) stopRunningShot(item.nodeId, item.shotId);
+                                                                    onClick={async () => {
+                                                                        if (await canvasConfirm(t('确定终止该生成任务吗？'), { danger: true })) stopRunningShot(item.nodeId, item.shotId, item);
                                                                     }}
                                                                     className={`p-0.5 rounded ${theme === 'dark'
                                                                         ? 'text-zinc-500 hover:text-red-300'
@@ -947,8 +967,8 @@ function StoryboardNodeContent({ node, context }) {
                                                             <div className="flex items-center gap-1 shrink-0">
                                                                 <span className="text-blue-400">{item.mode === 'image' ? '图' : '视'}</span>
                                                                 <button
-                                                                    onClick={() => {
-                                                                        if (confirm(t('确定移除该排队任务吗？'))) removeQueuedBatchItem(item.nodeId, item.shotId);
+                                                                    onClick={async () => {
+                                                                        if (await canvasConfirm(t('确定移除该排队任务吗？'), { danger: true })) removeQueuedBatchItem(item.nodeId, item.shotId, item);
                                                                     }}
                                                                     className={`p-0.5 rounded ${theme === 'dark'
                                                                         ? 'text-zinc-500 hover:text-red-300'
@@ -1070,6 +1090,7 @@ function StoryboardNodeContent({ node, context }) {
                 </div>
 
                 {/* V3.5.17：剧本拆分器的手动输入区，V3.5.24 已移除横幅 */}
+                {cloudText && <CanvasTextModelSelect theme={theme} models={cloudText.textModels} ready={cloudText.textReady} onRefresh={cloudText.refreshModels} value={node.settings?.textModelId} onChange={textModelId => updateNodeSettings(node.id, { textModelId })} />}
                 {
                     node.settings?.scriptExpanded && (
                         <div className={`border-b shrink-0 p-3 space-y-2 ${theme === 'dark'
@@ -1136,7 +1157,7 @@ function StoryboardNodeContent({ node, context }) {
                                         }
 
                                         if (matches.length === 0) {
-                                            alert(t('未检测到有效分镜。请使用格式: #1 描述 #2 描述'));
+                                            canvasAlert(t('未检测到有效分镜。请使用格式: #1 描述 #2 描述'));
                                             return;
                                         }
 
@@ -1231,6 +1252,7 @@ function StoryboardNodeContent({ node, context }) {
                                                 : 'bg-zinc-200 text-zinc-700 hover:bg-zinc-300';
                                     };
                                     const onLlmTabClick = (mode) => {
+                                        if (cloudText && mode === 'custom') { canvasAlert('云端使用服务端的分镜拆分模板，不支持自定义供应商提示模板'); return; }
                                         if (isPromptEditorMode) {
                                             updateNodeSettings(node.id, { llmPromptMode: mode });
                                             return;
@@ -1254,7 +1276,7 @@ function StoryboardNodeContent({ node, context }) {
                                                 onClick={() => onLlmTabClick('script')}
                                                 className={`px-2 py-1.5 text-xs rounded transition-colors flex items-center gap-1 ${getLlmTabClass('script')}`}
                                                 onMouseDown={(e) => e.stopPropagation()}
-                                                disabled={node.settings?.isGenerating && !isPromptEditorMode}
+                                                disabled={(node.settings?.isGenerating && !isPromptEditorMode) || (!!cloudText && !cloudText.textReady)}
                                                 title={t('LLM 拆脚本')}
                                             >
                                                 <Sparkles size={12} />
@@ -1264,7 +1286,7 @@ function StoryboardNodeContent({ node, context }) {
                                                 onClick={() => onLlmTabClick('novel')}
                                                 className={`px-2 py-1.5 text-xs rounded transition-colors flex items-center gap-1 ${getLlmTabClass('novel')}`}
                                                 onMouseDown={(e) => e.stopPropagation()}
-                                                disabled={node.settings?.isGenerating && !isPromptEditorMode}
+                                                disabled={(node.settings?.isGenerating && !isPromptEditorMode) || (!!cloudText && !cloudText.textReady)}
                                                 title={t('LLM 拆小说')}
                                             >
                                                 <Sparkles size={12} />
@@ -1274,7 +1296,7 @@ function StoryboardNodeContent({ node, context }) {
                                                 onClick={() => onLlmTabClick('custom')}
                                                 className={`px-2 py-1.5 text-xs rounded transition-colors flex items-center gap-1 ${getLlmTabClass('custom')}`}
                                                 onMouseDown={(e) => e.stopPropagation()}
-                                                disabled={node.settings?.isGenerating && !isPromptEditorMode}
+                                                disabled={(node.settings?.isGenerating && !isPromptEditorMode) || (!!cloudText && !cloudText.textReady)}
                                                 title={t('LLM 自定义')}
                                             >
                                                 <Sparkles size={12} />
@@ -2161,7 +2183,7 @@ function StoryboardNodeContent({ node, context }) {
                                                                                             : theme === 'dark' ? 'hover:bg-zinc-800 text-zinc-300' : theme === 'solarized' ? 'hover:bg-[#fdf6e3] text-zinc-700' : 'hover:bg-zinc-100 text-zinc-700'
                                                                                             }`}
                                                                                     >
-                                                                                        <span className="text-[10px] font-medium truncate font-mono">{m.id}</span>
+                                                                                        <span className="text-[10px] font-medium truncate font-mono">{m.displayName || m.modelName || m.id}</span>
                                                                                         <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${getStatusColor(modelKey)}`}></div>
                                                                                     </button>
                                                                                 );
@@ -2608,8 +2630,8 @@ function StoryboardNodeContent({ node, context }) {
                                                         </div>
                                                     )}
                                                     <button
-                                                        onClick={() => {
-                                                            if (confirm(t('确定要删除该镜头吗？'))) deleteShot(node.id, shot.id);
+                                                        onClick={async () => {
+                                                            if (await canvasConfirm(t('确定要删除该镜头吗？'), { danger: true })) deleteShot(node.id, shot.id);
                                                         }}
                                                         className={`p-1.5 transition-colors ${theme === 'dark'
                                                             ? 'text-zinc-600 hover:text-red-500'

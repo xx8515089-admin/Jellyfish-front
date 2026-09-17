@@ -215,3 +215,146 @@ test('request IDs work on HTTP LAN pages without crypto.randomUUID', () => {
   }, { crypto: { getRandomValues: (array) => array.fill(9) }, Uint8Array })
   assert.match(canvasRequestId('save'), /^save-[a-f0-9]{32}$/)
 })
+
+test('adopting latest cloud document clears conflict and uses its revision and asset IDs', async () => {
+  const calls = []
+  const { session } = harness({ save: async (body) => { calls.push(body); return { ...body, revisionNo: 6, currentRevisionNo: 6 } } })
+  session.blocked = true
+  session.pendingSave = { stale: true }
+  const latest = { ...fixture(), revisionNo: 5, currentRevisionNo: 5 }
+  latest.project.nodes = [node('ref', 'input-image', 'blob:new-cloud-url')]
+  latest.assetBindings = [{ nodeId: 'ref', fieldPath: '/content', assetId: 72 }]
+  session.adopt(latest)
+  await session.save(latest.project)
+  assert.equal(calls[0].expectedRevisionNo, 5)
+  assert.equal(calls[0].assetBindings[0].assetId, 72)
+  assert.equal(session.blocked, false)
+})
+
+test('cloud save success remains successful when browser cleanup fails', async () => {
+  const { session, window } = harness({ save: async (body) => ({ ...body, revisionNo: 3, currentRevisionNo: 3 }) })
+  window.localStorage.removeItem = () => { throw new Error('storage unavailable') }
+  const result = await session.save(fixture().project)
+  assert.equal(result.revisionNo, 3)
+  assert.equal(session.revision, 3)
+  assert.equal(session.pendingSave, null)
+  assert.match(session.storageWarning, /云端已保存/)
+})
+
+
+test('v2 shot bindings follow stable IDs, preserve source links and bind operation-specific models', async () => {
+  const doc = fixture()
+  const board = node('board', 'storyboard-node', null, { mode: 'image', shots: [
+    { id: 'second', model: 'studio-9', prompt: 'https://example.com is prose', referenceImages: ['blob:reference'] },
+    { id: 'first', imageModel: 'studio-9', description: 'first shot' },
+  ] })
+  doc.project.nodes = [board]
+  doc.assetBindings = [{ nodeId: 'board', shotId: 'second', fieldPath: '/referenceImages/0', assetId: 88, sourceLinkId: 73 }]
+  const { session } = harness({}, doc)
+  const prepared = await session.prepare(doc.project)
+  assert.equal(prepared.assetBindings[0].shotId, 'second')
+  assert.equal(prepared.assetBindings[0].fieldPath, '/referenceImages/0')
+  assert.equal(prepared.assetBindings[0].sourceLinkId, 73)
+  assert.equal(prepared.modelBindings[1].fieldPath, '/imageModel')
+  assert.equal(prepared.modelBindings[1].operation, 'imageGenerate')
+  assert.equal(prepared.project.nodes[0].settings.shots[0].prompt, 'https://example.com is prose')
+})
+
+test('v2 upload timeout replays identical multipart identity after receipt not found', async () => {
+  const calls = []
+  const { session } = harness({
+    assetSubmission: async () => { throw Object.assign(new Error('missing'), { errorCode: 'CANVAS_ASSET_SUBMISSION_NOT_FOUND' }) },
+    upload: async (_id, file, requestId) => {
+      calls.push({ name: file.name, requestId, body: await file.text() })
+      if (calls.length === 1) throw new Error('timeout')
+      return { assetId: 66 }
+    },
+  }, fixture(), { fetch: async () => ({ ok: true, blob: async () => new Blob(['pixels'], { type: 'image/png' }) }) })
+  await assert.rejects(session.upload('blob:first'), /timeout/)
+  assert.equal((await session.upload('blob:restored')).assetId, 66)
+  assert.deepEqual(calls[0], calls[1])
+})
+
+test('v2 library attach receipt preserves the specific source instead of choosing by file ID', async () => {
+  let submits = 0
+  const { session } = harness({
+    assetSubmission: async () => ({ asset: { assetId: 6, sources: [{sourceLinkId: 7}, {sourceLinkId: 8}] }, source: {sourceLinkId: 8} }),
+    attachLibrary: async () => { submits++; },
+    content: async () => new Blob(['x'], { type: 'image/png' }),
+  })
+  const result = await session.attachLibrary({ assetType: 1, id: 2 })
+  assert.equal(submits, 0)
+  assert.equal(result.asset.sourceLinkId, 8)
+  assert.equal(session.media.get(result.url).sourceLinkId, 8)
+  session.dispose()
+})
+
+test('v2 batch timeout is recovered without creating another paid batch', async () => {
+  let creates = 0, result = null
+  const { session, storage } = harness({
+    batchSubmission: async () => {
+      if (result) return result
+      throw Object.assign(new Error('missing'), { errorCode: 'CANVAS_BATCH_SUBMISSION_NOT_FOUND' })
+    },
+    batchCreate: async body => { creates++; assert.ok([...storage.keys()].some(key => key.endsWith(':batch'))); result = { batchId: 81, items: [], body }; throw new Error('timeout') },
+  })
+  const body = { canvasId: 7, revisionNo: 2, clientRequestId: 'batch-1', maxTotalCredits: 10, items: [{clientItemId:'a',nodeId:'n',operation:'imageGenerate',count:2}] }
+  await assert.rejects(session.submitBatch(body), /timeout/)
+  assert.equal((await session.recoverBatch()).batchId, 81)
+  assert.equal(creates, 1)
+  assert.equal(session.pendingBatch, null)
+})
+
+test('v2 polling and actions obey server flags even when legacy status would disagree', () => {
+  const { shouldPollTask, taskAction } = harness()
+  assert.equal(shouldPollTask({status:3,shouldPoll:true}), true)
+  assert.equal(shouldPollTask({status:2,shouldPoll:false}), false)
+  assert.equal(taskAction({status:4,billingState:'released',actions:{retry:false}}, 'retry'), false)
+  assert.equal(taskAction({status:3,actions:{retrySettlement:true}}, 'retrySettlement'), true)
+})
+
+test('v2 hydration preserves per-source URLs and applies model bindings to reordered shots', async () => {
+  const doc = fixture()
+  doc.project.nodes = [node('board','storyboard-node',null,{ shots:[{id:99, image_url:null, model:''},{id:42,image_url:null,model:''}] })]
+  doc.assetBindings = [{nodeId:'board',shotId:'42',fieldPath:'/image_url',assetId:8,sourceLinkId:1},{nodeId:'board',shotId:'99',fieldPath:'/image_url',assetId:8,sourceLinkId:2}]
+  doc.modelBindings = [{nodeId:'board',shotId:'42',fieldPath:'/model',modelId:9,operation:'imageGenerate'}]
+  const api = load('../src/services/studioCanvases.ts', {
+    './generated': {OpenAPI:{BASE:''}}, './generated/core/request': {request:async()=>{},getHeaders:async()=>({})},
+  }, { fetch:async()=>({ok:true,blob:async()=>new Blob(['x'],{type:'image/png'})}) })
+  const urls = []
+  const hydrated = await api.hydrateCanvasDocument(doc, urls)
+  const shots = hydrated.project.nodes[0].settings.shots
+  assert.equal(shots[1].model, 'studio-9')
+  assert.equal(shots[0].model, '')
+  assert.notEqual(shots[0].image_url, shots[1].image_url)
+  urls.forEach(URL.revokeObjectURL)
+})
+
+test('v2 API forwards error location and batch/list/upload contract fields', async () => {
+  const calls = []
+  const api = load('../src/services/studioCanvases.ts', {
+    './generated': {OpenAPI:{}}, './generated/core/request': {request:async(_config,options)=> {
+      calls.push(options)
+      if (options.url.endsWith('/save')) throw {status:502,body:{message:'missing model',data:{errorCode:'CANVAS_MODEL_BINDING_MISSING',nodeId:'board',shotId:'42',fieldPath:'/model'}}}
+      return {code:200,data:[]}
+    },getHeaders:async()=>({})},
+  })
+  await assert.rejects(api.StudioCanvases.save({}), error => error.location.shotId === '42' && error.location.fieldPath === '/model')
+  await api.StudioCanvases.models({includeUnavailable:true})
+  await api.StudioCanvases.generations(7,1,'board',{shotId:'42',batchId:3,status:6})
+  await api.StudioCanvases.upload(7,new File(['x'],'x.png'),'upload-id')
+  assert.equal(calls[1].url, '/api/v1/studio/canvases/models')
+  assert.equal(calls[2].query.shotId, '42')
+  assert.equal(calls[3].formData.clientRequestId, 'upload-id')
+})
+
+
+test('deleted canvas sessions stop draft writes and cloud requests even in another open tab', async () => {
+  let calls = 0
+  const { session, storage } = harness({save:async()=>{calls++}})
+  storage.set('canvas-deleted:42:7','deleted')
+  assert.equal(session.read('draft'),null)
+  assert.throws(()=>session.write('draft',{snapshot:fixture().project}),/已删除/)
+  await assert.rejects(session.save(fixture().project),/已删除/)
+  assert.equal(calls,0)
+})

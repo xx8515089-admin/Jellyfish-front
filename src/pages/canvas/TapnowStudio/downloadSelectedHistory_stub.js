@@ -1,3 +1,4 @@
+import { canvasAlert } from './canvasDialogs';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import i18n from './i18n';
@@ -128,9 +129,7 @@ const reportError = (alertMessage, message) => {
         alertMessage(message);
         return;
     }
-    if (typeof window !== 'undefined' && window.alert) {
-        window.alert(message);
-    }
+    void canvasAlert(message);
 };
 
 export const downloadSelectedHistory = async (input, options = {}) => {

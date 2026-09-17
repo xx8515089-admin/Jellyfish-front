@@ -1,3 +1,4 @@
+import CanvasModelMenu from './CanvasModelMenu';
 import {
     ChevronRight,
     Eraser,
@@ -59,7 +60,6 @@ function GenerationNodeContent({ node, context }) {
         getStatusColor,
         resolveModelKey,
         groupedApiConfigs,
-        hoveredProvider,
         setHoveredProvider,
         applyNodeModelSelection,
         setLastUsedImageModel,
@@ -77,6 +77,12 @@ function GenerationNodeContent({ node, context }) {
         startGeneration
     } = context;
 
+    // Linked text is derived during rendering, never copied back into node settings.
+    // The visible inputs and the generation action use the same current values.
+    const connectedTexts = getConnectedTextNodes(node.id);
+    const basePrompt = node.type === 'gen-image' ? node.settings?.prompt || '' : node.settings?.videoPrompt || '';
+    const finalPrompt = connectedTexts.length > 0 ? connectedTexts.join(' ') + (basePrompt ? ' ' + basePrompt : '') : basePrompt;
+
     // 查找当前节点对应的正在生成的历史记录
     const activeTask = history.find(h =>
         h.sourceNodeId === node.id &&
@@ -89,7 +95,7 @@ function GenerationNodeContent({ node, context }) {
     const elapsedSeconds = nodeTimers[node.id] || 0;
 
     return (
-        <div className="p-3 flex flex-col h-full pointer-events-auto">
+        <div className="canvas-generation p-3 flex flex-col h-full pointer-events-auto">
             {/* 计时器显示 */}
             {(isGenerating || finalDuration) && (
                 <div
@@ -106,7 +112,7 @@ function GenerationNodeContent({ node, context }) {
                 </div>
             )}
             <div
-                className={`flex items-center gap-1.5 mb-2 text-xs font-semibold shrink-0 ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'
+                className={`canvas-node__heading flex items-center gap-1.5 mb-2 text-xs font-semibold shrink-0 ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'
                     }`}
             >
                 {node.type === 'gen-image' ? <Wand2 size={12} className="text-blue-400" /> : <Video size={12} className="text-purple-400" />}
@@ -164,7 +170,7 @@ function GenerationNodeContent({ node, context }) {
                 </div>
             )}
             <div
-                className={`rounded-lg p-3 mb-2 border focus-within:border-blue-500/30 transition-colors flex-1 flex flex-col ${theme === 'dark'
+                className={`canvas-generation__prompt rounded-lg p-3 mb-2 border focus-within:border-blue-500/30 transition-colors flex-1 flex flex-col ${theme === 'dark'
                     ? 'bg-zinc-950/50 border-zinc-800'
                     : theme === 'solarized'
                         ? 'bg-[#fdf6e3] border-[#eee8d5]'
@@ -201,14 +207,28 @@ function GenerationNodeContent({ node, context }) {
                     }
                     return null;
                 })()}
+                {connectedTexts.length > 0 && (
+                    <div className="canvas-generation__linked-text" role="group" aria-label={t('已连接文字')}>
+                        <div className="canvas-generation__linked-text-heading">
+                            <LinkIcon size={11} />
+                            <span>{t('已连接文字')} · {connectedTexts.length}</span>
+                            <span className="canvas-generation__linked-text-hint">{t('随来源更新')}</span>
+                        </div>
+                        <div className="canvas-generation__linked-text-body custom-scrollbar" tabIndex={0} onMouseDown={e => e.stopPropagation()}>
+                            {connectedTexts.map((text, index) => <p key={index}>{text}</p>)}
+                        </div>
+                    </div>
+                )}
+                {connectedTexts.length > 0 && <div className="canvas-generation__prompt-label">{t('补充提示词')}</div>}
                 <div className="flex items-start gap-2 mb-1 flex-1 h-full min-h-0">
                     <textarea
                         className={`flex-1 h-full bg-transparent text-xs outline-none resize-none custom-scrollbar ${theme === 'dark'
                             ? 'text-zinc-300 placeholder-zinc-600'
                             : 'text-zinc-800 placeholder-zinc-400'
                             }`}
-                        placeholder={t('输入提示词...')}
-                        value={node.type === 'gen-image' ? (node.settings?.prompt || '') : (node.settings?.videoPrompt || '')}
+                        aria-label={connectedTexts.length > 0 ? t('补充提示词') : t('提示词')}
+                        placeholder={connectedTexts.length > 0 ? t('可补充要求，将与已连接文字一起使用') : t('输入提示词...')}
+                        value={basePrompt}
                         onChange={(e) => updateNodeSettings(node.id, node.type === 'gen-image' ? { prompt: e.target.value } : { videoPrompt: e.target.value })}
                         onMouseDown={(e) => e.stopPropagation()}
                     />
@@ -514,7 +534,7 @@ function GenerationNodeContent({ node, context }) {
             })()}
             {node.type === 'gen-image' && isNanoBanana2 && (
                 <div
-                    className={`mb-2 rounded-lg border p-3 space-y-2 ${theme === 'dark'
+                    className={`canvas-generation__library mb-2 rounded-lg border p-3 space-y-2 ${theme === 'dark'
                         ? 'bg-zinc-900/50 border-zinc-800'
                         : 'bg-white border-zinc-200'
                         }`}
@@ -618,13 +638,13 @@ function GenerationNodeContent({ node, context }) {
                 );
             })()}
             <div
-                className={`mt-auto pt-2 flex items-center justify-between shrink-0 relative gap-2 border-t ${theme === 'dark' ? 'border-zinc-800/50' : 'border-zinc-200'
+                className={`canvas-generation__toolbar mt-auto pt-2 flex items-center justify-between shrink-0 relative gap-2 border-t ${theme === 'dark' ? 'border-zinc-800/50' : 'border-zinc-200'
                     }`}
             >
                 <div className="relative flex-1 min-w-0">
                     <button
                         title={getModelLabelWithProvider(node.settings?.model)}
-                        onClick={(e) => { e.stopPropagation(); setActiveDropdown(activeDropdown?.type === 'model' ? null : { nodeId: node.id, type: 'model' }); }}
+                        onClick={(e) => { e.stopPropagation(); setActiveDropdown(activeDropdown?.nodeId === node.id && activeDropdown?.type === 'model' ? null : { nodeId: node.id, type: 'model' }); }}
                         className={`flex items-center gap-2 pl-1 pr-2 py-1 rounded text-[10px] transition-colors border w-full ${theme === 'dark'
                             ? 'bg-zinc-800/50 hover:bg-zinc-800 text-zinc-300 border-zinc-700/50'
                             : theme === 'solarized'
@@ -633,78 +653,33 @@ function GenerationNodeContent({ node, context }) {
                             }`}
                     >
                         <span className={`w-2 h-2 rounded-full ${getStatusColor(resolveModelKey(node.settings?.model))}`}></span>
-                        <span className="truncate font-mono">{getModelLabelWithProvider(node.settings?.model)}</span>
+                        <span className="truncate">{getModelLabelWithProvider(node.settings?.model)}</span>
                     </button>
                     {activeDropdown?.nodeId === node.id && activeDropdown.type === 'model' && (
-                        <div
-                            className={`absolute bottom-full left-0 mb-1 w-96 rounded-lg shadow-xl p-1 z-[60] border flex ${theme === 'dark'
-                                ? 'bg-[#18181b] border-zinc-700'
-                                : theme === 'solarized' ? 'bg-[#eee8d5] border-[#d7cfb2]' : 'bg-white border-zinc-200'
-                                }`}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            onMouseLeave={() => setHoveredProvider(null)}
-                        >
-                            {/* V3.4.6：左侧供应商列表 */}
-                            <div className={`w-36 border-r pr-1 max-h-64 overflow-y-auto custom-scrollbar flex flex-col justify-end ${theme === 'dark' ? 'border-zinc-700' : 'border-zinc-200'}`}>
-                                {Object.entries(groupedApiConfigs)
-                                    .filter(([, group]) => group.models.some(m => (node.type === 'gen-image' ? isImageModelType(m.type) : m.type === 'Video')))
-                                    .map(([providerKey, group]) => (
-                                        <button
-                                            key={providerKey}
-                                            onMouseEnter={() => setHoveredProvider(providerKey)}
-                                            className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-left text-[10px] transition-colors ${hoveredProvider === providerKey
-                                                ? theme === 'dark' ? 'bg-zinc-700 text-zinc-100' : theme === 'solarized' ? 'bg-[#fdf6e3] text-zinc-800' : 'bg-zinc-200 text-zinc-900'
-                                                : theme === 'dark' ? 'hover:bg-zinc-800 text-zinc-400' : theme === 'solarized' ? 'hover:bg-[#fdf6e3] text-zinc-700' : 'hover:bg-zinc-100 text-zinc-600'
-                                                }`}
-                                        >
-                                            <span className="truncate font-medium">{group.name}</span>
-                                            <ChevronRight size={10} className="opacity-50" />
-                                        </button>
-                                    ))}
-                            </div>
-                            {/* V3.4.6：右侧模型列表 */}
-                            <div className="flex-1 pl-1 max-h-64 overflow-y-auto custom-scrollbar flex flex-col justify-end">
-                                {hoveredProvider && groupedApiConfigs[hoveredProvider]?.models
-                                    .filter(m => (node.type === 'gen-image' ? isImageModelType(m.type) : m.type === 'Video'))
-                                    .map((m) => {
-                                        const modelKey = m._uid || m.id;
-                                        const currentModelKey = resolveModelKey(node.settings?.model);
-                                        return (
-                                            <button
-                                                key={modelKey}
-                                                onClick={() => {
-                                                    applyNodeModelSelection(node.id, node.type, modelKey);
-                                                    if (m.id === 'grok-3' && node.type === 'gen-video') {
-                                                        updateNodeSettings(node.id, { duration: '8s' });
-                                                    }
-                                                    // V3.4.8: 记住上次使用的模型
-                                                    if (node.type === 'gen-image') {
-                                                        setLastUsedImageModel(modelKey);
-                                                        try { localStorage.setItem('tapnow_last_image_model', modelKey); } catch { /* 无需处理 */ }
-                                                    } else if (node.type === 'gen-video') {
-                                                        setLastUsedVideoModel(modelKey);
-                                                        try { localStorage.setItem('tapnow_last_video_model', modelKey); } catch { /* 无需处理 */ }
-                                                    }
-                                                    setActiveDropdown(null);
-                                                    setHoveredProvider(null);
-                                                }}
-                                                className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-left transition-colors ${currentModelKey === modelKey
-                                                    ? theme === 'dark' ? 'bg-blue-600/30 text-blue-300' : theme === 'solarized' ? 'bg-[#fdf6e3] text-zinc-800' : 'bg-blue-100 text-blue-700'
-                                                    : theme === 'dark' ? 'hover:bg-zinc-800 text-zinc-300' : theme === 'solarized' ? 'hover:bg-[#fdf6e3] text-zinc-700' : 'hover:bg-zinc-100 text-zinc-700'
-                                                    }`}
-                                            >
-                                                <span className="text-[10px] font-medium truncate font-mono">{m.id}</span>
-                                                <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${getStatusColor(modelKey)}`}></div>
-                                            </button>
-                                        );
-                                    })}
-                                {!hoveredProvider && (
-                                    <div className={`text-[10px] px-2 py-3 text-center ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                                        ← 选择 Provider
-                                    </div>
-                                )}
-                            </div>
-                        </div>
+                        <CanvasModelMenu
+                            groups={Object.entries(groupedApiConfigs)
+                                .map(([key, group]) => [key, { ...group, models: group.models.filter(m => node.type === 'gen-image' ? isImageModelType(m.type) : m.type === 'Video') }])
+                                .filter(([, group]) => group.models.length > 0)}
+                            currentModelKey={resolveModelKey(node.settings?.model)}
+                            getStatusColor={getStatusColor}
+                            onClose={() => setActiveDropdown(null)}
+                            onSelect={m => {
+                                const modelKey = m._uid || m.id;
+                                applyNodeModelSelection(node.id, node.type, modelKey);
+                                if (m.id === 'grok-3' && node.type === 'gen-video') {
+                                    updateNodeSettings(node.id, { duration: '8s' });
+                                }
+                                if (node.type === 'gen-image') {
+                                    setLastUsedImageModel(modelKey);
+                                    try { localStorage.setItem('tapnow_last_image_model', modelKey); } catch { }
+                                } else if (node.type === 'gen-video') {
+                                    setLastUsedVideoModel(modelKey);
+                                    try { localStorage.setItem('tapnow_last_video_model', modelKey); } catch { }
+                                }
+                                setActiveDropdown(null);
+                                setHoveredProvider(null);
+                            }}
+                        />
                     )}
                 </div>
 
@@ -1113,9 +1088,6 @@ function GenerationNodeContent({ node, context }) {
                     )}
                 </div>
                 <button onClick={() => {
-                    const basePrompt = node.type === 'gen-image' ? node.settings?.prompt || '' : node.settings?.videoPrompt || '';
-                    const connectedTexts = getConnectedTextNodes(node.id);
-                    const finalPrompt = connectedTexts.length > 0 ? connectedTexts.join(' ') + (basePrompt ? ' ' + basePrompt : '') : basePrompt;
                     startGeneration(finalPrompt, node.type === 'gen-image' ? 'image' : 'video', connectedImages, node.id, {
                         customParams: node.settings?.customParams,
                         imageConcurrency: normalizeImageConcurrency(

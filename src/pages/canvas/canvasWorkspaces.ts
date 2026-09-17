@@ -1,3 +1,4 @@
+import { canvasDeletedKey, clearCanvasCache } from './canvasCache'
 import { StudioCanvases, canvasRequestId, type CanvasSummary } from '../../services/studioCanvases'
 
 export interface CanvasWorkspace {
@@ -23,7 +24,12 @@ export async function listCanvasWorkspaces(): Promise<CanvasWorkspace[]> {
 let pendingCreate: { name: string; id: string } | null = null
 export async function createCanvasWorkspace(name: string) {
   if (!pendingCreate || pendingCreate.name !== name) pendingCreate = { name, id: canvasRequestId('create') }
-  const result = workspace(await StudioCanvases.create(name, pendingCreate.id))
+  const created = await StudioCanvases.create(name, pendingCreate.id)
+  const result = workspace(created)
+  if (created.revisionNo === 1 && created.currentRevisionNo === 1 && !created.project.nodes.length) {
+    await clearCanvasCache(result.id)
+    window.localStorage.removeItem(canvasDeletedKey(result.id))
+  }
   pendingCreate = null
   return result
 }
@@ -34,11 +40,13 @@ export async function renameCanvasWorkspace(id: string, name: string) {
   return workspace(await StudioCanvases.rename(id, revision, name, canvasRequestId('rename')))
 }
 export async function deleteCanvasWorkspace(id: string) {
-  if (getLegacyCanvasWorkspace(id)) { changeLegacy(id); return }
+  if (getLegacyCanvasWorkspace(id)) { changeLegacy(id); await clearCanvasCache(id, false); return }
   const revision = revisions.get(id)
   if (!revision) throw new Error('请刷新画布列表后重试')
   await StudioCanvases.delete(id, revision)
   revisions.delete(id)
+  window.localStorage.setItem(canvasDeletedKey(id), String(Date.now()))
+  await clearCanvasCache(id)
 }
 
 const LEGACY_REGISTRY_KEY = 'jellyfish_canvas_workspaces_v1'

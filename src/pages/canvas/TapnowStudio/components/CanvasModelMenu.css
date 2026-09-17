@@ -1,0 +1,42 @@
+.canvas-model-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 60;
+  display: grid;
+  grid-template-columns: minmax(90px, 32%) minmax(0, 1fr);
+  width: 400px;
+  max-width: calc(100cqw - 28px);
+  padding: 6px;
+  border: 1px solid var(--cn-border);
+  border-radius: 10px;
+  background: var(--cn-panel);
+  color: var(--cn-text);
+  box-shadow: 0 8px 24px #0003;
+  overflow: hidden;
+}
+.canvas-model-menu__column { min-width: 0; display: flex; flex-direction: column; }
+.canvas-model-menu__providers { border-right: 1px solid var(--cn-border); margin-right: 6px; padding-right: 6px; }
+.canvas-model-menu__heading {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 5px 8px 9px; font-size: 10px; color: var(--cn-muted);
+}
+.canvas-model-menu__heading span { font-size: 10px; opacity: .75; }
+.canvas-model-menu__list { min-height: 96px; max-height: 240px; overflow-y: auto; }
+.canvas-model-menu .canvas-model-menu__provider,
+.canvas-model-menu .canvas-model-menu__model {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 34px;
+  padding: 8px; border: 0; border-radius: 6px; background: transparent;
+  color: var(--cn-text); text-align: left; font-size: 11px; line-height: 1.5;
+  cursor: pointer;
+}
+.canvas-model-menu__provider > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.canvas-model-menu__provider svg { flex-shrink: 0; color: var(--cn-muted); }
+.canvas-model-menu .canvas-model-menu__provider:hover,
+.canvas-model-menu .canvas-model-menu__model:hover { background: var(--cn-input); }
+.canvas-model-menu .canvas-model-menu__provider[aria-pressed="true"],
+.canvas-model-menu .canvas-model-menu__model[aria-pressed="true"] { background: var(--cn-selected); color: var(--cn-accent); }
+.canvas-model-menu__name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.canvas-model-menu__status { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.canvas-model-menu__check { flex-shrink: 0; }
+.canvas-model-menu__empty { padding: 24px 8px; color: var(--cn-muted); font-size: 11px; text-align: center; }

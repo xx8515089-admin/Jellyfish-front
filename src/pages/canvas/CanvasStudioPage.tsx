@@ -1,3 +1,4 @@
+import CanvasLinkedAssetPreview from './TapnowStudio/CanvasLinkedAssetPreview'
 import { Button, Spin } from 'antd'
 import { AlertCircle, ArrowLeft } from 'lucide-react'
 import type React from 'react'
@@ -6,14 +7,15 @@ import { useNavigate, useParams } from 'react-router-dom'
 import appI18n, { type SupportedLanguage } from '../../i18n'
 import { useBilingualText } from '../../i18n/useBilingualText'
 import { useAppStore } from '../../store/useAppStore'
-import { StudioCanvases, hydrateCanvasDocument, type CanvasDocument } from '../../services/studioCanvases'
+import { StudioCanvases, hydrateCanvasDocument, canvasCatalogModels, type CanvasDocument } from '../../services/studioCanvases'
+import type { CanvasCapabilities, CanvasTextModel } from '../../services/studioCanvasV3Types'
 import { StudioModelsApi, type StudioGenerationModel } from '../../services/studioModels'
 import { getLegacyCanvasWorkspace } from './canvasWorkspaces'
 import './CanvasStudioPage.css'
 
 const TapnowApp = lazy(() => import('./TapnowStudio/App.jsx'))
 
-const CanvasStudioPage: React.FC = () => {
+const CanvasStudioContent: React.FC = () => {
   const l = useBilingualText()
   const navigate = useNavigate()
   const { canvasId = '' } = useParams()
@@ -22,6 +24,8 @@ const CanvasStudioPage: React.FC = () => {
   const setLanguage = useAppStore((state) => state.setLanguage)
   const [document, setDocument] = useState<CanvasDocument | null>(null)
   const [models, setModels] = useState<StudioGenerationModel[]>([])
+  const [capabilities, setCapabilities] = useState<CanvasCapabilities>({ storageReady: false })
+  const [textModels, setTextModels] = useState<CanvasTextModel[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   useEffect(() => {
@@ -38,17 +42,39 @@ const CanvasStudioPage: React.FC = () => {
       }
       const capabilities = await StudioCanvases.capabilities()
       if (!capabilities.storageReady) throw new Error('画布存储尚未初始化，请联系管理员')
-      const [detail, images, videos] = await Promise.all([
-        StudioCanvases.detail(canvasId), StudioModelsApi.getImageModels(), StudioModelsApi.getVideoModels(),
-      ])
+      if (Number(capabilities.apiVersion || 0) < 2) throw new Error('请先升级画布后端并执行 086 迁移')
+      let ready = capabilities
+      let texts: CanvasTextModel[] = []
+      if (capabilities.textTasksReady) {
+        try {
+          const textCapabilities = await StudioCanvases.textCapabilities()
+          ready = { ...capabilities, textTasksReady: textCapabilities.textTasksReady !== false && textCapabilities.storageReady !== false }
+          if (ready.textTasksReady) texts = await StudioCanvases.textModels()
+        } catch (reason) {
+          ready = { ...capabilities, textTasksReady: false, textUnavailableReason: reason instanceof Error ? reason.message : '文本模型加载失败，可在设置中刷新模型重试' }
+        }
+      }
+      if (active) { setCapabilities(ready); setTextModels(texts) }
+      const [detail, catalog] = await Promise.all([StudioCanvases.detail(canvasId), StudioCanvases.models()])
+      if (String(detail.canvasId) !== canvasId) throw new Error('返回的画布与当前请求不一致，已停止载入')
       const hydrated = await hydrateCanvasDocument(detail, urls)
       if (!active) { urls.forEach(URL.revokeObjectURL); return }
       setDocument(hydrated)
-      setModels([...images, ...videos])
+      setModels(canvasCatalogModels(catalog))
     })().catch((reason) => { urls.forEach(URL.revokeObjectURL); if (active) setError(reason instanceof Error ? reason.message : '画布加载失败') })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false; urls.forEach(URL.revokeObjectURL) }
   }, [canvasId])
+  const refreshCloudModels = useCallback(async () => {
+    setModels(canvasCatalogModels(await StudioCanvases.models()))
+    const next = await StudioCanvases.capabilities()
+    if (next.textTasksReady) {
+      const textCapabilities = await StudioCanvases.textCapabilities()
+      next.textTasksReady = textCapabilities.textTasksReady !== false && textCapabilities.storageReady !== false
+      if (next.textTasksReady) setTextModels(await StudioCanvases.textModels())
+    }
+    setCapabilities(next)
+  }, [])
   const workspace = document || legacyWorkspace
   const handleCanvasLanguageChange = useCallback((nextLanguage: SupportedLanguage) => {
     setLanguage(nextLanguage)
@@ -102,6 +128,9 @@ const CanvasStudioPage: React.FC = () => {
             onLanguageChange={handleCanvasLanguageChange}
             cloudDocument={document || undefined}
             cloudModels={models}
+            cloudCapabilities={capabilities}
+            cloudTextModels={textModels}
+            onRefreshCloudModels={refreshCloudModels}
           />
         </Suspense>
       </div>
@@ -109,4 +138,9 @@ const CanvasStudioPage: React.FC = () => {
   )
 }
 
+// Reset loader state before a new route can render an editor with the previous document.
+const CanvasStudioPage: React.FC = () => {
+  const { canvasId = '' } = useParams()
+  return <><CanvasStudioContent key={canvasId} /><CanvasLinkedAssetPreview key={`asset-${canvasId}`} canvasId={canvasId} /></>
+}
 export default CanvasStudioPage

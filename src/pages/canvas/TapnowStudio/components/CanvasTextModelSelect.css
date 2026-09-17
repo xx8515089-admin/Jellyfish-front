@@ -1,0 +1,69 @@
+.canvas-text-model-field .canvas-text-model-select {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Keep generic canvas input rules out of the select's internal search field. */
+.canvas-node .canvas-text-model-field .canvas-text-model-select .ant-select-selection-search-input {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  box-shadow: none;
+  outline: none;
+}
+
+.canvas-text-model-popup {
+  padding: 4px;
+}
+
+/* The app's global Ant Design skin uses !important; keep canvas themes local. */
+.canvas-text-model-field .canvas-text-model-select .ant-select-selector {
+  background: var(--dn-field) !important;
+  border-color: var(--dn-border) !important;
+  color: var(--dn-text) !important;
+}
+
+.canvas-text-model-field .canvas-text-model-select .ant-select-selection-placeholder {
+  color: var(--dn-muted) !important;
+}
+
+.canvas-text-model-field .canvas-text-model-select:not(.ant-select-disabled):hover .ant-select-selector,
+.canvas-text-model-field .canvas-text-model-select.ant-select-focused .ant-select-selector {
+  border-color: #7598d0 !important;
+}
+
+/* The virtual list draws its own scrollbar, so native scrollbar colors do not apply. */
+.canvas-text-model-popup {
+  --canvas-scroll-thumb: #b0bbcc;
+  --canvas-scroll-hover: #8394ac;
+  --rc-virtual-list-scrollbar-bg: var(--canvas-scroll-thumb);
+}
+
+.canvas-text-model-popup--dark {
+  --canvas-scroll-thumb: #4c5a70;
+  --canvas-scroll-hover: #7387a5;
+}
+
+.canvas-text-model-popup--solarized {
+  --canvas-scroll-thumb: #c3b99c;
+  --canvas-scroll-hover: #a79978;
+}
+
+.canvas-text-model-popup .rc-virtual-list-scrollbar {
+  background: transparent;
+}
+
+.canvas-text-model-popup .rc-virtual-list-scrollbar-thumb {
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  background-clip: padding-box !important;
+}
+
+.canvas-text-model-popup .rc-virtual-list-scrollbar-thumb:hover,
+.canvas-text-model-popup .rc-virtual-list-scrollbar-thumb-moving {
+  --rc-virtual-list-scrollbar-bg: var(--canvas-scroll-hover);
+}

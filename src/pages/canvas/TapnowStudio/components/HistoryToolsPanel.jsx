@@ -1,3 +1,4 @@
+import { canvasConfirm } from '../canvasDialogs';
 import React from 'react';
 import { Trash2 } from 'lucide-react';
 import { isSameShotId, t } from '../freeCanvasShared';
@@ -122,9 +123,9 @@ const QueuePanel = ({
             <div className="flex gap-2">
                 <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                         if (batchQueue.length === 0) return;
-                        if (confirm(t('确定清空排队任务吗？'))) clearBatchQueue(false);
+                        if (await canvasConfirm(t('确定清空排队任务吗？'), { danger: true })) clearBatchQueue(false, { queued: batchQueue, running: batchRunningItems });
                     }}
                     className={`text-[10px] px-2 py-1 rounded ${theme === 'dark'
                         ? 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
@@ -134,9 +135,9 @@ const QueuePanel = ({
                 </button>
                 <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                         if (batchRunningItems.length === 0 && batchQueue.length === 0) return;
-                        if (confirm(t('确定终止所有生成并清空队列吗？'))) clearBatchQueue(true);
+                        if (await canvasConfirm(t('确定终止所有生成并清空队列吗？'), { danger: true })) clearBatchQueue(true, { queued: batchQueue, running: batchRunningItems });
                     }}
                     className={`text-[10px] px-2 py-1 rounded ${theme === 'dark'
                         ? 'bg-red-900/40 text-red-300 hover:bg-red-900/60'
@@ -159,7 +160,7 @@ const QueuePanel = ({
                         const taskLabel = group.taskIndex ? `Task ${group.taskIndex}` : 'Task';
                         const combined = [
                             ...group.running.map(item => ({ ...item, status: 'running' })),
-                            ...group.queued.map(item => ({ ...item, status: 'queued' }))
+                            ...group.queued.map(item => ({ ...item, queueItem: item, status: 'queued' }))
                         ].sort((a, b) => (a.batchOrder ?? 0) - (b.batchOrder ?? 0));
 
                         return (
@@ -181,8 +182,8 @@ const QueuePanel = ({
                                     {group.queued.length > 0 && (
                                         <button
                                             type="button"
-                                            onClick={() => {
-                                                if (confirm(t('确定移除该任务的排队内容吗？'))) removeQueuedBatchGroup(group.id);
+                                            onClick={async () => {
+                                                if (await canvasConfirm(t('确定移除该任务的排队内容吗？'), { danger: true })) removeQueuedBatchGroup(group.id, group.queued);
                                             }}
                                             className={`p-1 rounded ${theme === 'dark'
                                                 ? 'text-zinc-500 hover:text-red-300'
@@ -213,11 +214,11 @@ const QueuePanel = ({
                                                     </span>
                                                     <button
                                                         type="button"
-                                                        onClick={() => {
+                                                        onClick={async () => {
                                                             if (item.status === 'running') {
-                                                                if (confirm(t('确定终止该生成任务吗？'))) stopRunningShot(item.nodeId, item.shotId);
-                                                            } else if (confirm(t('确定移除该排队任务吗？'))) {
-                                                                removeQueuedBatchItem(item.nodeId, item.shotId);
+                                                                if (await canvasConfirm(t('确定终止该生成任务吗？'), { danger: true })) stopRunningShot(item.nodeId, item.shotId, item);
+                                                            } else if (await canvasConfirm(t('确定移除该排队任务吗？'), { danger: true })) {
+                                                                removeQueuedBatchItem(item.nodeId, item.shotId, item);
                                                             }
                                                         }}
                                                         className={`p-0.5 rounded ${theme === 'dark'

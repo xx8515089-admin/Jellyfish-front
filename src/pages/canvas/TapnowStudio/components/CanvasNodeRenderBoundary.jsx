@@ -6,6 +6,8 @@ function CanvasNodeRenderBoundaryComponent({ node, renderNode }) {
 
 const areNodeRenderPropsEqual = (prevProps, nextProps) => {
     if (prevProps.node !== nextProps.node) return false;
+    // Cache pointer/viewport changes, never actual editor data.
+    if (prevProps.renderState !== nextProps.renderState) return false;
     if (prevProps.isInteracting !== nextProps.isInteracting) return false;
 
     const visualFlagsEqual =
