@@ -4,7 +4,8 @@ import { Archive, ArchiveRestore, ArrowUp, Check, ChevronDown, Images, Info, Mes
 import CanvasChatAttachment from './CanvasChatAttachment'
 import CanvasChatReply from './CanvasChatReply'
 import { StudioCanvases, canvasRequestId } from '../../../../services/studioCanvases'
-import { chatBlocked, createV4Body, quoteBudget, submitCanvasV4, validateChat } from '../canvasExecution'
+import { actualBillingQuote, canvasBillingError } from '../canvasActualBilling'
+import { chatBlocked, createV4Body, submitCanvasV4, validateChat } from '../canvasExecution'
 
 /** Page through persistent sessions so older conversations retain their current version. */
 async function listSessions(canvasId) {
@@ -49,6 +50,7 @@ export default function CanvasCloudChat({ theme = 'dark', session, enabled, acti
   const [showArchived, setShowArchived] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [billingQuote, setBillingQuote] = useState(null)
   const [assetPickerOpen, setAssetPickerOpen] = useState(false)
   const uploadRef = useRef(null)
   const lock = useRef(false), mounted = useRef(true), selectedSession = useRef(sessionId), request = useRef(0)
@@ -57,7 +59,7 @@ export default function CanvasCloudChat({ theme = 'dark', session, enabled, acti
   const run = async fn => {
     if (lock.current) return
     lock.current = true; setBusy(true); setError('')
-    try { session.assertWritable(); await fn() } catch (reason) { if (mounted.current) setError(reason.message || '云端聊天请求失败') }
+    try { session.assertWritable(); await fn() } catch (reason) { if (mounted.current) setError(canvasBillingError(reason)) }
     finally { lock.current = false; if (mounted.current) setBusy(false) }
   }
   const loadCatalog = useCallback(async () => {
@@ -85,7 +87,7 @@ export default function CanvasCloudChat({ theme = 'dark', session, enabled, acti
   useEffect(() => {
     if (!enabled || !active || session.isDeleted()) return
     let stopped = false
-    loadCatalog().then(() => { if (!stopped) return refresh() }).catch(reason => { if (!stopped) setError(reason.message) })
+    loadCatalog().then(() => { if (!stopped) return refresh() }).catch(reason => { if (!stopped) setError(canvasBillingError(reason)) })
     return () => { stopped = true }
   }, [enabled, active, session, loadCatalog, refresh])
   useEffect(() => {
@@ -99,7 +101,7 @@ export default function CanvasCloudChat({ theme = 'dark', session, enabled, acti
         if (stopped) return
         setMessages(history)
         if (tasks.length) setDetails(previous => ({ ...previous, ...Object.fromEntries(tasks.map(task => [task.taskId, task])) }))
-      } catch (reason) { if (!stopped) setError(reason.message) }
+      } catch (reason) { if (!stopped) setError(canvasBillingError(reason)) }
       if (!stopped) timer = setTimeout(poll, Math.max(1500, capabilities.retryAfterMs || 3000))
     }
     timer = setTimeout(poll, Math.max(1500, capabilities.retryAfterMs || 3000))
@@ -146,11 +148,11 @@ export default function CanvasCloudChat({ theme = 'dark', session, enabled, acti
     const estimate = { canvasId, revisionNo: document.revisionNo, nodeId: `sidebar:${latest.sessionId}`, operation: 'chat', modelId, sessionId: latest.sessionId, expectedSessionVersion: latest.version, selection: { references }, parameters: { prompt } }
     try {
       const quote = await StudioCanvases.executionEstimate(estimate)
-      const budget = quoteBudget(quote, canvasId, document.revisionNo)
+      actualBillingQuote(quote, canvasId, document.revisionNo)
       if (quote.operation !== 'chat' || quote.nodeId !== estimate.nodeId || quote.modelId !== modelId) throw new Error('聊天报价与消息不一致')
-      if (!await confirm('发送云端消息', `本次预留 ${budget} 积分，实际费用待核算。预留上限不是实际费用封顶。回复将完整返回。`)) return
-      quoteBudget(quote, canvasId, document.revisionNo)
-      await submitCanvasV4(session, 'execution', createV4Body(canvasId, quote.quoteId, budget, 'chat'))
+      // Sending authorizes billing; validate the quote and submit without a second confirmation.
+      setBillingQuote(quote)
+      await submitCanvasV4(session, 'execution', createV4Body(canvasId, quote.quoteId, undefined, 'chat'))
       setPrompt(''); setSelected([])
       await refresh(latest.sessionId)
     } catch (reason) {
@@ -233,7 +235,7 @@ export default function CanvasCloudChat({ theme = 'dark', session, enabled, acti
             {!!item.attachmentAssetIds?.length && <div className="canvas-v4-chat__message-attachments">{item.attachmentAssetIds.map(id => <CanvasChatAttachment key={id} session={session} asset={assets.find(asset => String(asset.assetId) === String(id)) || { assetId: id, canvasId }} />)}</div>}
           </section>
           <CanvasChatReply text={task?.result?.text || item.reply || ''} task={task} status={item.status} />
-          {task?.error && <Alert type="warning" message={task.error} />}
+          {(task?.error || task?.errorCode) && <Alert type="warning" message={canvasBillingError(task)} />}
           {(task?.status ?? item.status) === 6 && <p className="canvas-v4-message__review-note">已停止自动重发。核查原请求后再继续。</p>}
           <Space wrap className="canvas-v4-message__actions">{task?.actions?.cancel && <Button size="small" disabled={busy || task.cancelRequested} onClick={() => run(async () => { if (await confirm('取消消息', '调用后只能记录取消意愿，不能保证撤单或退款。')) { await StudioCanvases.executionCancel(canvasId, item.taskId); await refresh() } })}>取消</Button>}{task?.actions?.retrySettlement && <Button size="small" disabled={busy} onClick={() => run(async () => { await StudioCanvases.executionRetrySettlement(canvasId, item.taskId); await refresh() })}>重试结算</Button>}</Space>
         </article> })}
@@ -257,10 +259,10 @@ export default function CanvasCloudChat({ theme = 'dark', session, enabled, acti
               <Tooltip title="从当前画布选择素材"><Button type="text" className="canvas-v4-chat__tool" aria-label="选择画布素材" icon={<Images size={16} />} disabled={composerDisabled} onClick={() => { setAssetPickerOpen(value => !value); if (!assetPickerOpen) void run(() => loadAssets()) }}>素材</Button></Tooltip>
             </div>
             <input ref={uploadRef} className="canvas-v4-chat__file-input" aria-label="选择上传文件" type="file" accept="image/png,image/jpeg,video/*,audio/*" disabled={composerDisabled || !ready} onChange={uploadAttachment} />
-            <Tooltip title="先确认积分报价，再发送消息"><Button className="canvas-v4-chat__send" type="primary" aria-label="报价并发送" icon={<ArrowUp size={17} />} loading={busy} disabled={!ready || !!pending || !prompt.trim() || current?.archived || chatBlocked(messages)} onClick={send}>发送</Button></Tooltip>
+            <Tooltip title="发送后按实际用量扣费"><Button className="canvas-v4-chat__send" type="primary" aria-label="发送消息" icon={<ArrowUp size={17} />} loading={busy} disabled={!ready || !!pending || !prompt.trim() || current?.archived || chatBlocked(messages)} onClick={send}>发送</Button></Tooltip>
           </div>
         </div>
-        <div className="canvas-v4-chat__composer-hint"><span>Ctrl / ⌘ + Enter 发送</span><Tooltip title="最多 8 份附件，合计 ≤50MiB。图片仅 PNG/JPEG，每份 ≤10MiB；音视频每份 ≤50MiB、≤300 秒。视频仅提供视觉内容，理解音轨请添加音频。"><button type="button" className="canvas-v4-chat__limits" aria-label="查看附件限制"><Info size={12} />附件说明</button></Tooltip></div>
+        <div className="canvas-v4-chat__composer-hint">{billingQuote?.unlimited === true && <span>上次检查：不限额</span>}<span>Ctrl / ⌘ + Enter 发送</span><Tooltip title="最多 8 份附件，合计 ≤50MiB。图片仅 PNG/JPEG，每份 ≤10MiB；音视频每份 ≤50MiB、≤300 秒。视频仅提供视觉内容，理解音轨请添加音频。"><button type="button" className="canvas-v4-chat__limits" aria-label="查看附件限制"><Info size={12} />附件说明</button></Tooltip></div>
       </div>
     </>}
   </section>

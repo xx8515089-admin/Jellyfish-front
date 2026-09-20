@@ -10,6 +10,7 @@ import CanvasWorkflowPanel from './components/CanvasWorkflowPanel'
 import { StudioCanvases, canvasRequestId, hydrateCanvasDocument } from '../../../services/studioCanvases'
 import CanvasBatchPanel, { CanvasBatchHistory } from './components/CanvasBatchPanel'
 import { CanvasCloudSession, shouldPollTask, taskAction, bindingTarget, mediaOperation } from './canvasCloud'
+import { useCanvasAnalysis } from './useCanvasAnalysis'
 import { useCanvasTextTasks } from './useCanvasTextTasks'
 import { useCanvasMediaPreviews } from './useCanvasMediaPreviews'
 import { scheduleCanvasSnapshotSync } from './canvasSnapshotSync'
@@ -23,7 +24,7 @@ const clone = (value) => JSON.parse(JSON.stringify(value))
 const formatHistoryTime = (value) => { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString(undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) }
 const errorText = (error) => [error?.message || '画布请求失败', error?.location?.nodeId && `节点 ${error.location.nodeId}`, error?.location?.shotId != null && `镜头 ${error.location.shotId}`, error?.location?.fieldPath].filter(Boolean).join(' · ')
 
-export function useCanvasCloud({ theme = 'dark', document, workspaceId, historyVisible = false, models, capabilities = {}, textModels = [], onRefreshCloudModels, nodes, connections, view, projectName, setNodes, setConnections, setView, setProjectName, resolveMedia, onExportLocal, onCloudDocumentApplied }) {
+export function useCanvasCloud({ theme = 'dark', document, workspaceId, historyVisible = false, models, capabilities = {}, textModels = [], onRefreshCloudModels, nodes, connections, view, projectName, setNodes, setConnections, setView, setProjectName, resolveMedia, onExportLocal, onCloudDocumentApplied, saveToUndoStack }) {
   const migrationRef = useRef(null)
   const sessionRef = useRef(null)
   if (document && !sessionRef.current) sessionRef.current = new CanvasCloudSession(document, models, resolveMedia, { capabilities, textModels })
@@ -297,10 +298,12 @@ export function useCanvasCloud({ theme = 'dark', document, workspaceId, historyV
     session.assertWritable()
     if (recovery || session.blocked || session.pendingSave) throw new Error('请先处理本地草稿或保存冲突')
   }
+  const analysis = useCanvasAnalysis({ session, snapshotRef, setNodes, save, assertReady, saveToUndoStack, confirm })
   const textTasks = useCanvasTextTasks({ session, enabled: !!capabilities.textTasksReady, unavailableReason: capabilities.textUnavailableReason, models: textModels, snapshotRef, setNodes, save, report, confirm, assertReady, onOpen: () => { setHistoryTab('text'); setOpen(true) } })
   const libraryPublish = useCanvasLibraryPublish({ theme, session, enabled: !!capabilities.libraryPublishReady, snapshotRef, save, report, assertReady })
   const historyTabs = session ? [
-        { key: 'workflows', label: '依赖工作流', children: <CanvasWorkflowPanel session={session} enabled={!!capabilities.workflowReady} models={textModels} snapshotRef={snapshotRef} setNodes={setNodes} save={save} assertReady={assertReady} confirm={confirm} /> },
+        { key: 'analysis', label: '媒体分析', children: analysis.panel },
+        { key: 'workflows', label: '依赖工作流', children: <CanvasWorkflowPanel analysis={analysis} session={session} enabled={!!capabilities.workflowReady} models={textModels} snapshotRef={snapshotRef} setNodes={setNodes} save={save} assertReady={assertReady} confirm={confirm} /> },
         { key: 'text', label: '文本任务', children: textTasks.panel },
         { key: 'batches', label: '批次任务', forceRender: true, children: <CanvasBatchHistory session={session} onTask={putTask} report={report} revision={batchRevision} /> },
         { key: 'tasks', label: '生成任务', children: <div className="canvas-history-panel">
@@ -426,7 +429,7 @@ export function useCanvasCloud({ theme = 'dark', document, workspaceId, historyV
       <Tabs activeKey={historyTab} onChange={(key) => { setHistoryTab(key); if (key === 'revisions') void action(() => loadRevisions()) }} items={historyTabs} />
     </Drawer>
   </>
-  return { renderChat: props => session ? <CanvasCloudChat session={session} enabled={!!capabilities.chatReady} save={save} assertReady={assertReady} confirm={confirm} {...props} /> : null, getPreviewLink: node => previewLink(node, session, window.location.href), unsupported: operation => message.warning(operation + '尚未在云端开放'), generate, openBatch, attachLibrary, textExecute: textTasks.execute, textModels, textReady: !!capabilities.textTasksReady, publishReady: !!capabilities.libraryPublishReady, publishLibrary: libraryPublish.show, refreshModels: onRefreshCloudModels, controls, historyPanel: session ? <>{error && <Alert className="canvas-history-alert" type="error" showIcon message={error} />}{historyTabs.find(tab => tab.key === 'tasks').children}</> : null }
+  return { analysis, renderAnalysisNode: analysis.renderNode, analysisExecute: analysis.execute, renderChat: props => session ? <CanvasCloudChat session={session} enabled={!!capabilities.chatReady} save={save} assertReady={assertReady} confirm={confirm} {...props} /> : null, getPreviewLink: node => previewLink(node, session, window.location.href), unsupported: operation => message.warning(operation + '尚未在云端开放'), generate, openBatch, attachLibrary, textExecute: textTasks.execute, textModels, textReady: !!capabilities.textTasksReady, publishReady: !!capabilities.libraryPublishReady, publishLibrary: libraryPublish.show, refreshModels: onRefreshCloudModels, controls, historyPanel: session ? <>{error && <Alert className="canvas-history-alert" type="error" showIcon message={error} />}{historyTabs.find(tab => tab.key === 'tasks').children}</> : null }
 }
 
 function CanvasAssets({ session, report, onInsert }) {

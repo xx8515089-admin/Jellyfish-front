@@ -50,9 +50,10 @@ export const canvasRequestId = (operation: string) => {
   const bytes = crypto.getRandomValues(new Uint8Array(16))
   return `${operation}-${Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('')}`
 }
-async function call<T>(options: ApiRequestOptions): Promise<T> {
+/** Unwrap the shared response envelope for generated canvas clients. */
+export async function canvasResult<T>(pending: PromiseLike<{ code: number; message?: string; data: any }>): Promise<T> {
   try {
-    const result = await request<{ code: number; message?: string; data: T & { errorCode?: string; nodeId?: string; shotId?: CanvasId; fieldPath?: string } }>(OpenAPI, options)
+    const result = await pending
     if (result.code !== 200) throw new CanvasApiError(result.message || '画布请求失败', result.data?.errorCode, result.code, result.data)
     return result.data
   } catch (error) {
@@ -61,6 +62,7 @@ async function call<T>(options: ApiRequestOptions): Promise<T> {
     throw error
   }
 }
+const call = <T>(options: ApiRequestOptions) => canvasResult<T>(request(OpenAPI, options))
 const base = '/api/v1/studio/canvases'
 const get = <T>(path: string, query: Record<string, unknown> = {}) => call<T>({ method: 'GET', url: base + path, query })
 const post = <T>(path: string, body: unknown) => call<T>({ method: 'POST', url: base + path, body, mediaType: 'application/json' })
@@ -83,7 +85,7 @@ export const StudioCanvases = {
   chatArchive: (canvasId: CanvasId, sessionId: CanvasId, archived: boolean) => post<CanvasChatSession>('/chat/sessions/archive', { canvasId, sessionId, archived }),
   workflowCapabilities: () => get<CanvasWorkflowCapabilities>('/workflows/capabilities'),
   workflowEstimate: (body: CanvasWorkflowEstimateRequest) => post<CanvasWorkflowQuote>('/workflows/costEstimate', body),
-  workflowCreate: (body: CanvasExecutionCreate) => post<CanvasWorkflow>('/workflows/create', body),
+  workflowCreate: (body: CanvasExecutionCreate & { maxReservedCredits: number }) => post<CanvasWorkflow>('/workflows/create', body),
   workflowDetail: (canvasId: CanvasId, workflowId: CanvasId) => get<CanvasWorkflow>('/workflows/detail', { canvasId, workflowId }),
   workflowSubmission: (canvasId: CanvasId, clientRequestId: string) => get<CanvasWorkflow>('/workflows/submission', { canvasId, clientRequestId }),
   workflows: (canvasId: CanvasId, page = 1) => get<CanvasPage<CanvasWorkflow>>('/workflows/list', { canvasId, page, pageSize: 20 }),
@@ -169,7 +171,7 @@ export async function hydrateCanvasDocument(document: CanvasDocument, urls: stri
     let target = binding.shotId == null ? node : (node?.settings as { shots?: Record<string, unknown>[] })?.shots?.find(shot => String(shot.id) === String(binding.shotId))
     const parts = binding.fieldPath.slice(1).split('/').map(part => part.replace(/~1/g, '/').replace(/~0/g, '~'))
     for (const part of parts.slice(0, -1)) target = target?.[part] as Record<string, unknown> | undefined
-    if (target) target[parts[parts.length - 1]] = binding.fieldPath === '/settings/textModelId' ? binding.modelId : `studio-${binding.modelId}`
+    if (target) target[parts[parts.length - 1]] = ['/settings/textModelId', '/settings/analysisModelId'].includes(binding.fieldPath) ? binding.modelId : `studio-${binding.modelId}`
   }
   return copy
 }

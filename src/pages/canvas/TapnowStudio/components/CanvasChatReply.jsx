@@ -3,6 +3,7 @@ import { Button, Tooltip } from 'antd'
 import { Check, Copy, Sparkles } from 'lucide-react'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
+import { billingLabels } from '../canvasActualBilling'
 import { credits, executionStatus } from '../canvasExecution'
 
 /** Render model text as sanitized prose; media remains in the dedicated attachment previews. */
@@ -38,7 +39,7 @@ export default memo(function CanvasChatReply({ text = '', task, status }) {
   }, [copyState])
   const resolvedStatus = task?.status ?? status
   const working = [1, 2].includes(resolvedStatus)
-  const billing = { reserved: '已预留', settled: '已结算', released: '已释放', pendingReview: '待核查' }[task?.billingState]
+  const billing = billingLabels[task?.billingState]
   // Copy the original Markdown so lists and headings remain useful outside the chat.
   const copy = async () => {
     try { await navigator.clipboard.writeText(text); setCopyState('copied') }
@@ -51,7 +52,7 @@ export default memo(function CanvasChatReply({ text = '', task, status }) {
     {text ? <div className="canvas-v4-reply__markdown" dangerouslySetInnerHTML={{ __html: html }} /> : <p className="canvas-v4-reply__placeholder">{working ? '正在整理思路，回复完成后会显示在这里…' : resolvedStatus === 6 ? '这条消息的结果待核查。' : resolvedStatus === 5 ? '这条消息已取消。' : '暂未收到回复。'}</p>}
     {(text || task) && <footer className="canvas-v4-reply__footer">
       {text && <Tooltip title={copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败，请选中文字复制' : '复制回复'}><Button type="text" size="small" aria-label="复制回复" icon={copyState === 'copied' ? <Check size={13} /> : <Copy size={13} />} onClick={copy}>{copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制'}</Button></Tooltip>}
-      {task && <details className="canvas-v4-reply__billing"><summary>{task.actualCredits == null ? '费用待核算' : `${credits(task.actualCredits)} 积分`}<span>{billing}</span></summary><div>预留 {credits(task.reservedCredits)} · 实际 {credits(task.actualCredits)} 积分 · {billing || task.billingState}</div></details>}
+      {task && <details className="canvas-v4-reply__billing"><summary>{task.actualCredits == null ? '费用待核算' : `${credits(task.actualCredits)} 积分`}<span>{billing}</span></summary><div>{(task.billingState === 'reserved' || task.reservedCredits > 0) && <>预留 {credits(task.reservedCredits)} · </>}实际 {credits(task.actualCredits)} 积分 · {billing || task.billingState}</div></details>}
     </footer>}
   </section>
 })

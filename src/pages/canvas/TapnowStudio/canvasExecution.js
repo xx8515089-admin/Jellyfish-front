@@ -9,7 +9,7 @@ export const credits = value => value == null ? '待核算' : String(value)
 const copy = value => JSON.parse(JSON.stringify(value))
 
 // Only definitive admission rejections can discard the original paid request.
-const rejected = new Set(['CANVAS_QUOTE_EXPIRED', 'CANVAS_QUOTE_CHANGED', 'CHAT_VERSION_CONFLICT', 'CHAT_SESSION_BUSY', 'CHAT_HISTORY_LIMIT', 'EXECUTION_CONCURRENCY_LIMIT', 'WORKFLOW_CONCURRENCY_LIMIT', 'MEDIA_PROVIDER_NOT_CONFIGURED', 'WORKFLOW_MEDIA_PROVIDER_NOT_CONFIGURED', 'MODEL_OPERATION_UNSUPPORTED', 'INPUT_MODALITY_UNSUPPORTED'])
+const rejected = new Set(['INSUFFICIENT_CREDITS', 'CANVAS_QUOTE_EXPIRED', 'CANVAS_QUOTE_CHANGED', 'CHAT_VERSION_CONFLICT', 'CHAT_SESSION_BUSY', 'CHAT_HISTORY_LIMIT', 'EXECUTION_CONCURRENCY_LIMIT', 'WORKFLOW_CONCURRENCY_LIMIT', 'MEDIA_PROVIDER_NOT_CONFIGURED', 'WORKFLOW_MEDIA_PROVIDER_NOT_CONFIGURED', 'MODEL_OPERATION_UNSUPPORTED', 'INPUT_MODALITY_UNSUPPORTED'])
 export async function submitCanvasV4(session, family, body, recover = false) {
   if (!['execution', 'workflow'].includes(family)) throw new Error('未知任务类型')
   session.assertWritable()
@@ -72,13 +72,14 @@ export function validateChat(prompt, model, assets, canvasId) {
 }
 
 export const nodeOperations = node => ({
+  'video-analyze': ['framePromptGenerate', 'videoAnalyze', 'transcribeAudio'],
   'character-description': ['promptEnhance', 'promptFilter'], 'scene-description': ['promptEnhance', 'promptFilter'],
   'novel-input': ['extractCharactersScenes'], 'extract-characters-scenes': ['extractCharactersScenes'],
   'storyboard-node': ['storyboardSplit', 'storyboardPromptMerge'],
 }[node.type] || [])
 
 /** Traverse the saved dependency graph and require an explicit operation for every executable ancestor. */
-export function workflowPlan(document, targets, choices, capabilities, models, failurePolicy) {
+export function workflowPlan(document, targets, choices, capabilities, models, failurePolicy, analysis) {
   if (!targets.length || targets.length > 50) throw new Error('请选择 1–50 个目标节点')
   const nodes = new Map(document.project.nodes.map(node => [node.id, node]))
   const visiting = new Set(), visited = new Set(), steps = []
@@ -90,10 +91,16 @@ export function workflowPlan(document, targets, choices, capabilities, models, f
     visiting.add(id)
     document.project.connections.filter(connection => connection.to === id).forEach(connection => walk(connection.from))
     const supported = nodeOperations(node)
-    const passive = ['text-node', 'input-image', 'video-input', 'audio-input', 'group', 'character-library', 'scene-library', 'prop-library'].includes(node.type)
+    const passive = ['text-node', 'input-image', 'video-input', 'audio-input', 'input-audio', 'preview', 'group', 'character-library', 'scene-library', 'prop-library'].includes(node.type)
     if (!supported.length && !passive) throw new Error(`节点 ${node.title || id} 尚不能作为当前工作流步骤，请使用独立任务或批次`)
     if (supported.length || targets.includes(id)) {
       const operation = choices[id]
+      if (node.type === 'video-analyze') {
+        if (!supported.includes(operation) || !capabilities.operations?.includes(operation) || !analysis) throw new Error('请为分析节点选择已开放的工作流操作')
+        const template = analysis.build(document, id, operation, analysis.capabilities, analysis.catalogs[operation] || [])
+        steps.push({ nodeId: id, operation, modelId: template.modelId, analysis: template })
+        visiting.delete(id); visited.add(id); return
+      }
       if (!textOperations[operation] || !supported.includes(operation) || !capabilities.operations?.includes(operation)) throw new Error(`请为节点 ${node.title || id} 选择已开放的操作`)
       const binding = document.modelBindings.find(binding => binding.nodeId === id && ['/settings/textModelId', '/settings/chatModel'].includes(binding.fieldPath))
       const modelId = textModelId(binding?.modelId)
@@ -107,4 +114,4 @@ export function workflowPlan(document, targets, choices, capabilities, models, f
   return { canvasId: document.canvasId, revisionNo: document.revisionNo, targetNodeIds: targets, steps, failurePolicy }
 }
 
-export const createV4Body = (canvasId, quoteId, maxReservedCredits, family) => ({ canvasId, quoteId, maxReservedCredits, clientRequestId: canvasRequestId(family) })
+export const createV4Body = (canvasId, quoteId, maxReservedCredits, family) => ({ canvasId, quoteId, ...(maxReservedCredits === undefined ? {} : { maxReservedCredits }), clientRequestId: canvasRequestId(family) })

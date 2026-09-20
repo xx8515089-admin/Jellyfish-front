@@ -35,7 +35,6 @@ import {
     ClipboardCopy,
     CheckSquare,
     FolderOpen,
-    Brush,
     HardDrive,
     ChevronDown,
     ChevronUp,
@@ -2331,30 +2330,7 @@ export function createNodeRenderer({
                                                 >
                                                     {t('更换')} <input type="file" className="hidden" accept="image/*" onChange={(e) => handleFileUpload(node.id, e)} />
                                                 </label>
-                                                {!isVideoUrl(inputImageDisplayContent) && (
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setNodes((prev) => prev.map((n) =>
-                                                                n.id === node.id
-                                                                    ? { ...n, isMasking: !n.isMasking }
-                                                                    : n
-                                                            ));
-                                                        }}
-                                                        className={`px-3 py-1.5 rounded-lg text-xs backdrop-blur-sm border transition-colors flex items-center gap-1 ${theme === 'dark'
-                                                            ? node.isMasking
-                                                                ? 'bg-red-500/80 hover:bg-red-500 text-white border-red-400'
-                                                                : 'bg-white/10 hover:bg-white/20 text-white border-white/10'
-                                                            : node.isMasking
-                                                                ? 'bg-red-500 hover:bg-red-600 text-white border-red-400'
-                                                                : 'bg-white hover:bg-zinc-100 text-zinc-800 border-zinc-300'
-                                                            }`}
-                                                        onMouseDown={(e) => e.stopPropagation()}
-                                                    >
-                                                        <Brush size={12} />
-                                                        {t('局部重绘')}
-                                                    </button>
-                                                )}
+                                                {/* 局部重绘暂未接入，隐藏操作入口。 */}
                                             </div>
                                             <div
                                                 className={`text-[10px] text-center px-2 ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-500'
@@ -2852,7 +2828,7 @@ export function createNodeRenderer({
                         </div>
                     )}
 
-                    {node.type === 'video-analyze' && (
+                    {node.type === 'video-analyze' && (cloudDocument ? canvasCloud.renderAnalysisNode(node) : (
                         <div
                             className={`canvas-node__form relative w-full h-full flex flex-col transition-colors pointer-events-auto video-analyze-container ${theme === 'dark' ? 'bg-zinc-900/80' : theme === 'solarized' ? 'bg-[#fdf6e3]' : 'bg-zinc-100'}`}
                             onDrop={(e) => handleVideoAnalyzeDrop(node.id, e)}
@@ -3416,7 +3392,7 @@ export function createNodeRenderer({
                                 })()}
                             </div>
                         </div>
-                    )}
+                    ))}
 
                     {node.type === 'storyboard-node' ? (
                         <StoryboardNodeContent

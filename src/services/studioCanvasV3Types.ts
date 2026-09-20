@@ -2,6 +2,8 @@ import type { CanvasId, CanvasOperation } from './studioCanvases'
 
 export type CanvasTextOperation = 'promptEnhance' | 'promptFilter' | 'extractCharactersScenes' | 'storyboardSplit' | 'storyboardPromptMerge'
 export interface CanvasCapabilities {
+  analysisTasksReady?: boolean; analysisOperations?: string[]; analysisUnavailableCode?: string; analysisUnavailableReason?: string
+  chatUnavailableCode?: string; chatUnavailableReason?: string
   chatReady?: boolean; workflowReady?: boolean; advancedFeatures?: boolean; advancedOperations?: string[]; providerIdentityReady?: boolean
   advancedInputPorts?: Record<string, unknown>
   textUnavailableReason?: string; apiVersion?: number; storageReady: boolean; textTasksReady?: boolean; libraryPublishReady?: boolean

@@ -111,7 +111,7 @@ export class CanvasCloudSession {
     const response = await fetch(source)
     if (!response.ok) throw new Error('素材读取失败，请重新选择文件')
     const blob = await response.blob()
-    const limit = { image: 10, audio: 20, video: 50 }[blob.type.split('/')[0]]
+    const limit = { image: 10, audio: 50, video: 50 }[blob.type.split('/')[0]]
     if (!limit || blob.size > limit * 1024 * 1024) throw new Error('素材格式不支持或超过上传大小限制')
     // Content fingerprint keeps the request identity stable after draft Blob URLs change.
     const bytes = new Uint8Array(await blob.arrayBuffer())
@@ -152,7 +152,7 @@ export class CanvasCloudSession {
     if (!response.ok) throw new Error('素材读取失败，请重新上传')
     const blob = await response.blob()
     const kind = blob.type.split('/')[0]
-    const limit = { image: 10, audio: 20, video: 50 }[kind]
+    const limit = { image: 10, audio: 50, video: 50 }[kind]
     if (!limit) throw new Error('仅支持图片、音频和视频素材')
     if (blob.size > limit * 1024 * 1024) throw new Error(`${kind} 素材不能超过 ${limit} MB`)
     const extension = blob.type.split('/')[1]?.replace(/[^a-z0-9]/gi, '') || 'bin'
@@ -169,8 +169,8 @@ export class CanvasCloudSession {
   async prepare(snapshot) {
     const assetBindings = [], modelBindings = []
     const clean = async (value, node, path = '', shotId = undefined) => {
-      if (['/id', '/type', '/settings/model', '/settings/textModelId', '/settings/chatModel', '/model', '/imageModel', '/videoModel'].includes(path)) return value
-      const isBody = ['/settings/analysisResults', '/settings/tableData'].includes(path) || /\/id$/.test(path) || /\/(prompt|videoPrompt|text|description|tags|camera|scriptText|tableMarkdown)$/.test(path) || (path === '/settings/content' && node.type === 'novel-input') || (path === '/content' && ['text-node', 'novel-input'].includes(node.type))
+      if (['/id', '/type', '/settings/model', '/settings/textModelId', '/settings/analysisModelId', '/settings/chatModel', '/model', '/imageModel', '/videoModel'].includes(path)) return value
+      const isBody = ['/settings/analysisResults', '/settings/voiceoverResults', '/settings/analysisResultData', '/settings/analysisProvenance', '/settings/tableData'].includes(path) || /\/(id|frameId)$/.test(path) || /\/(prompt|videoPrompt|text|description|tags|camera|scriptText|tableMarkdown)$/.test(path) || (path === '/settings/content' && node.type === 'novel-input') || (path === '/content' && ['text-node', 'novel-input'].includes(node.type))
       if (isBody) return value
       if (mediaValue(value)) {
         const asset = await this.upload(value)
@@ -201,6 +201,12 @@ export class CanvasCloudSession {
         if (!model) throw new Error('请选择后端模型目录中的图片或视频模型')
         if (model.supportedNodeTypes?.length && !model.supportedNodeTypes.includes(node.type)) throw new Error('所选模型不支持此节点类型')
         modelBindings.push({ nodeId: node.id, fieldPath: '/settings/model', modelId: model.id })
+      }
+      if (node.type === 'video-analyze' && node.settings?.analysisModelId != null) {
+        const modelId = Number(node.settings.analysisModelId)
+        if (!Number.isSafeInteger(modelId) || modelId <= 0) throw new Error('请选择分析目录中的模型')
+        cleaned.settings.analysisModelId = modelId
+        modelBindings.push({ nodeId: node.id, fieldPath: '/settings/analysisModelId', modelId })
       }
       for (const field of ['textModelId', 'chatModel']) {
         if (!['character-description', 'scene-description', 'novel-input', 'extract-characters-scenes', 'storyboard-node'].includes(node.type) || !node.settings?.[field]) continue

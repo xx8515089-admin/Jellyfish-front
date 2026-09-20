@@ -358,3 +358,21 @@ test('deleted canvas sessions stop draft writes and cloud requests even in anoth
   await assert.rejects(session.save(fixture().project),/已删除/)
   assert.equal(calls,0)
 })
+
+
+test('analysis snapshots preserve structured results and stable frame IDs while binding media and numeric models', async () => {
+  const doc = fixture()
+  doc.project.nodes = [node('来源 中文', 'video-input', 'blob:video'), node('分析', 'video-analyze', null, { analysisModelId: 47, analysisResultData: { fullText: 'https://example.com is transcript text' }, analysisProvenance: [{ taskId: 81, sceneIds: [' 场景 '] }] })]
+  doc.project.nodes[0].selectedKeyframes = [{ frameId: ' 中文 帧 ', timeSeconds: 1.25, url: 'blob:frame' }]
+  doc.assetBindings = [{ nodeId: '来源 中文', fieldPath: '/content', assetId: 55 }, { nodeId: '来源 中文', fieldPath: '/selectedKeyframes/0/url', assetId: 56 }]
+  const { session } = harness({}, doc)
+  const saved = await session.prepare(doc.project)
+  assert.equal(saved.project.nodes[0].selectedKeyframes[0].frameId, ' 中文 帧 ')
+  assert.equal(saved.project.nodes[0].selectedKeyframes[0].timeSeconds, 1.25)
+  assert.equal(saved.project.nodes[0].selectedKeyframes[0].url, null)
+  assert.equal(saved.assetBindings.find(item => item.fieldPath === '/selectedKeyframes/0/url').assetId, 56)
+  assert.equal(saved.modelBindings[0].modelId, 47)
+  assert.equal(saved.modelBindings[0].fieldPath, '/settings/analysisModelId')
+  assert.equal(saved.project.nodes[1].settings.analysisResultData.fullText, 'https://example.com is transcript text')
+  assert.equal(saved.project.nodes[1].settings.analysisProvenance[0].sceneIds[0], ' 场景 ')
+})

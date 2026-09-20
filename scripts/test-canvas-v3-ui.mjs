@@ -132,7 +132,8 @@ test('all five P0 action buttons dispatch to cloud text execution, without legac
 test('unopened multimodal and supplier identity operations cannot fall through to legacy providers', async () => {
   const media = loadActions('../src/pages/canvas/TapnowStudio/actions/mediaActions.js')
   const calls = []
-  const context = { cloudDocument: {}, canvasCloud: { unsupported: name => calls.push(name) } }
+  const context = { cloudDocument: {}, canvasCloud: { unsupported: name => calls.push(name), analysisExecute: (id, operation) => calls.push([id, operation]) } }
   for (const name of ['createCharacter', 'handleExpandImageZoom', 'handleAutoVideoAnalysis', 'handleGeneratePrompts', 'handleExtractVoiceover']) await media[name](context, 'node')
   assert.equal(calls.length, 5)
+  assert.deepEqual(calls.slice(2), [['node', 'videoAnalyze'], ['node', 'framePromptGenerate'], ['node', 'transcribeAudio']])
 })

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import vm from 'node:vm'
 import ts from 'typescript'
+import { actualBillingQuote, canvasBillingError } from '../src/pages/canvas/TapnowStudio/canvasActualBilling.js'
 import * as textTasks from '../src/pages/canvas/TapnowStudio/canvasTextTasks.js'
 
 /** Test the actual async UI handlers with controlled server responses and confirmation races. */
@@ -27,29 +28,29 @@ function logic() {
   return exports
 }
 const current = { canvasId: 12, sessionId: 31, version: 0, archived: false }
-const quote = { canvasId: 12, revisionNo: 8, quoteId: 'q', nodeId: 'sidebar:31', operation: 'chat', modelId: 201, reservedCredits: 3 }
+const quote = { canvasId: 12, revisionNo: 8, quoteId: 'q', nodeId: 'sidebar:31', operation: 'chat', modelId: 201, reservedCredits: 0, actualCredits: null, currentBalance: 100, sufficient: true, billingMode: 'balance_then_actual', requiresConfirmation: false, expiresAt: '2099-01-01T00:00:00Z' }
 function chat(overrides = {}) {
   const calls = [], messages = []
   const ctx = {
-    ...logic(), run: fn => fn(), assertReady() {}, ready: true, pending: null, prompt: '你好', queuedFiles: [], attachments: [],
+    ...logic(), actualBillingQuote, canvasBillingError, run: fn => fn(), assertReady() {}, ready: true, pending: null, prompt: '你好', queuedFiles: [], attachments: [],
     canvasId: 12, modelId: 201, model: { modelId: 201, available: true }, current, session: {},
     listSessions: async () => [{ ...current, version: 7 }],
     StudioCanvases: { chatMessages: async () => [], executionEstimate: async body => { calls.push(['estimate', body]); return quote } },
     setMessages: value => messages.push(value), save: async () => ({ canvasId: 12, revisionNo: 8 }),
     confirm: async () => true, submitCanvasV4: async (...args) => calls.push(['submit', ...args]),
-    setPrompt: value => calls.push(['prompt', value]), setSelected() {}, refresh: async () => calls.push(['refresh']), loadCatalog: async () => calls.push(['catalog']),
+    setBillingQuote() {}, setPrompt: value => calls.push(['prompt', value]), setSelected() {}, refresh: async () => calls.push(['refresh']), loadCatalog: async () => calls.push(['catalog']),
     ...overrides,
   }
   return { send: handler('CanvasCloudChat.jsx', 'send', ctx), calls, messages, ctx }
 }
-test('send quotes latest session version and saved revision, confirms reservation then submits', async () => {
+test('send quotes latest session version and saved revision, then submits automatically', async () => {
   const h = chat()
   await h.send()
   const request = h.calls.find(call => call[0] === 'estimate')[1]
   assert.equal(request.expectedSessionVersion, 7); assert.equal(request.revisionNo, 8)
   assert.equal(request.nodeId, 'sidebar:31'); assert.equal(request.parameters.prompt, '你好')
   const submitted = h.calls.find(call => call[0] === 'submit')
-  assert.equal(submitted[2], 'execution'); assert.equal(submitted[3].quoteId, 'q'); assert.equal(submitted[3].maxReservedCredits, 3)
+  assert.equal(submitted[2], 'execution'); assert.equal(submitted[3].quoteId, 'q'); assert.equal(submitted[3].maxReservedCredits, undefined)
 })
 test('busy or unknown chat history stops before quote and purchase', async () => {
   for (const status of [1, 2, 6]) {
@@ -65,10 +66,18 @@ test('archived sessions, pending receipts, history limits and unavailable capabi
     assert.equal(h.calls.filter(call => ['estimate', 'submit'].includes(call[0])).length, 0)
   }
 })
-test('cancelled quote confirmation keeps composer and does not submit', async () => {
-  const h = chat({ confirm: async () => false })
+test('chat submits exactly once without invoking a fee confirmation', async () => {
+  const h = chat({ confirm: async () => { throw new Error('fee confirmation must not open') } })
   await h.send()
-  assert.equal(h.calls.filter(call => call[0] === 'submit' || call[0] === 'prompt').length, 0)
+  assert.equal(h.calls.filter(call => call[0] === 'submit').length, 1)
+  assert.equal(h.calls.find(call => call[0] === 'prompt')[1], '')
+})
+test('automatic chat billing still rejects insufficient or expired quotes and retains the draft', async () => {
+  for (const patch of [{ sufficient: false }, { expiresAt: '2000-01-01T00:00:00Z' }]) {
+    const h = chat({ StudioCanvases: { chatMessages: async () => [], executionEstimate: async () => ({ ...quote, ...patch }) } })
+    await assert.rejects(h.send(), /积分余额为0|过期/)
+    assert.equal(h.calls.filter(call => call[0] === 'submit' || call[0] === 'prompt').length, 0)
+  }
 })
 test('version conflict refreshes messages without silent requote or resubmit', async () => {
   const h = chat({ submitCanvasV4: async () => { throw Object.assign(new Error('conflict'), { errorCode: 'CHAT_VERSION_CONFLICT' }) } })

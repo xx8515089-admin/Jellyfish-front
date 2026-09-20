@@ -1301,7 +1301,7 @@ export async function handleGeneratePrompts({
     setNodes,
     setSettingsOpen,
 }, nodeId) {
-        if (cloudDocument) return canvasCloud.unsupported('视频识别提示词');
+        if (cloudDocument) return canvasCloud.analysisExecute(nodeId, 'framePromptGenerate');
         const node = nodesMap.get(nodeId);
         if (!node || node.type !== 'video-analyze') return;
 
@@ -1616,7 +1616,7 @@ export async function handleAutoVideoAnalysis({
     setNodes,
     setSettingsOpen,
 }, nodeId) {
-        if (cloudDocument) return canvasCloud.unsupported('视频分析');
+        if (cloudDocument) return canvasCloud.analysisExecute(nodeId, 'videoAnalyze');
         const node = nodesMap.get(nodeId);
         if (!node || node.type !== 'video-analyze') return;
 
@@ -2526,7 +2526,7 @@ export async function handleExtractVoiceover({
     setNodes,
     setSettingsOpen,
 }, nodeId) {
-        if (cloudDocument) return canvasCloud.unsupported('音频转写');
+        if (cloudDocument) return canvasCloud.analysisExecute(nodeId, 'transcribeAudio');
         const node = nodesMap.get(nodeId);
         if (!node || node.type !== 'video-analyze') return;
 

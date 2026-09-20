@@ -1,0 +1,638 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Canvas analysis frontend contract snapshot",
+    "version": "2026-09-17",
+    "description": "依据 canvas-frontend-change-guide-20260917.md 整理；不是在线下载的完整 OpenAPI。"
+  },
+  "paths": {
+    "/api/v1/studio/canvases/analysis/capabilities": {
+      "get": {
+        "operationId": "analysisCapabilities",
+        "tags": [
+          "CanvasAnalysis"
+        ],
+        "responses": {
+          "200": {
+            "description": "标准画布响应；具体 data 结构见变更说明。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasAnalysisEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/canvases/analysis/models": {
+      "get": {
+        "operationId": "analysisModels",
+        "tags": [
+          "CanvasAnalysis"
+        ],
+        "responses": {
+          "200": {
+            "description": "标准画布响应；具体 data 结构见变更说明。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasAnalysisEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "operation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/studio/canvases/analysis/costEstimate": {
+      "post": {
+        "operationId": "analysisCostEstimate",
+        "tags": [
+          "CanvasAnalysis"
+        ],
+        "responses": {
+          "200": {
+            "description": "标准画布响应；具体 data 结构见变更说明。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasAnalysisEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CanvasAnalysisEstimateBody"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "header",
+            "name": "language",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "zh",
+                "en"
+              ]
+            },
+            "required": false
+          }
+        ]
+      }
+    },
+    "/api/v1/studio/canvases/analysis/create": {
+      "post": {
+        "operationId": "analysisCreate",
+        "tags": [
+          "CanvasAnalysis"
+        ],
+        "responses": {
+          "200": {
+            "description": "标准画布响应；具体 data 结构见变更说明。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasAnalysisEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CanvasAnalysisCreateBody"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/canvases/analysis/detail": {
+      "get": {
+        "operationId": "analysisDetail",
+        "tags": [
+          "CanvasAnalysis"
+        ],
+        "responses": {
+          "200": {
+            "description": "标准画布响应；具体 data 结构见变更说明。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasAnalysisEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "canvasId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          {
+            "name": "taskId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/studio/canvases/analysis/submission": {
+      "get": {
+        "operationId": "analysisSubmission",
+        "tags": [
+          "CanvasAnalysis"
+        ],
+        "responses": {
+          "200": {
+            "description": "标准画布响应；具体 data 结构见变更说明。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasAnalysisEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "canvasId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          {
+            "name": "clientRequestId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/studio/canvases/analysis/list": {
+      "get": {
+        "operationId": "analysisList",
+        "tags": [
+          "CanvasAnalysis"
+        ],
+        "responses": {
+          "200": {
+            "description": "标准画布响应；具体 data 结构见变更说明。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasAnalysisEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "canvasId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          {
+            "name": "nodeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "operation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/studio/canvases/analysis/cancel": {
+      "post": {
+        "operationId": "analysisCancel",
+        "tags": [
+          "CanvasAnalysis"
+        ],
+        "responses": {
+          "200": {
+            "description": "标准画布响应；具体 data 结构见变更说明。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasAnalysisEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CanvasAnalysisTaskBody"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/canvases/analysis/retry": {
+      "post": {
+        "operationId": "analysisRetry",
+        "tags": [
+          "CanvasAnalysis"
+        ],
+        "responses": {
+          "200": {
+            "description": "标准画布响应；具体 data 结构见变更说明。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasAnalysisEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CanvasAnalysisRetryBody"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/canvases/analysis/retrySettlement": {
+      "post": {
+        "operationId": "analysisRetrySettlement",
+        "tags": [
+          "CanvasAnalysis"
+        ],
+        "responses": {
+          "200": {
+            "description": "标准画布响应；具体 data 结构见变更说明。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasAnalysisEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CanvasAnalysisTaskBody"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CanvasAnalysisEstimateBody": {
+        "type": "object",
+        "properties": {
+          "canvasId": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "revisionNo": {
+            "type": "integer"
+          },
+          "nodeId": {
+            "type": "string"
+          },
+          "sourceNodeId": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "framePromptGenerate",
+              "videoAnalyze",
+              "transcribeAudio"
+            ]
+          },
+          "modelId": {
+            "type": "integer"
+          },
+          "selection": {
+            "type": "object",
+            "properties": {
+              "frames": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "frameId": {
+                      "type": "string"
+                    },
+                    "assetId": {
+                      "oneOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "timeSeconds": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "frameId",
+                    "assetId",
+                    "timeSeconds"
+                  ]
+                }
+              },
+              "videoAssetId": {
+                "oneOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "audioAssetId": {
+                "oneOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "required": []
+          },
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "segmentDurationSeconds": {
+                "type": "number"
+              },
+              "startSeconds": {
+                "type": "number"
+              },
+              "endSeconds": {
+                "type": "number"
+              },
+              "promptLanguages": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": []
+          }
+        },
+        "required": [
+          "canvasId",
+          "revisionNo",
+          "nodeId",
+          "sourceNodeId",
+          "operation",
+          "modelId",
+          "selection"
+        ]
+      },
+      "CanvasAnalysisCreateBody": {
+        "type": "object",
+        "properties": {
+          "canvasId": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "quoteId": {
+            "type": "string"
+          },
+          "clientRequestId": {
+            "type": "string"
+          },
+          "maxReservedCredits": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "canvasId",
+          "quoteId",
+          "clientRequestId"
+        ]
+      },
+      "CanvasAnalysisRetryBody": {
+        "type": "object",
+        "properties": {
+          "canvasId": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "quoteId": {
+            "type": "string"
+          },
+          "clientRequestId": {
+            "type": "string"
+          },
+          "maxReservedCredits": {
+            "type": "number",
+            "minimum": 0
+          },
+          "taskId": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "required": [
+          "canvasId",
+          "taskId",
+          "quoteId",
+          "clientRequestId"
+        ]
+      },
+      "CanvasAnalysisTaskBody": {
+        "type": "object",
+        "properties": {
+          "canvasId": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "taskId": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "required": [
+          "canvasId",
+          "taskId"
+        ]
+      },
+      "CanvasAnalysisEnvelope": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {}
+        },
+        "required": [
+          "code",
+          "data"
+        ]
+      }
+    }
+  }
+}

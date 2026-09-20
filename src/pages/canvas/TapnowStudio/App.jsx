@@ -7152,7 +7152,7 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
     };
 
     const canvasCloud = useCanvasCloud({
-        theme,
+        theme, saveToUndoStack,
         document: cloudDocument, models: cloudModels, capabilities: cloudCapabilities, textModels: cloudTextModels, onRefreshCloudModels, nodes, connections, view, projectName, workspaceId, historyVisible: historyOpen,
         onExportLocal: () => handleSaveProject(),
         onCloudDocumentApplied: () => { setUndoStack([]); setRedoStack([]); setSelectedNodeId(null); setSelectedNodeIds(new Set()); },
@@ -9605,7 +9605,7 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
     const nodeRenderState = useMemo(() => ({}), [
         nodes, connections, history, apiConfigs, characterLibrary, theme, language,
         activeDropdown, activeShot, batchConcurrency, batchQueueItems, batchRunningItems,
-        characterReferenceBarExpanded, cloudDocument, canvasCloud.textModels, canvasCloud.textReady, canvasCloud.publishReady,
+        characterReferenceBarExpanded, cloudDocument, canvasCloud.textModels, canvasCloud.textReady, canvasCloud.publishReady, canvasCloud.analysis,
         connectingInputType, connectingSource, connectingTarget, dragInsertIndex, dragInsertNodeId,
         dragNodeId, dragOverNodeId, hoverTargetId, hoveredProvider, selectedNodeId, selectedNodeIds,
         lastUsedImageModel, lastUsedImageResolution, lastUsedVideoModel, lastUsedVideoResolution,
