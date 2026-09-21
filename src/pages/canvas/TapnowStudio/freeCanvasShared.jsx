@@ -1,3 +1,4 @@
+import { uiText, useUiLanguage } from '../../../i18n/uiText'
 import { canvasDialogStore } from './canvasDialogs';
 import { isCanvasInteractiveTarget } from './canvasInteractions'
 // 全局屏蔽滚轮事件相关的控制台错误（在 React 渲染之前设置）
@@ -722,6 +723,8 @@ const TagListEditor = ({
     headerLeft = null,
     headerRight = null
 }) => {
+  useUiLanguage()
+
     const [inputValue, setInputValue] = useState('');
     const list = Array.isArray(values) ? values : [];
     const listDisabled = disabled || inputDisabled;
@@ -802,7 +805,7 @@ const TagListEditor = ({
                         )}
                     </span>
                 )) : (
-                    <span className={`text-[9px] ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>未设置</span>
+                    <span className={`text-[9px] ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>{uiText("未设置")}</span>
                 )}
             </div>
             <div className="flex items-center gap-1">
@@ -905,6 +908,8 @@ const HistoryItem = memo(({
     isLocalCacheUrlAvailable,
     language
 }) => {
+  useUiLanguage()
+
     const multiImages = Array.isArray(item.mjImages) && item.mjImages.length > 1
         ? item.mjImages
         : (Array.isArray(item.output_images) && item.output_images.length > 1 ? item.output_images : null);
@@ -1143,7 +1148,7 @@ const HistoryItem = memo(({
                                 src={singleImageDisplayUrl}
                                 loading="lazy"
                                 className="w-full h-full object-cover"
-                                alt={item.prompt || '生成的图片'}
+                                alt={item.prompt || uiText("生成的图片")}
                                 onLoad={() => {
                                     setSinglePreviewLoading(false);
                                     setSinglePreviewFailed(false);
@@ -1283,7 +1288,7 @@ const HistoryItem = memo(({
                 )}
                 {item.status === 'generating' && (
                     <p className="text-[9px] text-blue-500 mt-1">
-                        {item.errorMsg || '生成中...'}
+                        {item.errorMsg || uiText("生成中...")}
                     </p>
                 )}
                 {throttleInfo && (
@@ -1345,6 +1350,8 @@ HistoryItem.displayName = 'HistoryItem';
 
 // --- MaskEditor 组件：图片标注/局部重绘 ---
 const MaskEditor = ({ nodeId, imageUrl, imageDimensions, isActive, onClose, onSave, theme, view, maskContent, onUpdateNode }) => {
+  useUiLanguage()
+
     const canvasRef = useRef(null);
     const ctxRef = useRef(null);
     const lastPointRef = useRef(null); // V3.7.27: 用于平滑绘制
@@ -1588,7 +1595,7 @@ const MaskEditor = ({ nodeId, imageUrl, imageDimensions, isActive, onClose, onSa
                 >
                     {/* 笔刷粗细 */}
                     <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-medium whitespace-nowrap">笔刷</span>
+                        <span className="text-[10px] font-medium whitespace-nowrap">{uiText("笔刷")}</span>
                         <input
                             type="range"
                             min="10"
@@ -2538,8 +2545,8 @@ const STORYBOARD_LLM_SPLIT_MODES = ['script', 'novel', 'custom'];
 const STORYBOARD_LLM_PROMPT_MODES = [...STORYBOARD_LLM_SPLIT_MODES, STORYBOARD_TABLE_PROMPT_MODE];
 const STORYBOARD_PROMPT_SLOT_OPTIONS = [
     { key: 'default', label: 'LLM Prompt', editable: false },
-    { key: 'memory1', label: '记忆1', editable: true },
-    { key: 'memory2', label: '记忆2', editable: true }
+    { key: 'memory1', get label() { return uiText("记忆1") }, editable: true },
+    { key: 'memory2', get label() { return uiText("记忆2") }, editable: true }
 ];
 const STORYBOARD_EDITABLE_PROMPT_SLOT_KEYS = STORYBOARD_PROMPT_SLOT_OPTIONS
     .filter((item) => item.editable)
@@ -3245,28 +3252,28 @@ const validateModelLibraryContract = (entry) => {
 
     const bodyType = String(requestTemplate?.bodyType || '').toLowerCase();
     if (bodyType === 'multipart' && !capabilities.supportsMultipart) {
-        issues.push({ level: 'error', code: 'cap_multipart', message: '模板使用 multipart，但 capabilities.supportsMultipart=false' });
+        issues.push({ level: 'error', code: 'cap_multipart', message: uiText("模板使用 multipart，但 capabilities.supportsMultipart=false") });
     }
     if (requestChain?.enabled) {
         if (!capabilities.supportsRequestChain) {
-            issues.push({ level: 'error', code: 'cap_chain', message: 'requestChain 已启用，但 capabilities.supportsRequestChain=false' });
+            issues.push({ level: 'error', code: 'cap_chain', message: uiText("requestChain 已启用，但 capabilities.supportsRequestChain=false") });
         }
         if (!Array.isArray(requestChain.steps) || requestChain.steps.length === 0) {
-            issues.push({ level: 'error', code: 'chain_empty', message: 'requestChain 已启用，但 steps 为空' });
+            issues.push({ level: 'error', code: 'chain_empty', message: uiText("requestChain 已启用，但 steps 为空") });
         }
     }
     if (transportMode === TRANSPORT_HTTP_SSE && !capabilities.supportsSSE) {
-        issues.push({ level: 'error', code: 'cap_sse', message: 'transport=http-sse，但 capabilities.supportsSSE=false' });
+        issues.push({ level: 'error', code: 'cap_sse', message: uiText("transport=http-sse，但 capabilities.supportsSSE=false") });
     }
     if (transportMode === TRANSPORT_WS_STREAM && !capabilities.supportsWS) {
-        issues.push({ level: 'error', code: 'cap_ws', message: 'transport=ws-stream，但 capabilities.supportsWS=false' });
+        issues.push({ level: 'error', code: 'cap_ws', message: uiText("transport=ws-stream，但 capabilities.supportsWS=false") });
     }
     const streamValue = getValueByPathLoose(requestTemplate?.body || {}, 'stream');
     if (transportMode === TRANSPORT_HTTP_SSE && streamValue !== true) {
-        issues.push({ level: 'warning', code: 'sse_stream_flag', message: 'transport=http-sse 建议 body.stream=true' });
+        issues.push({ level: 'warning', code: 'sse_stream_flag', message: uiText("transport=http-sse 建议 body.stream=true") });
     }
     if (transportMode === TRANSPORT_WS_STREAM && requestTemplate?.endpoint && !/^wss?:\/\//i.test(String(requestTemplate.endpoint))) {
-        issues.push({ level: 'warning', code: 'ws_endpoint', message: 'ws-stream 建议 endpoint 使用 ws:// 或 wss://' });
+        issues.push({ level: 'warning', code: 'ws_endpoint', message: uiText("ws-stream 建议 endpoint 使用 ws:// 或 wss://") });
     }
     let bodyText = '';
     try {
@@ -3275,7 +3282,7 @@ const validateModelLibraryContract = (entry) => {
         bodyText = '';
     }
     if (/"tools"\s*:|"tool_choice"\s*:|"search"\s*:/i.test(bodyText) && !capabilities.supportsTools) {
-        issues.push({ level: 'error', code: 'cap_tools', message: '模板包含 tools/tool_choice/search 字段，但 capabilities.supportsTools=false' });
+        issues.push({ level: 'error', code: 'cap_tools', message: uiText("模板包含 tools/tool_choice/search 字段，但 capabilities.supportsTools=false") });
     }
 
     return issues;
@@ -4231,6 +4238,8 @@ const extractKeyFrames = (src, { fps = 2 } = {}) => {
 
 // --- 组件：经过样式与性能优化的 ImageCompareView ---
 const ImageCompareView = React.memo(({ img1, img2, theme = 'dark', language }) => {
+  useUiLanguage()
+
     const [pos, setPos] = useState(50);
     const containerRef = useRef(null);
     const [isHovering, setIsHovering] = useState(false);
@@ -4278,7 +4287,7 @@ const ImageCompareView = React.memo(({ img1, img2, theme = 'dark', language }) =
                 : 'text-zinc-500 bg-zinc-100 border-zinc-200'
             }`}>
             <Split size={24} className="mb-2 opacity-50" />
-            <span className="text-xs font-medium">连接图片以对比</span>
+            <span className="text-xs font-medium">{uiText("连接图片以对比")}</span>
         </div>
     );
 

@@ -1,3 +1,4 @@
+import { uiText, useUiLanguage } from '../../../../i18n/uiText'
 import { useId, useState, type CSSProperties } from 'react'
 import { ConfigProvider, Select, theme as antdTheme } from 'antd'
 import type { CanvasTextModel, CanvasTextOperation } from '../../../../services/studioCanvasV3Types'
@@ -20,6 +21,8 @@ type Props = {
 }
 
 export default function CanvasTextModelSelect({ value, onChange, models, ready = true, operation, onRefresh, theme = 'light' }: Props) {
+  useUiLanguage()
+
   const id = useId()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -31,11 +34,11 @@ export default function CanvasTextModelSelect({ value, onChange, models, ready =
   const selected = value == null ? '' : String(value).replace(/^studio-/, '')
   const options = available.map(model => ({
     value: String(model.modelId),
-    label: `${model.supplierName ? model.supplierName + ' / ' : ''}${model.name}${model.defaultModel ? '（默认）' : ''}`,
+    label: uiText("{0}{1}{2}", model.supplierName ? model.supplierName + ' / ' : '', model.name, model.defaultModel ? uiText("（默认）") : ''),
     disabled: false,
   }))
   if (selected && !options.some(option => option.value === selected)) {
-    options.unshift({ value: selected, label: '原模型不可用，请重新选择', disabled: true })
+    options.unshift({ value: selected, label: uiText("原模型不可用，请重新选择"), disabled: true })
   }
   return <div className="description-node__field canvas-text-model-field"
     style={{ '--dn-field': palette.input, '--dn-border': palette.border, '--dn-text': palette.text, '--dn-muted': palette.muted, '--dn-accent': palette.accent } as CSSProperties}
@@ -43,7 +46,7 @@ export default function CanvasTextModelSelect({ value, onChange, models, ready =
     onClick={event => event.stopPropagation()}
     onKeyDown={event => event.stopPropagation()}
     onWheel={event => event.stopPropagation()}>
-    <label htmlFor={id}>云端文本模型</label>
+    <label htmlFor={id}>{uiText("云端文本模型")}</label>
     <ConfigProvider theme={{
       algorithm: theme === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
       token: {
@@ -59,13 +62,13 @@ export default function CanvasTextModelSelect({ value, onChange, models, ready =
     }}>
       <Select<string>
         id={id}
-        aria-label="文本模型"
+        aria-label={uiText("文本模型")}
         className="canvas-text-model-select"
         classNames={{ popup: { root: `canvas-text-model-popup canvas-text-model-popup--${theme}` } }}
         styles={{ popup: { root: { border: `1px solid ${palette.border}`, scrollbarColor: `${palette.border} transparent`, colorScheme: theme === 'dark' ? 'dark' : 'light' } } }}
         value={selected || undefined}
         options={options}
-        placeholder={!ready ? '服务端未开放文本任务' : available.length ? '选择文本模型' : '暂无可用文本模型'}
+        placeholder={!ready ? uiText("服务端未开放文本任务") : available.length ? uiText("选择文本模型") : uiText("暂无可用文本模型")}
         disabled={!ready || loading || !available.length}
         loading={loading}
         showSearch
@@ -76,8 +79,8 @@ export default function CanvasTextModelSelect({ value, onChange, models, ready =
         onChange={modelId => onChange(Number(modelId))}
       />
     </ConfigProvider>
-    {onRefresh && <button type="button" disabled={loading || !ready} onClick={async () => { setLoading(true); setError(''); try { await onRefresh() } catch (reason) { setError(reason instanceof Error ? reason.message : '模型加载失败') } finally { setLoading(false) } }}>刷新模型</button>}
+    {onRefresh && <button type="button" disabled={loading || !ready} onClick={async () => { setLoading(true); setError(''); try { await onRefresh() } catch (reason) { setError(reason instanceof Error ? reason.message : '模型加载失败') } finally { setLoading(false) } }}>{uiText("刷新模型")}</button>}
     {error && <p role="alert">{error}</p>}
-    <p className="description-node__model-note">仅处理文字。执行前显示预留积分，结果在文本任务历史中预览和应用。</p>
+    <p className="description-node__model-note">{uiText("仅处理文字。执行前显示预留积分，结果在文本任务历史中预览和应用。")}</p>
   </div>
 }

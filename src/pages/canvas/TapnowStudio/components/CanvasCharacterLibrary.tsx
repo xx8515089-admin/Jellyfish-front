@@ -1,3 +1,4 @@
+import { uiText, useUiLanguage } from '../../../../i18n/uiText'
 import { useEffect, useState } from 'react'
 import { RefreshCw, X } from 'lucide-react'
 import { getAuthToken } from '../../../../auth'
@@ -24,6 +25,8 @@ async function loadPortrait(item: StudioAssetLibraryItem, signal: AbortSignal) {
 }
 
 function CharacterCard({ item, onInsert, onAttach }: { item: StudioAssetLibraryItem; onInsert: (blob: Blob) => void; onAttach?: (item: StudioAssetLibraryItem) => Promise<void> }) {
+  useUiLanguage()
+
   const [portrait, setPortrait] = useState<{ blob: Blob; url: string } | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -51,16 +54,16 @@ function CharacterCard({ item, onInsert, onAttach }: { item: StudioAssetLibraryI
   }, [item.id, item.coverFileId, item.coverUrl])
   return <article className="canvas-character-card">
     <div className="canvas-character-portrait">
-      {portrait ? <img src={portrait.url} alt={item.name} /> : <span>{loading ? '加载图片…' : error || '暂无角色图片'}</span>}
+      {portrait ? <img src={portrait.url} alt={item.name} /> : <span>{loading ? uiText("加载图片…") : error || uiText("暂无角色图片")}</span>}
     </div>
     <div className="canvas-character-info">
       <strong>{item.name}</strong>
       {item.lookName && <small>{item.lookName}</small>}
       {item.description && <p title={item.description}>{item.description}</p>}
       <button disabled={attaching || (!onAttach && !portrait)} onClick={async () => { setAttaching(true); setError(''); try { if (onAttach) await onAttach(item); else if (portrait) onInsert(portrait.blob); setAdded(true) } catch (reason) { setError(reason instanceof Error ? reason.message : '关联失败，请重试') } finally { setAttaching(false) } }}>
-        {attaching ? '正在关联…' : added ? '再次添加到画布' : '添加到画布'}
+        {attaching ? uiText("正在关联…") : added ? uiText("再次添加到画布") : uiText("添加到画布")}
       </button>
-      {error && <small role="alert">{error}</small>}{added && <small role="status">已添加为参考图片</small>}
+      {error && <small role="alert">{error}</small>}{added && <small role="status">{uiText("已添加为参考图片")}</small>}
     </div>
   </article>
 }
@@ -68,6 +71,8 @@ function CharacterCard({ item, onInsert, onAttach }: { item: StudioAssetLibraryI
 export default function CanvasCharacterLibrary({ theme, onClose, onInsert, onAttach }: {
   theme: string; onClose: () => void; onInsert: (blob: Blob) => void; onAttach?: (item: StudioAssetLibraryItem) => Promise<void>
 }) {
+  useUiLanguage()
+
   const [assetType, setAssetType] = useState<1 | 2 | 3>(1)
   const [search, setSearch] = useState('')
   const [keyword, setKeyword] = useState('')
@@ -94,17 +99,17 @@ export default function CanvasCharacterLibrary({ theme, onClose, onInsert, onAtt
     }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [assetType, keyword, page, refresh])
-  return <aside className={`canvas-character-library ${theme === 'light' ? 'is-light' : ''}`} aria-label="角色资产库">
-    <header><div><strong>资产库</strong><small>角色、场景与道具资产</small></div><button aria-label="关闭角色库" onClick={onClose}><X size={16} /></button></header>
+  return <aside className={`canvas-character-library ${theme === 'light' ? 'is-light' : ''}`} aria-label={uiText("角色资产库")}>
+    <header><div><strong>{uiText("资产库")}</strong><small>{uiText("角色、场景与道具资产")}</small></div><button aria-label={uiText("关闭角色库")} onClick={onClose}><X size={16} /></button></header>
     <div style={{ display: 'flex', gap: 8, padding: '12px 12px 0' }}>{([1, 2, 3] as const).map(value => <button key={value} aria-pressed={assetType === value} onClick={() => { setAssetType(value); setPage(1) }}>{({1:'角色',2:'场景',3:'道具'})[value]}</button>)}</div>
     <form onSubmit={event => { event.preventDefault(); setKeyword(search.trim()); setPage(1); setRefresh(value => value + 1) }}>
-      <input aria-label="搜索角色资产" placeholder="搜索资产名称" value={search} onChange={event => setSearch(event.target.value)} />
-      <button type="submit">搜索</button>
-      <button type="button" aria-label="刷新角色资产" onClick={() => setRefresh(value => value + 1)}><RefreshCw size={14} /></button>
+      <input aria-label={uiText("搜索角色资产")} placeholder={uiText("搜索资产名称")} value={search} onChange={event => setSearch(event.target.value)} />
+      <button type="submit">{uiText("搜索")}</button>
+      <button type="button" aria-label={uiText("刷新角色资产")} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={14} /></button>
     </form>
     <div className="canvas-character-list" aria-busy={loading}>
-      {loading ? <p className="canvas-character-empty" role="status">正在加载角色资产…</p> : error ? <div className="canvas-character-empty" role="alert"><p>{error}</p><button onClick={() => setRefresh(value => value + 1)}>重试</button></div> : items.length === 0 ? <p className="canvas-character-empty">{keyword ? '没有找到匹配的资产' : '暂无可用资产，请先在资产库中添加。'}</p> : items.map(item => <CharacterCard key={item.id} item={item} onInsert={onInsert} onAttach={onAttach} />)}
+      {loading ? <p className="canvas-character-empty" role="status">{uiText("正在加载角色资产…")}</p> : error ? <div className="canvas-character-empty" role="alert"><p>{error}</p><button onClick={() => setRefresh(value => value + 1)}>{uiText("重试")}</button></div> : items.length === 0 ? <p className="canvas-character-empty">{keyword ? uiText("没有找到匹配的资产") : uiText("暂无可用资产，请先在资产库中添加。")}</p> : items.map(item => <CharacterCard key={item.id} item={item} onInsert={onInsert} onAttach={onAttach} />)}
     </div>
-    <footer><span>共 {total} 项资产</span><button disabled={loading || page <= 1} onClick={() => setPage(value => value - 1)}>上一页</button><span>{page} / {Math.max(1, Math.ceil(total / pageSize))}</span><button disabled={loading || page * pageSize >= total} onClick={() => setPage(value => value + 1)}>下一页</button></footer>
+    <footer><span>{uiText("共") + " "}{total} {uiText("项资产")}</span><button disabled={loading || page <= 1} onClick={() => setPage(value => value - 1)}>{uiText("上一页")}</button><span>{page} / {Math.max(1, Math.ceil(total / pageSize))}</span><button disabled={loading || page * pageSize >= total} onClick={() => setPage(value => value + 1)}>{uiText("下一页")}</button></footer>
   </aside>
 }

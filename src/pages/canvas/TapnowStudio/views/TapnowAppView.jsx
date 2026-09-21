@@ -1,3 +1,4 @@
+import { uiText, useUiLanguage } from '../../../../i18n/uiText'
 import { canvasAlert, canvasConfirm } from '../canvasDialogs';
 import { Tooltip } from 'antd'
 import CanvasModelSettings from '../components/CanvasModelSettings';
@@ -388,6 +389,8 @@ export default function TapnowAppView({
     viewportBounds,
     nodeRenderState,
 }) {
+  useUiLanguage()
+
     return (
 <>
             {arrangeMessageContext}
@@ -534,10 +537,10 @@ export default function TapnowAppView({
 
                     {/* 历史记录面板 */}
                     {historyOpen && cloudDocument && (
-                        <aside className="canvas-history-inline canvas-history-drawer" aria-label="生成历史">
+                        <aside className="canvas-history-inline canvas-history-drawer" aria-label={uiText("生成历史")}>
                             <header className="canvas-history-inline__header">
-                                <div><h3>{t('生成历史')}</h3><span>云端任务记录</span></div>
-                                <button type="button" onClick={() => setHistoryOpen(false)} aria-label="关闭生成历史"><X size={16} /></button>
+                                <div><h3>{t('生成历史')}</h3><span>{uiText("云端任务记录")}</span></div>
+                                <button type="button" onClick={() => setHistoryOpen(false)} aria-label={uiText("关闭生成历史")}><X size={16} /></button>
                             </header>
                             {canvasCloud.historyPanel}
                         </aside>
@@ -592,9 +595,9 @@ export default function TapnowAppView({
                                                     : 'text-zinc-500 hover:text-zinc-700 hover:bg-zinc-200'
                                             }`}
                                         title={
-                                            performanceMode === 'ultra' ? '极致性能模式（点击关闭）'
-                                                : performanceMode === 'normal' ? '普通性能模式（点击切换极致）'
-                                                    : '性能模式已关闭（点击开启）'
+                                            performanceMode === 'ultra' ? uiText("极致性能模式（点击关闭）")
+                                                : performanceMode === 'normal' ? uiText("普通性能模式（点击切换极致）")
+                                                    : uiText("性能模式已关闭（点击开启）")
                                         }
                                     >
                                         <Zap size={14} />
@@ -1058,8 +1061,7 @@ export default function TapnowAppView({
                                     <div>
                                         <label className={`block text-xs mb-2 ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'
                                             }`}>
-                                            视频源
-                                        </label>
+                                            {uiText("视频源")}</label>
                                         <div className="flex gap-2 mb-2">
                                             <button
                                                 onClick={() => {
@@ -1075,8 +1077,7 @@ export default function TapnowAppView({
                                                         : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
                                                     }`}
                                             >
-                                                输入视频 URL
-                                            </button>
+                                                {uiText("输入视频 URL")}</button>
                                             <button
                                                 onClick={() => {
                                                     setCreateCharacterVideoSourceType('history');
@@ -1092,8 +1093,7 @@ export default function TapnowAppView({
                                                         : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
                                                     }`}
                                             >
-                                                从历史记录选择
-                                            </button>
+                                                {uiText("从历史记录选择")}</button>
                                         </div>
 
                                         {createCharacterVideoSourceType === 'url' ? (
@@ -1201,7 +1201,7 @@ export default function TapnowAppView({
                                                     : theme === 'solarized' ? 'bg-[#fdf6e3] border-[#eee8d5] text-zinc-800' : 'bg-white border-zinc-300 text-zinc-800'
                                                     }`}
                                             />
-                                            <span className={`text-xs ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>到</span>
+                                            <span className={`text-xs ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>{uiText("到")}</span>
                                             <input
                                                 type="number"
                                                 min="0"
@@ -1214,7 +1214,7 @@ export default function TapnowAppView({
                                                     }`}
                                             />
                                             <span className={`text-xs ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                                                秒（间隔: {(createCharacterEndSecond - createCharacterStartSecond).toFixed(1)}s）
+                                                {uiText("秒（间隔:") + " "}{(createCharacterEndSecond - createCharacterStartSecond).toFixed(1)}s）
                                             </span>
                                         </div>
                                     </div>
@@ -1223,8 +1223,7 @@ export default function TapnowAppView({
                                     <div>
                                         <label className={`block text-xs mb-2 ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'
                                             }`}>
-                                            API 接口地址 (API Endpoint)
-                                        </label>
+                                            {uiText("API 接口地址 (API Endpoint)")}</label>
                                         <input
                                             type="text"
                                             value={createCharacterEndpoint}
@@ -1247,8 +1246,7 @@ export default function TapnowAppView({
                                         />
                                         <p className={`text-[10px] mt-1 ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'
                                             }`}>
-                                            默认自动填充，可根据服务商要求修改路径
-                                        </p>
+                                            {uiText("默认自动填充，可根据服务商要求修改路径")}</p>
                                     </div>
 
                                     {/* 提交按钮 */}
@@ -1298,7 +1296,7 @@ export default function TapnowAppView({
                                                     : 'bg-blue-500 text-white hover:bg-blue-600'
                                                 }`}
                                         >
-                                            {createCharacterSubmitting ? '创建中...' : '创建角色'}
+                                            {createCharacterSubmitting ? uiText("创建中...") : uiText("创建角色")}
                                         </button>
                                     </div>
                                 </div>
@@ -1512,8 +1510,7 @@ export default function TapnowAppView({
                                                         })}
                                                     {!chatHoveredProvider && (
                                                         <div className={`text-[10px] px-2 py-3 text-center ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                                                            ← 选择 Provider
-                                                        </div>
+                                                            {uiText("← 选择 Provider")}</div>
                                                     )}
                                                 </div>
                                             </div>
@@ -1629,7 +1626,7 @@ export default function TapnowAppView({
                                                                         }`}
                                                                 >
                                                                     <FileAudio size={16} />
-                                                                    <span className="text-[8px] mt-1">音频</span>
+                                                                    <span className="text-[8px] mt-1">{uiText("音频")}</span>
                                                                 </div>
                                                             ) : f.isPDF ? (
                                                                 <div
@@ -1670,7 +1667,7 @@ export default function TapnowAppView({
                                                                 >
                                                                     <FileText size={16} />
                                                                     <span className="text-[8px] mt-1 max-w-full truncate px-1">
-                                                                        {f.fileExt || f.name.split('.').pop() || '文件'}
+                                                                        {f.fileExt || f.name.split('.').pop() || uiText("文件")}
                                                                     </span>
                                                                 </div>
                                                             )}
@@ -1756,7 +1753,7 @@ export default function TapnowAppView({
                                                             }`}
                                                     >
                                                         <FileAudio size={16} />
-                                                        <span className="text-[8px] mt-1">音频</span>
+                                                        <span className="text-[8px] mt-1">{uiText("音频")}</span>
                                                     </div>
                                                 ) : f.isPDF ? (
                                                     <div
@@ -1797,7 +1794,7 @@ export default function TapnowAppView({
                                                     >
                                                         <FileText size={16} />
                                                         <span className="text-[8px] mt-1 max-w-full truncate px-1">
-                                                            {f.fileExt || f.name.split('.').pop() || '文件'}
+                                                            {f.fileExt || f.name.split('.').pop() || uiText("文件")}
                                                         </span>
                                                     </div>
                                                 )}
@@ -1857,8 +1854,7 @@ export default function TapnowAppView({
                                     </button>
                                 </div>
                                 <div className={`text-[10px] text-center mt-2 ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-500'}`}>
-                                    支持 MP4/MP3/PDF/Doc/Excel/Code 等格式 • Enter 发送
-                                </div>
+                                    {uiText("支持 MP4/MP3/PDF/Doc/Excel/Code 等格式 • Enter 发送")}</div>
                             </div>
                             </>}
                         </div>
@@ -1981,8 +1977,7 @@ export default function TapnowAppView({
                                     className={`px-3 py-1.5 text-[10px] font-medium border-b mb-1 ${theme === 'dark' ? 'text-zinc-500 border-zinc-800' : 'text-zinc-500 border-zinc-200'
                                         }`}
                                 >
-                                    操作
-                                </div>
+                                    {uiText("操作")}</div>
                                 <div
                                     className="relative"
                                     onMouseEnter={openHistorySendMenu}
@@ -1995,8 +1990,7 @@ export default function TapnowAppView({
                                             }`}
                                         onClick={sendHistorySmart}
                                     >
-                                        <Send size={14} className="text-blue-500" /> 智能发送
-                                    </button>
+                                        <Send size={14} className="text-blue-500" /> {uiText("智能发送")}</button>
                                     <button
                                         className={`w-full whitespace-nowrap text-left px-3 py-2 text-xs flex items-center gap-2 transition-colors ${theme === 'dark'
                                             ? 'text-zinc-300 hover:bg-zinc-800'
@@ -2004,8 +1998,7 @@ export default function TapnowAppView({
                                             }`}
                                         onClick={sendHistoryPromptSmart}
                                     >
-                                        <FileText size={14} className="text-amber-500" /> 发送提示词
-                                    </button>
+                                        <FileText size={14} className="text-amber-500" /> {uiText("发送提示词")}</button>
                                     <button
                                         className={`absolute right-2 top-2 p-1 rounded ${theme === 'dark'
                                             ? 'text-zinc-500 hover:text-zinc-200'
@@ -2045,8 +2038,7 @@ export default function TapnowAppView({
                                                     }`}
                                                 onClick={sendHistoryToPreview}
                                             >
-                                                <Maximize2 size={14} className="text-emerald-500" /> 发送到预览
-                                            </button>
+                                                <Maximize2 size={14} className="text-emerald-500" /> {uiText("发送到预览")}</button>
                                             <button
                                                 className={`w-full whitespace-nowrap text-left px-3 py-2 text-xs flex items-center gap-2 transition-colors ${theme === 'dark'
                                                     ? 'text-zinc-300 hover:bg-zinc-800'
@@ -2076,8 +2068,7 @@ export default function TapnowAppView({
                                         setHistoryContextMenu({ visible: false, x: 0, y: 0, worldX: 0, worldY: 0, item: null });
                                     }}
                                 >
-                                    <Scissors size={14} className="text-blue-500" /> 九宫格裁切
-                                </button>
+                                    <Scissors size={14} className="text-blue-500" /> {uiText("九宫格裁切")}</button>
                                 {/* V3.5.8: 下载单个项目 */}
                                 <button
                                     className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 transition-colors ${theme === 'dark'
@@ -2109,7 +2100,7 @@ export default function TapnowAppView({
                                         setHistoryContextMenu({ visible: false, x: 0, y: 0, worldX: 0, worldY: 0, item: null });
                                     }}
                                 >
-                                    <Download size={14} className="text-green-500" /> {historyContextMenu.item?.type === 'video' ? '下载视频' : '下载图片'}
+                                    <Download size={14} className="text-green-500" /> {historyContextMenu.item?.type === 'video' ? uiText("下载视频") : uiText("下载图片")}
                                 </button>
                             </div>
                         )}
@@ -2125,8 +2116,7 @@ export default function TapnowAppView({
                                     className={`px-3 py-1.5 text-[10px] font-medium border-b mb-1 ${theme === 'dark' ? 'text-zinc-500 border-zinc-800' : 'text-zinc-500 border-zinc-200'
                                         }`}
                                 >
-                                    选中 {selectedNodeIds.size > 0 ? selectedNodeIds.size : (selectedNodeId ? 1 : 0)} 个节点
-                                </div>
+                                    {uiText("选中") + " "}{selectedNodeIds.size > 0 ? selectedNodeIds.size : (selectedNodeId ? 1 : 0)} {uiText("个节点")}</div>
                                 <button
                                     className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 transition-colors ${theme === 'dark'
                                         ? 'text-zinc-300 hover:bg-zinc-800'
@@ -2134,8 +2124,7 @@ export default function TapnowAppView({
                                         }`}
                                     onClick={handleSaveSelectedWorkflow}
                                 >
-                                    <Save size={14} className="text-blue-500" /> 保存当前选取工作流
-                                </button>
+                                    <Save size={14} className="text-blue-500" /> {uiText("保存当前选取工作流")}</button>
                             </div>
                         )}
 
@@ -2149,8 +2138,7 @@ export default function TapnowAppView({
                                     className={`px-3 py-1.5 text-[10px] font-medium border-b mb-1 ${theme === 'dark' ? 'text-zinc-500 border-zinc-800' : 'text-zinc-500 border-zinc-200'
                                         }`}
                                 >
-                                    操作
-                                </div>
+                                    {uiText("操作")}</div>
                                 <button
                                     className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 transition-colors ${theme === 'dark'
                                         ? 'text-zinc-300 hover:bg-zinc-800'
@@ -2158,8 +2146,7 @@ export default function TapnowAppView({
                                         }`}
                                     onClick={sendFrameToChat}
                                 >
-                                    <MessageSquare size={14} className="text-purple-500" /> 发送到当前对话
-                                </button>
+                                    <MessageSquare size={14} className="text-purple-500" /> {uiText("发送到当前对话")}</button>
                                 <button
                                     className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 transition-colors ${theme === 'dark'
                                         ? 'text-zinc-300 hover:bg-zinc-800'
@@ -2176,8 +2163,7 @@ export default function TapnowAppView({
                                         }`}
                                     onClick={sendFrameToPreview}
                                 >
-                                    <Maximize2 size={14} className="text-emerald-500" /> 发送到预览窗口
-                                </button>
+                                    <Maximize2 size={14} className="text-emerald-500" /> {uiText("发送到预览窗口")}</button>
                                 <button
                                     className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 transition-colors ${theme === 'dark'
                                         ? 'text-zinc-300 hover:bg-zinc-800'
@@ -2185,8 +2171,7 @@ export default function TapnowAppView({
                                         }`}
                                     onClick={applyFrameToSelectedNode}
                                 >
-                                    <ArrowRightSquare size={14} className={selectedNodeId ? 'text-green-500' : 'text-zinc-400'} /> 应用到选中节点
-                                </button>
+                                    <ArrowRightSquare size={14} className={selectedNodeId ? 'text-green-500' : 'text-zinc-400'} /> {uiText("应用到选中节点")}</button>
                             </div>
                         )}
 
@@ -2201,8 +2186,7 @@ export default function TapnowAppView({
                                     className={`px-3 py-1.5 text-[10px] font-medium border-b mb-1 ${theme === 'dark' ? 'text-zinc-500 border-zinc-800' : 'text-zinc-500 border-zinc-200'
                                         }`}
                                 >
-                                    操作
-                                </div>
+                                    {uiText("操作")}</div>
                                 <button
                                     className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 transition-colors ${theme === 'dark'
                                         ? 'text-zinc-300 hover:bg-zinc-800'
@@ -2210,8 +2194,7 @@ export default function TapnowAppView({
                                         }`}
                                     onClick={sendPreviewToChat}
                                 >
-                                    <MessageSquare size={14} className="text-purple-500" /> 发送到当前对话
-                                </button>
+                                    <MessageSquare size={14} className="text-purple-500" /> {uiText("发送到当前对话")}</button>
                                 <button
                                     className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 transition-colors ${theme === 'dark'
                                         ? 'text-zinc-300 hover:bg-zinc-800'
@@ -2270,8 +2253,7 @@ export default function TapnowAppView({
                                         closePreviewContextMenu();
                                     }}
                                 >
-                                    <Scissors size={14} className="text-blue-500" /> 九宫格裁切
-                                </button>
+                                    <Scissors size={14} className="text-blue-500" /> {uiText("九宫格裁切")}</button>
                                 {/* V3.7.29: 下载按钮 */}
                                 <button
                                     className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 transition-colors ${theme === 'dark'
@@ -2300,7 +2282,7 @@ export default function TapnowAppView({
                                             window.URL.revokeObjectURL(blobUrl);
                                         } catch (err) {
                                             console.error('下载失败:', err);
-                                            showToast('下载失败，请重试', 'error');
+                                            showToast(uiText("下载失败，请重试"), 'error');
                                         }
                                         closePreviewContextMenu();
                                     }}
@@ -2321,8 +2303,7 @@ export default function TapnowAppView({
                                     className={`px-3 py-1.5 text-[10px] font-medium border-b mb-1 ${theme === 'dark' ? 'text-zinc-500 border-zinc-800' : 'text-zinc-500 border-zinc-200'
                                         }`}
                                 >
-                                    操作
-                                </div>
+                                    {uiText("操作")}</div>
                                 <button
                                     className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 transition-colors ${theme === 'dark'
                                         ? 'text-zinc-300 hover:bg-zinc-800'
@@ -2330,8 +2311,7 @@ export default function TapnowAppView({
                                         }`}
                                     onClick={sendInputImageToChat}
                                 >
-                                    <MessageSquare size={14} className="text-purple-500" /> 发送到当前对话
-                                </button>
+                                    <MessageSquare size={14} className="text-purple-500" /> {uiText("发送到当前对话")}</button>
                                 <button
                                     className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 transition-colors ${theme === 'dark'
                                         ? 'text-zinc-300 hover:bg-zinc-800'
@@ -2358,8 +2338,7 @@ export default function TapnowAppView({
                                         closeInputImageContextMenu();
                                     }}
                                 >
-                                    <Scissors size={14} className="text-blue-500" /> 九宫格裁切
-                                </button>
+                                    <Scissors size={14} className="text-blue-500" /> {uiText("九宫格裁切")}</button>
                             </div>
                         )}
 
@@ -2670,8 +2649,7 @@ export default function TapnowAppView({
                                             </h2>
                                             <span className={`text-sm ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-600'
                                                 }`}>
-                                                已选中 {batchSelectedIds.size} 项
-                                            </span>
+                                                {uiText("已选中") + " "}{batchSelectedIds.size} {uiText("项")}</span>
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <button
@@ -2693,7 +2671,7 @@ export default function TapnowAppView({
                                                 onClick={async () => {
                                                     if (batchSelectedIds.size === 0) return;
                                                     const selectedIds = new Set(batchSelectedIds);
-                                                    if (await canvasConfirm(`确定要删除选中的 ${selectedIds.size} 项吗？`, { danger: true })) {
+                                                    if (await canvasConfirm(uiText("确定要删除选中的 {0} 项吗？", selectedIds.size), { danger: true })) {
                                                         setHistory(prev => {
                                                             const filtered = prev.filter(item => !selectedIds.has(item.id));
                                                             // 立即保存到 localStorage，不等待防抖
@@ -2723,7 +2701,7 @@ export default function TapnowAppView({
                                                     if (batchSelectedIds.size === 0) return;
                                                     const baseUrl = (localServerUrl || '').replace(/\/+$/, '');
                                                     if (!baseUrl) {
-                                                        showToast('本地服务地址为空', 'error');
+                                                        showToast(uiText("本地服务地址为空"), 'error');
                                                         return;
                                                     }
                                                     const selectedItems = history.filter(item => batchSelectedIds.has(item.id));
@@ -2731,7 +2709,7 @@ export default function TapnowAppView({
                                                         .map(item => item.localFilePath || item.localCacheUrl)
                                                         .filter(Boolean);
                                                     if (files.length === 0) {
-                                                        showToast('选中项没有本地缓存可清理', 'warning');
+                                                        showToast(uiText("选中项没有本地缓存可清理"), 'warning');
                                                         return;
                                                     }
                                                     try {
@@ -2945,8 +2923,7 @@ export default function TapnowAppView({
                                                             } ${theme === 'dark' ? 'bg-zinc-900' : 'bg-zinc-100'}`}>
                                                             {hasBackendCache && (
                                                                 <div className="absolute top-2 left-2 z-10 text-[9px] px-2 py-0.5 rounded bg-orange-500 text-white shadow">
-                                                                    后端缓存
-                                                                </div>
+                                                                    {uiText("后端缓存")}</div>
                                                             )}
                                                             {item.status === 'completed' && (resolvedDisplayUrl || (resolvedGridImages && resolvedGridImages.length > 0)) ? (
                                                                 isVideoItem ? (
@@ -2985,7 +2962,7 @@ export default function TapnowAppView({
                                                                                     <LazyBase64Image
                                                                                         src={img}
                                                                                         className={`w-full h-full object-cover ${isActive ? 'opacity-80' : ''}`}
-                                                                                        alt={`生成图-${idx + 1}`}
+                                                                                        alt={uiText("生成图-{0}", idx + 1)}
                                                                                     />
                                                                                     {isActive && (
                                                                                         <div className="absolute inset-0 bg-black/20 pointer-events-none"></div>
@@ -3033,7 +3010,7 @@ export default function TapnowAppView({
                                                             className={`p-2 text-xs cursor-pointer ${theme === 'dark' ? 'bg-zinc-900 text-zinc-300' : 'bg-zinc-50 text-zinc-700'
                                                                 }`}
                                                         >
-                                                            <div className="truncate font-medium">{item.prompt || '未命名'}</div>
+                                                            <div className="truncate font-medium">{item.prompt || uiText("未命名")}</div>
                                                             <div className="text-[10px] opacity-70 mt-0.5">
                                                                 <span>{genTypeLabel} </span>
                                                                 <span title={fullModelName}>{modelDisplay}</span>

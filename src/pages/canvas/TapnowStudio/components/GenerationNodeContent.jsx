@@ -1,3 +1,4 @@
+import { uiText, useUiLanguage } from '../../../../i18n/uiText'
 import CanvasModelMenu from './CanvasModelMenu';
 import {
     ChevronRight,
@@ -21,6 +22,8 @@ import {
 } from '../freeCanvasShared';
 
 function GenerationNodeContent({ node, context }) {
+  useUiLanguage()
+
     const {
         history,
         nodeTimers,
@@ -131,8 +134,7 @@ function GenerationNodeContent({ node, context }) {
                                 }`}
                         >
                             <ImagePlus size={10} />
-                            引用成功
-                        </span>
+                            {uiText("引用成功")}</span>
                         <span
                             className={`text-[9px] font-mono ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-500'
                                 }`}
@@ -335,9 +337,9 @@ function GenerationNodeContent({ node, context }) {
                                         ? 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
                                         : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
                                         }`}
-                                    title={isExpanded ? "收起" : "打开角色库"}
+                                    title={isExpanded ? uiText("收起") : uiText("打开角色库")}
                                 >
-                                    {isExpanded ? '收起' : `+${characterLibrary.length - maxVisible}`}
+                                    {isExpanded ? uiText("收起") : `+${characterLibrary.length - maxVisible}`}
                                 </button>
                             )}
                         </div>
@@ -545,20 +547,20 @@ function GenerationNodeContent({ node, context }) {
                             onClick={() => setPromptLibraryCollapsed((v) => !v)}
                             onMouseDown={(e) => e.stopPropagation()}
                         >
-                            <span className={theme === 'dark' ? 'text-zinc-200' : 'text-zinc-700'}>常用提示词库</span>
+                            <span className={theme === 'dark' ? 'text-zinc-200' : 'text-zinc-700'}>{uiText("常用提示词库")}</span>
                             <ChevronRight
                                 size={12}
                                 className={`transition-transform ${promptLibraryCollapsed ? '' : 'rotate-90'} ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}
                             />
                         </button>
                         <div className="flex items-center gap-2 text-[10px]">
-                            <span className={theme === 'dark' ? 'text-zinc-500' : 'text-zinc-500'}>{promptLibrary.length} 项</span>
+                            <span className={theme === 'dark' ? 'text-zinc-500' : 'text-zinc-500'}>{promptLibrary.length} {uiText("项")}</span>
                             <button
                                 className={`px-2 py-0.5 rounded text-[10px] border ${theme === 'dark' ? 'border-zinc-700 text-zinc-300 hover:bg-zinc-800' : 'border-zinc-300 text-zinc-700 hover:bg-zinc-100'}`}
                                 onClick={() => setPromptLibraryEditorOpen((v) => !v)}
                                 onMouseDown={(e) => e.stopPropagation()}
                             >
-                                {promptLibraryEditorOpen ? '收起' : '管理'}
+                                {promptLibraryEditorOpen ? uiText("收起") : uiText("管理")}
                             </button>
                         </div>
                     </div>
@@ -576,8 +578,7 @@ function GenerationNodeContent({ node, context }) {
                                             className="px-2 py-0.5 rounded text-[10px] bg-blue-600 text-white hover:bg-blue-500 transition-colors"
                                             onMouseDown={(e) => e.stopPropagation()}
                                         >
-                                            应用
-                                        </button>
+                                            {uiText("应用")}</button>
                                         {promptLibraryEditorOpen && (
                                             <button
                                                 onClick={() => removePromptLibraryItem(item.id)}
@@ -590,7 +591,7 @@ function GenerationNodeContent({ node, context }) {
                                     </div>
                                 ))}
                                 {promptLibrary.length === 0 && (
-                                    <div className={`text-[11px] ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>暂无常用提示词</div>
+                                    <div className={`text-[11px] ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>{uiText("暂无常用提示词")}</div>
                                 )}
                             </div>
                             {promptLibraryEditorOpen && (
@@ -615,8 +616,7 @@ function GenerationNodeContent({ node, context }) {
                                         className="w-full py-1.5 rounded text-[11px] font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors"
                                         onMouseDown={(e) => e.stopPropagation()}
                                     >
-                                        添加到常用提示词库
-                                    </button>
+                                        {uiText("添加到常用提示词库")}</button>
                                 </div>
                             )}
                         </div>
@@ -813,7 +813,7 @@ function GenerationNodeContent({ node, context }) {
                                         }`}
                                 >
                                     {resolvedResolution === 'Auto'
-                                        ? '不选'
+                                        ? uiText("不选")
                                         : getValueLabelWithNotes(
                                             resolvedResolution,
                                             !!currentModel?.videoResolutionNotesEnabled,
@@ -845,7 +845,7 @@ function GenerationNodeContent({ node, context }) {
                                             }`}
                                             >
                                                 {r === 'Auto'
-                                                    ? '不选'
+                                                    ? uiText("不选")
                                                     : getValueLabelWithNotes(
                                                         r,
                                                         !!currentModel?.videoResolutionNotesEnabled,
@@ -1052,12 +1052,12 @@ function GenerationNodeContent({ node, context }) {
                                     }`}
                                 title={t('图片张数(1/2/4/9)')}
                             >
-                                {`${normalizeImageConcurrency(
+                                {uiText("{0}张", normalizeImageConcurrency(
                                     node.settings?.imageConcurrency
                                     || node.settings?.concurrentImages
                                     || getApiConfigByKey(node.settings?.model)?.defaultImageConcurrency
                                     || 1
-                                )}张`}
+                                ))}
                             </button>
                             {activeDropdown?.nodeId === node.id && activeDropdown.type === 'imgConcurrency' && (
                                 <div
@@ -1079,7 +1079,7 @@ function GenerationNodeContent({ node, context }) {
                                                 : theme === 'solarized' ? 'text-zinc-700 hover:bg-[#fdf6e3]' : 'text-zinc-700 hover:bg-zinc-100'
                                                 }`}
                                         >
-                                            {`${count}张`}
+                                            {uiText("{0}张", count)}
                                         </button>
                                     ))}
                                 </div>

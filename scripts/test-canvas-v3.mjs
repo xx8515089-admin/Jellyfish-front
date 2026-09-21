@@ -1,3 +1,4 @@
+import { canvasMockFetch, withCanvasOperationLock } from './canvas-test-transport.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
@@ -6,9 +7,10 @@ import ts from 'typescript'
 import { applyTextResult, prepareTextSnapshot, textInputFingerprint } from '../src/pages/canvas/TapnowStudio/canvasTextTasks.js'
 
 function load(path, imports, globals = {}) {
+  imports = { './canvasOperationLock': { withCanvasOperationLock }, '../auth': { getStoredAuthUser: () => ({ id: 42 }) }, ...imports }
   const exports = {}
   const code = ts.transpileModule(readFileSync(new URL(path, import.meta.url), 'utf8'), { fileName: path, compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.React } }).outputText
-  vm.runInNewContext(code, { exports, Blob, URL, Map, Set, console, ...globals, require(name) { assert.ok(name in imports, `Unexpected dependency: ${name}`); return imports[name] } })
+  vm.runInNewContext(code, { exports, Headers, FormData, URLSearchParams, fetch: canvasMockFetch(imports), Blob, URL, Map, Set, console, ...globals, require(name) { assert.ok(name in imports, `Unexpected dependency: ${name}`); return imports[name] } })
   return exports
 }
 const plain = value => JSON.parse(JSON.stringify(value))
@@ -18,7 +20,7 @@ const textModels = [{ modelId: 9, name: '文字模型', available: true }]
 const quote = () => ({ quoteId: 'quote-1', canvasId: 12, revisionNo: 8, nodeId: '中文 节点', operation: 'promptEnhance', modelId: 9, inputHash: 'frozen-hash', reservedCredits: 1.5 })
 const task = (patch = {}) => ({ ...quote(), taskId: 70, generationTaskId: 900, status: 3, shouldPoll: false, actions: {}, result: { schemaVersion: 1, operation: 'promptEnhance', prompt: '增强后的描述' }, actualCredits: null, ...patch })
 const body = () => ({ canvasId: 12, quoteId: 'quote-1', clientRequestId: 'text-stable-1', maxReservedCredits: 1.5 })
-const notFound = code => Object.assign(new Error('not found'), { errorCode: code, status: 502 })
+const notFound = code => Object.assign(new Error('not found'), { errorCode: code, status: 502, submissionState: code === "CANVAS_QUOTE_EXPIRED" ? "notAccepted" : "notFound" })
 function harness(api = {}, options = {}) {
   const storage = options.storage || new Map()
   let sequence = 0

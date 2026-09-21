@@ -1,3 +1,4 @@
+import { uiText, useUiLanguage } from '../../../../i18n/uiText'
 import { canvasConfirm } from '../canvasDialogs';
 import React from 'react';
 import { Trash2 } from 'lucide-react';
@@ -41,6 +42,8 @@ const QueuePanel = ({
     removeQueuedBatchItem,
     stopRunningShot
 }) => {
+  useUiLanguage()
+
     const groupMap = new Map();
     batchGroups.forEach(group => {
         groupMap.set(group.id, { ...group, queued: [], running: [] });
@@ -118,7 +121,7 @@ const QueuePanel = ({
                 </div>
             </div>
             <div className={`text-[10px] ${getMutedTextClass(theme)}`}>
-                运行 {batchRunningItems.length} · 排队 {batchQueue.length}
+                {uiText("运行") + " "}{batchRunningItems.length} {uiText("· 排队") + " "}{batchQueue.length}
             </div>
             <div className="flex gap-2">
                 <button
@@ -148,8 +151,7 @@ const QueuePanel = ({
             </div>
             {queueGroups.length === 0 ? (
                 <div className={`text-xs text-center py-4 ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                    队列为空
-                </div>
+                    {uiText("队列为空")}</div>
             ) : (
                 <div className="space-y-3 max-h-64 overflow-y-auto custom-scrollbar pr-1">
                     {queueGroups.map(group => {
@@ -176,8 +178,7 @@ const QueuePanel = ({
                                             NODE - {group.projectTitle} · {taskLabel}
                                         </div>
                                         <div className={`text-[10px] mt-0.5 ${getMutedTextClass(theme)}`}>
-                                            {totalCount} 总生成 · {concurrencyValue} 每批 · {totalRounds} 批次（排队 {pendingRounds} 轮）
-                                        </div>
+                                            {totalCount} {uiText("总生成 ·") + " "}{concurrencyValue} {uiText("每批 ·") + " "}{totalRounds} {uiText("批次（排队") + " "}{pendingRounds} {uiText("轮）")}</div>
                                     </div>
                                     {group.queued.length > 0 && (
                                         <button
@@ -206,7 +207,7 @@ const QueuePanel = ({
                                                 className={`text-[10px] flex items-center justify-between gap-2 ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-600'}`}
                                             >
                                                 <span className="truncate">
-                                                    {shortLabel} · {shotLabel || `镜头${item.sceneIndex || ''}`}
+                                                    {shortLabel} · {shotLabel || uiText("镜头{0}", item.sceneIndex || '')}
                                                 </span>
                                                 <div className="flex items-center gap-1 shrink-0">
                                                     <span className={item.status === 'running' ? 'text-green-500' : 'text-blue-400'}>
@@ -224,7 +225,7 @@ const QueuePanel = ({
                                                         className={`p-0.5 rounded ${theme === 'dark'
                                                             ? 'text-zinc-500 hover:text-red-300'
                                                             : 'text-zinc-400 hover:text-red-500'}`}
-                                                        title={item.status === 'running' ? '终止任务' : '移除任务'}
+                                                        title={item.status === 'running' ? uiText("终止任务") : uiText("移除任务")}
                                                     >
                                                         <Trash2 size={10} />
                                                     </button>

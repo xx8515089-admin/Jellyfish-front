@@ -1,3 +1,5 @@
+import { createUiTextFixture } from './ui-text-fixture.mjs'
+const { uiText } = createUiTextFixture()
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
@@ -15,7 +17,7 @@ function visit(node) {
 visit(source)
 function expression(name, globals) {
   const code = ts.transpileModule(`var runHandler = ${initializers.get(name)};`, { fileName: 'handler.jsx', compilerOptions: { target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.React } }).outputText
-  const context = vm.createContext({ console, applyTextResult, textInputFingerprint, textModelId, textOperations, ...globals })
+  const context = vm.createContext({ uiText, console, applyTextResult, textInputFingerprint, textModelId, textOperations, ...globals })
   vm.runInContext(code, context)
   return context.runHandler
 }

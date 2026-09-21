@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import vm from 'node:vm'
+import { createUiTextFixture } from './ui-text-fixture.mjs'
+const ui = createUiTextFixture()
 import ts from 'typescript'
 import { insertPreviewMedia, previewLink, writeClipboardText } from '../src/pages/canvas/TapnowStudio/canvasPreviewActions.js'
 const preview = (patch = {}) => ({ id: 'preview', type: 'preview', content: 'blob:video', previewType: 'video', x: 100, y: 50, width: 300, height: 260, ...patch })
@@ -83,6 +85,7 @@ test('actual copy button reports both success and failure and stops canvas click
     const toasts = [], copied = []
     let stopped = false
     const fn = vm.runInNewContext('(' + copyHandler + ')', {
+      ...ui,
       node: preview(), canvasCloud: { getPreviewLink: node => previewLink(node, session, 'https://app.test') },
       writeClipboardText: async text => { if (fail) throw Error('clipboard denied'); copied.push(text) }, navigator: {}, document: {}, showToast: (...args) => toasts.push(args),
     })
@@ -105,6 +108,7 @@ function linkedPreview(content) {
   let counter = 0, params = new URLSearchParams('previewAsset=34&previewMedia=video&keep=yes')
   const exports = {}
   vm.runInNewContext(linkedCode, { exports, React: { createElement: (type, props) => ({ type, props }) }, URLSearchParams, URL: { createObjectURL: () => 'blob:linked', revokeObjectURL: url => revoked.push(url) }, require: name => {
+    if (name.endsWith('/uiText')) return ui
     if (name === 'react') return { useState: initial => { const index = counter++; state[index] = initial; return [initial, value => { state[index] = value }] }, useEffect: fn => effects.push(fn) }
     if (name === 'react-router-dom') return { useSearchParams: () => [params, fn => { params = fn(params) }] }
     if (name === 'antd') return { Modal: 'Modal', Alert: 'Alert', Spin: 'Spin' }

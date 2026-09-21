@@ -1,3 +1,4 @@
+import { uiText } from '../../../../i18n/uiText'
 import { connectCanvasNodes } from '../canvasConnections'
 import { canvasRequestId } from '../../../../services/studioCanvases'
 import { readNodeMedia, readShotMedia, imageGeneratorTypes, videoGeneratorTypes } from '../canvasNodeOutputs'
@@ -234,8 +235,7 @@ export function renderCustomParamInputs({
                             )}
                             {param.override && (
                                 <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600 border border-emerald-500/30">
-                                    覆盖
-                                </span>
+                                    {uiText("覆盖")}</span>
                             )}
                         </div>
                     );
@@ -423,7 +423,7 @@ export async function runLocalSaveBatch({
         const silent = options.silent === true;
         const baseUrl = getLocalSaveBaseUrl(node);
         if (!baseUrl) {
-            if (!silent) showToast('本地服务地址为空', 'error');
+            if (!silent) showToast(uiText("本地服务地址为空"), 'error');
             return;
         }
 
@@ -442,7 +442,7 @@ export async function runLocalSaveBatch({
         const dedupedItems = itemsWithKeys.filter(item => item?.url && item.scopedKey && !item.isDuplicate);
         const skippedCount = itemsWithKeys.filter(item => item?.url && item.scopedKey && item.isDuplicate).length;
         if (dedupedItems.length === 0) {
-            if (!silent) showToast('已保存过，未重复保存', 'success');
+            if (!silent) showToast(uiText("已保存过，未重复保存"), 'success');
             return;
         }
 
@@ -453,7 +453,7 @@ export async function runLocalSaveBatch({
                 const message = firstError?.message || String(firstError || '资源读取失败');
                 if (!silent) throw new Error(`资源读取失败: ${message}`);
             }
-            if (!silent) showToast('没有可保存的文件', 'warning');
+            if (!silent) showToast(uiText("没有可保存的文件"), 'warning');
             return;
         }
 

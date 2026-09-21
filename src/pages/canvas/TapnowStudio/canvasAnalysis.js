@@ -92,7 +92,7 @@ export function analysisEstimate(document, nodeId, operation, capabilities, mode
 }
 
 /** Persist the exact create/retry body before sending; ambiguous receipts never generate a new ID. */
-export async function submitAnalysis(session, request, recover = false) {
+async function performsubmitAnalysis(session, request, recover = false) {
   session.assertWritable()
   const key = 'analysis:submission'
   if (!recover && session.read(key)) throw new Error('请先找回上次分析提交')
@@ -103,14 +103,14 @@ export async function submitAnalysis(session, request, recover = false) {
   const send = async () => {
     try { return await CanvasAnalysis[pending.kind](pending.body) }
     catch (error) {
-      if (['INSUFFICIENT_CREDITS', 'CANVAS_QUOTE_EXPIRED', 'CANVAS_QUOTE_CHANGED', 'ANALYSIS_CONCURRENCY_LIMIT', 'ANALYSIS_RATE_LIMIT', 'MODEL_OPERATION_UNSUPPORTED', 'SOURCE_CONNECTION_CHANGED', 'FRAME_SELECTION_CHANGED'].includes(error.errorCode)) session.write(key, null)
+      if (error.submissionState === 'notAccepted') session.write(key, null)
       throw error
     }
   }
   let receipt
   if (recover) {
     try { receipt = await CanvasAnalysis.submission(pending.body.canvasId, pending.body.clientRequestId) }
-    catch (error) { if (error.errorCode !== 'CANVAS_ANALYSIS_SUBMISSION_NOT_FOUND') throw error; receipt = await send() }
+    catch (error) { if (error.submissionState !== 'notFound') throw error; receipt = await send() }
   } else receipt = await send()
   if (!receipt?.taskId || String(receipt.canvasId) !== String(pending.body.canvasId) || receipt.inputHash !== pending.inputHash || receipt.nodeId !== pending.estimate.nodeId || receipt.sourceNodeId !== pending.estimate.sourceNodeId || receipt.revisionNo !== pending.estimate.revisionNo || receipt.modelId !== pending.estimate.modelId || receipt.operation !== pending.estimate.operation) throw new Error('分析回执与原输入不一致，已保留提交记录')
   session.write('analysis:input:' + receipt.taskId, pending.estimate)
@@ -141,9 +141,14 @@ export function applyAnalysisResult(nodes, task) {
     if (!Array.isArray(result.segments) || typeof result.fullText !== 'string' || result.segments.some(segment => !Number.isFinite(segment.startSeconds) || !Number.isFinite(segment.endSeconds) || segment.startSeconds < 0 || segment.endSeconds < segment.startSeconds || typeof segment.text !== 'string')) throw new Error('转写结果不完整，无法应用')
     patch = { voiceoverResults: result.segments.map(segment => ({ ...segment, time: `${segment.startSeconds}–${segment.endSeconds}`, taskId: task.taskId })) }
   } else {
-    if (!Array.isArray(result.scenes) || !result.scenes.length || result.scenes.some(scene => !scene.sceneId || !Number.isFinite(scene.startSeconds) || !Number.isFinite(scene.endSeconds) || scene.startSeconds < 0 || scene.endSeconds < scene.startSeconds || typeof scene.prompts?.zh !== 'string' || typeof scene.prompts?.en !== 'string' || !Array.isArray(scene.keyframes) || scene.keyframes.some(frame => typeof frame.frameId !== 'string' || !frame.frameId.length || frame.assetId == null || !Number.isFinite(frame.timeSeconds) || frame.timeSeconds < 0))) throw new Error('场景结果不完整，无法应用')
+    if (!Array.isArray(result.scenes) || !result.scenes.length || result.scenes.some(scene => !scene.sceneId || !Number.isFinite(scene.startSeconds) || !Number.isFinite(scene.endSeconds) || scene.startSeconds < 0 || scene.endSeconds < scene.startSeconds || typeof scene.prompts?.zh !== 'string' || typeof scene.prompts?.en !== 'string' || !Array.isArray(scene.keyframes) || scene.keyframes.some(frame => typeof frame.frameId !== 'string' || !frame.frameId.length || !Number.isSafeInteger(Number(frame.assetId)) || Number(frame.assetId) <= 0 || !Number.isFinite(frame.timeSeconds) || frame.timeSeconds < 0))) throw new Error('场景结果不完整，无法应用')
     if (new Set(result.scenes.map(scene => scene.sceneId)).size !== result.scenes.length) throw new Error('场景标识重复，无法应用')
     patch = { analysisResults: result.scenes.map((scene, index) => ({ ...scene, taskId: task.taskId, scene_index: index + 1, time_range: `${scene.startSeconds}–${scene.endSeconds}`, global_tags: scene.tags, keyframes: scene.keyframes.map(frame => ({ ...frame, type: frame.role || 'current', time: frame.timeSeconds, jimeng_prompt: scene.prompts.zh, mj_prompt: scene.prompts.en })) })) }
   }
-  return nodes.map(node => node.id !== task.nodeId ? node : { ...node, settings: { ...node.settings, ...patch, analysisResultData: result, analysisProvenance: [...prior, { taskId: task.taskId, sceneIds: (result.scenes || []).map(scene => scene.sceneId), inputHash: task.inputHash, revisionNo: task.revisionNo }] } })
+  return nodes.map(node => node.id !== task.nodeId ? node : { ...node, settings: { ...node.settings, ...patch, analysisResultData: { ...result, operation: task.operation }, analysisProvenance: [...prior, { taskId: task.taskId, sceneIds: (result.scenes || []).map(scene => scene.sceneId), inputHash: task.inputHash, revisionNo: task.revisionNo }] } })
+}
+
+export function submitAnalysis(session, request, recover = false) {
+  const work = () => performsubmitAnalysis(session, request, recover)
+  return session.exclusive ? session.exclusive("analysis", work) : work()
 }

@@ -42,6 +42,7 @@ export interface CanvasWorkflowNode {
   taskFamily?: 'text' | 'analysis' | 'execution' | 'generation'; taskId?: CanvasId; error?: string
 }
 export interface CanvasWorkflow {
+  shouldPoll?: boolean
   workflowId: CanvasId; canvasId: CanvasId; revisionNo: number
   status: 'running' | 'waitingReview' | 'cancelling' | 'succeeded' | 'failed' | 'cancelled'
   nodes: CanvasWorkflowNode[]; submittedReservedCredits: number; actualCredits: number | null; error?: string; errorCode?: string; retryAfterMs?: number

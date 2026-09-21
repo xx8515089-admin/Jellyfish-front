@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import vm from 'node:vm'
+import { createUiTextFixture } from './ui-text-fixture.mjs'
+const ui = createUiTextFixture()
 import ts from 'typescript'
 
 function clickHandler(file, marker, globals) {
@@ -17,7 +19,7 @@ function clickHandler(file, marker, globals) {
   }
   visit(ast)
   assert.equal(matches.length, 1, `unique handler for ${marker}`)
-  return vm.runInNewContext(`(${matches[0].getText(ast)})`, { Set, Map, console, t: value => value, ...globals })
+  return vm.runInNewContext(`(${matches[0].getText(ast)})`, { ...ui, Set, Map, console, t: value => value, ...globals })
 }
 
 function deferred() {

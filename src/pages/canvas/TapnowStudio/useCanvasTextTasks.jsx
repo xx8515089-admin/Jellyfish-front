@@ -1,9 +1,12 @@
+import { uiText, useUiLanguage } from '../../../i18n/uiText'
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Button, Empty, Space, Tag } from 'antd'
-import { StudioCanvases, canvasRequestId } from '../../../services/studioCanvases'
+import { StudioCanvases, canvasPollDelay, canvasRequestId } from '../../../services/studioCanvases'
 import { applyTextResult, prepareTextSnapshot, textInputFingerprint, textModelId, textOperations } from './canvasTextTasks'
 
 export function useCanvasTextTasks({ session, enabled, unavailableReason, models, snapshotRef, setNodes, save, report, confirm, assertReady, onOpen }) {
+  useUiLanguage()
+
   const [tasks, setTasks] = useState([])
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
@@ -16,7 +19,7 @@ export function useCanvasTextTasks({ session, enabled, unavailableReason, models
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   const put = useCallback((task, insert = true) => {
     if (!task || !mounted.current) return
-    if (task.shouldPoll) active.current.set(String(task.taskId), task)
+    if (task.shouldPoll && task.status !== 6) active.current.set(String(task.taskId), task)
     else active.current.delete(String(task.taskId))
     setTasks(previous => insert ? [task, ...previous.filter(item => String(item.taskId) !== String(task.taskId))] : previous.map(item => String(item.taskId) === String(task.taskId) ? task : item))
   }, [])
@@ -26,7 +29,7 @@ export function useCanvasTextTasks({ session, enabled, unavailableReason, models
     const result = await StudioCanvases.textList(session.document.canvasId, page, filter)
     if (!mounted.current || id !== request.current) return
     setTasks(result.items); setTotal(result.total)
-    result.items.forEach(task => { if (task.shouldPoll) active.current.set(String(task.taskId), task); else active.current.delete(String(task.taskId)) })
+    result.items.forEach(task => { if (task.shouldPoll && task.status !== 6) active.current.set(String(task.taskId), task); else active.current.delete(String(task.taskId)) })
   }, [session, enabled, page, filter])
   useEffect(() => { void refresh().catch(report) }, [refresh, report])
   useEffect(() => {
@@ -34,12 +37,13 @@ export function useCanvasTextTasks({ session, enabled, unavailableReason, models
     let stopped = false, timer
     const poll = async () => {
       if (session.isDeleted()) return
+      let delay = canvasPollDelay(...active.current.values())
       for (const task of active.current.values()) {
         if (stopped) return
-        try { const updated = await StudioCanvases.textDetail(session.document.canvasId, task.taskId); if (!stopped) put(updated, false) }
-        catch (error) { if (!stopped) report(error); break }
+        try { const updated = await StudioCanvases.textDetail(session.document.canvasId, task.taskId); if (!stopped) { put(updated, false); delay = Math.max(delay, canvasPollDelay(updated)) } }
+        catch (error) { delay = Math.max(delay, canvasPollDelay(error)); if (!stopped) report(error); break }
       }
-      if (!stopped) timer = setTimeout(poll, 2500)
+      if (!stopped) timer = setTimeout(poll, delay)
     }
     timer = setTimeout(poll, 2500)
     return () => { stopped = true; clearTimeout(timer) }
@@ -55,7 +59,7 @@ export function useCanvasTextTasks({ session, enabled, unavailableReason, models
     if (retryTask && ['nodeId', 'revisionNo', 'operation', 'modelId', 'inputHash'].some(key => quote[key] !== retryTask[key])) throw new Error('重试报价与原任务不一致')
     if (!Number.isFinite(quote.reservedCredits) || quote.reservedCredits < 0 || !quote.quoteId || !quote.inputHash) throw new Error('文本报价不完整，请重新报价')
     if (!quote.sufficient && !quote.unlimited) throw new Error('积分不足，无法预留本次文本任务费用')
-    if (!await confirm(retryTask ? '重试原输入的文本任务' : '确认文本任务', <div><p>{textOperations[quote.operation]} · 已保存版本 v{quote.revisionNo}</p><p>本次预留积分：<strong>{quote.reservedCredits}</strong>；实际费用：待核算。</p><p>预留上限不代表实际费用封顶。报价有效期至 {quote.expiresAt}，过期或价格变化后需要重新报价。</p></div>)) return
+    if (!await confirm(uiText(retryTask ? '重试原输入的文本任务' : '确认文本任务'), <div><p>{uiText(textOperations[quote.operation] || '')} {uiText("· 已保存版本 v")}{quote.revisionNo}</p><p>{uiText("本次预留积分：")}<strong>{quote.reservedCredits}</strong>{uiText("；实际费用：待核算。")}</p><p>{uiText("预留上限不代表实际费用封顶。报价有效期至") + " "}{quote.expiresAt}{uiText("，过期或价格变化后需要重新报价。")}</p></div>)) return
     const body = { canvasId: quote.canvasId, quoteId: quote.quoteId, clientRequestId: canvasRequestId('text'), maxReservedCredits: quote.reservedCredits, ...(retryTask ? { taskId: retryTask.taskId } : {}) }
     const task = await session.submitText(body, quote, retryTask ? 'retry' : 'create')
     put(task); onOpen()
@@ -99,32 +103,32 @@ export function useCanvasTextTasks({ session, enabled, unavailableReason, models
     snapshotRef.current = next; setNodes(next.nodes)
     await save()
   })
-  const labels = { 1: '排队', 2: '执行中', 3: '结果可用', 4: '失败', 5: '调用前取消', 6: '待核查' }
-  const panel = !enabled ? <Alert type="info" message={unavailableReason || "服务端尚未开放文本任务"} /> : <div className="canvas-history-panel">
-    <Space wrap><Button disabled={busy} onClick={() => run(refresh)}>刷新文本任务</Button>{session?.pendingText && <Button disabled={busy} onClick={() => run(async () => put(await session.recoverText()))}>找回文本提交</Button>}<span>共 {total} 个任务</span></Space>
-    <Space wrap style={{ margin: '12px 0' }}><input aria-label="文本任务节点 ID" placeholder="节点 ID" value={filter.nodeId || ''} onChange={e => { setFilter({ ...filter, nodeId: e.target.value || undefined }); setPage(1) }} /><select aria-label="文本任务状态" value={filter.status || ''} onChange={e => { setFilter({ ...filter, status: Number(e.target.value) || undefined }); setPage(1) }}><option value="">全部状态</option>{Object.entries(labels).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></Space>
+  const labels = { get 1() { return uiText("排队") }, get 2() { return uiText("执行中") }, get 3() { return uiText("结果可用") }, 4: '失败', get 5() { return uiText("调用前取消") }, get 6() { return uiText("待核查") } }
+  const panel = !enabled ? <Alert type="info" message={unavailableReason || uiText("服务端尚未开放文本任务")} /> : <div className="canvas-history-panel">
+    <Space wrap><Button disabled={busy} onClick={() => run(refresh)}>{uiText("刷新文本任务")}</Button>{session?.pendingText && <Button disabled={busy} onClick={() => run(async () => put(await session.recoverText()))}>{uiText("找回文本提交")}</Button>}<span>{uiText("共") + " "}{total} {uiText("个任务")}</span></Space>
+    <Space wrap style={{ margin: '12px 0' }}><input aria-label={uiText("文本任务节点 ID")} placeholder={uiText("节点 ID")} value={filter.nodeId || ''} onChange={e => { setFilter({ ...filter, nodeId: e.target.value || undefined }); setPage(1) }} /><select aria-label={uiText("文本任务状态")} value={filter.status || ''} onChange={e => { setFilter({ ...filter, status: Number(e.target.value) || undefined }); setPage(1) }}><option value="">{uiText("全部状态")}</option>{Object.entries(labels).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></Space>
     {tasks.map(task => <section className="canvas-history-card" key={task.taskId}>
-      <strong>{textOperations[task.operation]}</strong> <Tag>{labels[task.status]}</Tag><p>{task.nodeId} · v{task.revisionNo} · 任务 {task.taskId}</p>
-      <p>预留 {task.reservedCredits ?? '未知'} 积分 · 实际 {task.actualCredits ?? '待核算'}{task.billingState === 'pendingReview' ? ' · 费用待核查' : ''}</p>
-      {task.usage && <p>输入 {task.usage.inputTokens ?? '未知'} / 输出 {task.usage.outputTokens ?? '未知'} tokens · 请求 {task.usage.requestCount ?? '未知'} 次</p>}
+      <strong>{uiText(textOperations[task.operation] || '')}</strong> <Tag>{labels[task.status]}</Tag><p>{task.nodeId} · v{task.revisionNo} {uiText("· 任务") + " "}{task.taskId}</p>
+      <p>{uiText("预留") + " "}{task.reservedCredits ?? uiText("未知")} {uiText("积分 · 实际") + " "}{task.actualCredits ?? uiText("待核算")}{task.billingState === 'pendingReview' ? uiText(" · 费用待核查") : ''}</p>
+      {task.usage && <p>{uiText("输入") + " "}{task.usage.inputTokens ?? uiText("未知")} {uiText("/ 输出") + " "}{task.usage.outputTokens ?? uiText("未知")} {uiText("tokens · 请求") + " "}{task.usage.requestCount ?? uiText("未知")} {uiText("次")}</p>}
       {task.error && <Alert type="warning" message={task.error} />}
-      {task.status === 6 && <p>已停止自动重试，请等待核查。</p>}
-      {task.result && <details><summary>预览结构化结果</summary><pre style={{ whiteSpace: 'pre-wrap', maxHeight: 280, overflow: 'auto' }}>{JSON.stringify(task.result, null, 2)}</pre></details>}
+      {task.status === 6 && <p>{uiText("已停止自动重试，请等待核查。")}</p>}
+      {task.result && <details><summary>{uiText("预览结构化结果")}</summary><pre style={{ whiteSpace: 'pre-wrap', maxHeight: 280, overflow: 'auto' }}>{JSON.stringify(task.result, null, 2)}</pre></details>}
       <Space wrap>
-        {task.status === 3 && task.result && <Button disabled={busy} onClick={() => apply(task)}>应用并保存</Button>}
-        {task.actions?.cancel && <Button disabled={busy || task.cancelRequested} onClick={() => run(async () => put(await StudioCanvases.textCancel(session.document.canvasId, task.taskId)))}>取消</Button>}
-        {task.actions?.retrySettlement && <Button disabled={busy} onClick={() => run(async () => put(await StudioCanvases.textRetrySettlement(session.document.canvasId, task.taskId)))}>重试结算</Button>}
+        {task.status === 3 && task.result && <Button disabled={busy} onClick={() => apply(task)}>{uiText("应用并保存")}</Button>}
+        {task.actions?.cancel && <Button disabled={busy || task.cancelRequested} onClick={() => run(async () => put(await StudioCanvases.textCancel(session.document.canvasId, task.taskId)))}>{uiText("取消")}</Button>}
+        {task.actions?.retrySettlement && <Button disabled={busy} onClick={() => run(async () => put(await StudioCanvases.textRetrySettlement(session.document.canvasId, task.taskId)))}>{uiText("重试结算")}</Button>}
         {task.actions?.retry && <Button disabled={busy} onClick={() => run(async () => {
           assertReady()
           if (session.pendingText) throw new Error('请先找回上次文本提交')
           const quote = await StudioCanvases.textEstimate({ canvasId: task.canvasId, revisionNo: task.revisionNo, nodeId: task.nodeId, operation: task.operation, modelId: task.modelId })
           if (quote.inputHash !== task.inputHash) throw new Error('重试报价输入与原任务不同，已停止提交')
           await acceptQuote(quote, task)
-        })}>重新报价重试</Button>}
+        })}>{uiText("重新报价重试")}</Button>}
       </Space>
     </section>)}
-    {!tasks.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无文本任务" />}
-    <Space><Button disabled={busy || page === 1} onClick={() => setPage(page - 1)}>上一页</Button><span>第 {page} 页</span><Button disabled={busy || page * 20 >= total} onClick={() => setPage(page + 1)}>下一页</Button></Space>
+    {!tasks.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={uiText("暂无文本任务")} />}
+    <Space><Button disabled={busy || page === 1} onClick={() => setPage(page - 1)}>{uiText("上一页")}</Button><span>{uiText("第") + " "}{page} {uiText("页")}</span><Button disabled={busy || page * 20 >= total} onClick={() => setPage(page + 1)}>{uiText("下一页")}</Button></Space>
   </div>
   return { execute, panel }
 }

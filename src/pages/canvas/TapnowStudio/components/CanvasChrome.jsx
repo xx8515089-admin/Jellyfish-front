@@ -1,5 +1,7 @@
-import React from 'react';
+import { uiText, useUiLanguage } from '../../../../i18n/uiText'
+import React, { lazy, Suspense, useState } from 'react';
 import {
+    BookOpen,
     Download,
     Layers,
     Moon,
@@ -12,6 +14,8 @@ import {
     Zap,
 } from 'lucide-react';
 import { Button, t } from '../freeCanvasShared';
+
+const CanvasUserManual = lazy(() => import('./CanvasUserManual'));
 
 function getPanelThemeClass(theme) {
     if (theme === 'dark') return 'bg-[#09090b] border-zinc-800';
@@ -35,7 +39,7 @@ function ToolbarButton({ children, className = '', ...props }) {
     return (
         <button
             {...props}
-            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${className}`}
+            className={`flex shrink-0 whitespace-nowrap items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${className}`}
         >
             {children}
         </button>
@@ -63,11 +67,14 @@ export function CanvasTopBar({
     redoDisabled,
     onOpenSettings,
 }) {
+  useUiLanguage()
+
     const toolbarButtonClass = getToolbarButtonClass(theme);
+    const [manualOpen, setManualOpen] = useState(false);
 
     return (
         <div
-            className={`h-12 flex items-center justify-between px-4 z-50 shrink-0 border-b transition-colors duration-300 ${getPanelThemeClass(theme)}`}
+            className={`min-h-12 flex flex-wrap items-center justify-between gap-2 px-4 py-2 z-50 shrink-0 border-b transition-colors duration-300 ${getPanelThemeClass(theme)}`}
         >
             <div className="flex items-center gap-3">
                 <div className="w-7 h-7 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-md flex items-center justify-center">
@@ -124,7 +131,7 @@ export function CanvasTopBar({
                 </button>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
                 <ToolbarButton
                     onClick={() => {
                         const modes = ['off', 'normal', 'ultra'];
@@ -141,10 +148,10 @@ export function CanvasTopBar({
                     }
                     title={
                         globalPerformanceMode === 'ultra'
-                            ? '极致性能模式（点击关闭）'
+                            ? uiText("极致性能模式（点击关闭）")
                             : globalPerformanceMode === 'normal'
-                                ? '普通性能模式（点击切换极致）'
-                                : '性能模式已关闭（点击开启）'
+                                ? uiText("普通性能模式（点击切换极致）")
+                                : uiText("性能模式已关闭（点击开启）")
                     }
                 >
                     <Zap size={14} className={globalPerformanceMode !== 'off' ? 'fill-current' : ''} />
@@ -218,6 +225,15 @@ export function CanvasTopBar({
                 </Button>
                 <Button
                     variant="secondary"
+                    icon={BookOpen}
+                    onClick={() => setManualOpen(true)}
+                    title={language === 'en' ? 'Preview user manual' : uiText("预览用户手册")}
+                    className="shrink-0 whitespace-nowrap"
+                >
+                    {language === 'en' ? 'User manual' : uiText("用户手册")}
+                </Button>
+                <Button
+                    variant="secondary"
                     icon={Settings}
                     onClick={onOpenSettings}
                     className={theme === 'solarized' ? '!bg-[#616161] !border-[#525252] !text-[#fdf6e3] hover:!bg-[#555555]' : ''}
@@ -225,6 +241,9 @@ export function CanvasTopBar({
                     {t('API 设置')}
                 </Button>
             </div>
+            {manualOpen && <Suspense fallback={null}>
+                <CanvasUserManual theme={theme} language={language} onClose={() => setManualOpen(false)} />
+            </Suspense>}
         </div>
     );
 }

@@ -1,7 +1,10 @@
+import { analysisStoryboardShots } from '../src/pages/canvas/TapnowStudio/canvasAnalysisStoryboard.js'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import vm from 'node:vm'
+import { createUiTextFixture } from './ui-text-fixture.mjs'
+const ui = createUiTextFixture()
 import ts from 'typescript'
 import { actualBillingQuote, canvasBillingError, zeroBalanceMessage, billingLabels } from '../src/pages/canvas/TapnowStudio/canvasActualBilling.js'
 import * as textTasks from '../src/pages/canvas/TapnowStudio/canvasTextTasks.js'
@@ -14,7 +17,7 @@ function load(file, imports) {
   return exports
 }
 const plain = value => JSON.parse(JSON.stringify(value))
-const fail = errorCode => Object.assign(new Error(errorCode), { errorCode })
+const fail = errorCode => Object.assign(new Error(errorCode), { errorCode, submissionState: errorCode.endsWith("SUBMISSION_NOT_FOUND") ? "notFound" : errorCode === "INSUFFICIENT_CREDITS" ? "notAccepted" : "unknown" })
 function harness(api = {}, storage = new Map()) {
   let serial = 0
   const service = { canvasRequestId: prefix => `${prefix}-${++serial}` }
@@ -204,7 +207,7 @@ function uiHandler(name, globals) {
   walk(source)
   assert.ok(expression, name)
   const code = ts.transpileModule(`var invoke = ${expression}`, { fileName: file, compilerOptions: { target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.React } }).outputText
-  const context = vm.createContext({ useCallback: fn => fn, session: {}, page: 1, ...globals })
+  const context = vm.createContext({ ...ui, useCallback: fn => fn, session: {}, page: 1, ...globals })
   vm.runInContext(code, context)
   return context.invoke
 }
@@ -279,4 +282,64 @@ test('generated transport keeps analysis task IDs, shared authentication configu
   assert.equal(requests[1].url, '/api/v1/studio/canvases/analysis/retrySettlement')
   assert.deepEqual(requests[1].body, { canvasId: 9, taskId: 81 })
   assert.equal(service.analysisSyncResult, undefined)
+})
+
+function storyboardApplication(savedResult = false) {
+  const h = application(), copiedTask = plain(task), assets = []
+  h.context.analysisStoryboardShots = analysisStoryboardShots
+  h.context.canvasRequestId = () => 'new-board'
+  h.context.session.output = async asset => { assets.push(asset); return 'blob:' + asset.assetId }
+  if (savedResult) {
+    h.snapshotRef.current.nodes[0].settings.analysisResultData = copiedTask.result
+    h.context.detail = () => { throw new Error('copied task must not be queried') }
+    copiedTask.savedResult = true
+  }
+  return { ...h, assets, task: copiedTask, import: (target = null, language = 'zh') => uiHandler('importStoryboard', h.context)(copiedTask, target, language) }
+}
+
+test('cloud analysis can create a storyboard with explicit language, duration and stable frame provenance', async () => {
+  const h = storyboardApplication(); await h.import(null, 'en')
+  const shot = h.snapshotRef.current.nodes.at(-1).settings.shots[0], scene = task.result.scenes[0]
+  assert.equal(shot.prompt, scene.prompts.en); assert.equal(shot.prompts.zh, scene.prompts.zh)
+  assert.equal(shot.duration, String(scene.endSeconds - scene.startSeconds) + 's')
+  assert.equal(shot.analysisSource.sceneId, scene.sceneId); assert.equal(shot.analysisSource.taskId, task.taskId)
+  assert.equal(shot.analysisSource.keyframes[0].frameId, scene.keyframes[0].frameId)
+  assert.equal(shot.image_url, 'blob:' + scene.keyframes[0].assetId)
+  assert.equal('assetId' in shot.analysisSource.keyframes[0], false)
+  assert.deepEqual(h.calls, ['confirm', 'undo', 'save'])
+})
+
+test('copied saved analysis imports using current canvas assets without querying the original task', async () => {
+  const h = storyboardApplication(true); await h.import()
+  assert.ok(h.assets.length); assert.ok(h.assets.every(asset => asset.canvasId === h.context.session.document.canvasId))
+})
+
+test('import replaces only the selected storyboard and preserves its model settings', async () => {
+  const h = storyboardApplication(); h.snapshotRef.current.nodes.push({ id: 'board', type: 'storyboard-node', settings: { textModelId: 42, shots: [{ id: 'old' }] } })
+  await h.import('board')
+  assert.equal(h.snapshotRef.current.nodes.length, 3); assert.equal(h.snapshotRef.current.nodes[2].settings.textModelId, 42)
+  assert.notEqual(h.snapshotRef.current.nodes[2].settings.shots[0].id, 'old')
+})
+
+test('cancelling import or editing during keyframe reads never overwrites the canvas', async () => {
+  const cancelled = storyboardApplication(); cancelled.context.confirm = async () => false
+  await cancelled.import(); assert.equal(cancelled.assets.length, 0); assert.equal(cancelled.snapshotRef.current.nodes.length, 2)
+  const edited = storyboardApplication(); edited.context.session.output = async () => { edited.snapshotRef.current.projectName = 'new edit'; return 'blob:frame' }
+  await assert.rejects(edited.import(), /画布已变化/); assert.equal(edited.snapshotRef.current.nodes.length, 2)
+  assert.equal(edited.calls.includes('save'), false)
+})
+
+test('analysis conversion rejects malformed assets and missing selected language without falling back', () => {
+  for (const assetId of [null, 0, -1, 1.5, 'bad']) {
+    const broken = plain(task); broken.result.scenes[0].keyframes[0].assetId = assetId
+    assert.throws(() => analysisStoryboardShots(broken, 'zh', new Map([[String(assetId), 'blob:frame']])) )
+  }
+  const broken = plain(task); broken.result.scenes[0].prompts.en = ''
+  assert.throws(() => analysisStoryboardShots(broken, 'en', new Map()), /提示词/)
+})
+
+test('applied results retain their operation even if the server omitted it and the node selection later changes', () => {
+  const h = harness(), current = plain(task); delete current.result.operation
+  const nodes = h.applyAnalysisResult(document().project.nodes, current)
+  assert.equal(nodes[0].settings.analysisResultData.operation, current.operation)
 })

@@ -1,9 +1,12 @@
+import { uiText, useUiLanguage } from '../../../i18n/uiText'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Button, ConfigProvider, Input, Modal, Select, Spin, theme as antdTheme } from 'antd'
 import './canvasLibraryPublish.css'
 import { canvasRequestId } from '../../../services/studioCanvases'
 
 export function useCanvasLibraryPublish({ session, enabled, snapshotRef, save, report, assertReady, theme = 'dark' }) {
+  useUiLanguage()
+
   const [open, setOpen] = useState(false)
   const [flow, setFlow] = useState(() => session?.read('libraryFlow') || null)
   const [review, setReview] = useState(() => session?.pendingLibraryReview?.receipt || null)
@@ -74,65 +77,65 @@ export function useCanvasLibraryPublish({ session, enabled, snapshotRef, save, r
     token: { colorBgElevated: palette.bg, colorBgContainer: palette.input, colorBorder: palette.border, colorText: palette.text, colorTextSecondary: palette.muted, colorTextPlaceholder: palette.muted, colorPrimary: palette.accent, borderRadius: 8, controlHeight: 36, fontSize: 13 },
     components: { Select: { optionSelectedBg: palette.panel, optionActiveBg: palette.panel } },
   }}>
-    <Modal open={open} title={<div className="library-publish__heading"><span>图片入库</span><p>将画布图片保存为可复用的角色、场景或道具。</p></div>}
+    <Modal open={open} title={<div className="library-publish__heading"><span>{uiText("图片入库")}</span><p>{uiText("将画布图片保存为可复用的角色、场景或道具。")}</p></div>}
       rootClassName={`library-publish-modal library-publish-modal--${theme}`} centered
       onCancel={busy ? undefined : () => setOpen(false)} width={920} destroyOnClose
       footer={<div className="library-publish__footer">
-        <p>{published ? '已保存到素材库，可在后续创作中复用。' : review?.canPublish ? '图片已通过初筛，填写名称后即可入库。' : '初筛可能产生识图费用，按平台规则计费。'}</p>
+        <p>{published ? uiText("已保存到素材库，可在后续创作中复用。") : review?.canPublish ? uiText("图片已通过初筛，填写名称后即可入库。") : uiText("初筛可能产生识图费用，按平台规则计费。")}</p>
         <div className="library-publish__actions">
-          <Button disabled={busy} onClick={() => setOpen(false)}>{published ? '完成' : '取消'}</Button>
+          <Button disabled={busy} onClick={() => setOpen(false)}>{published ? uiText("完成") : uiText("取消")}</Button>
           {flow && <>
         <Button loading={busy} disabled={!selected || !!session.pendingLibraryPublish} onClick={() => run(async () => {
           const receipt = await session.reviewLibrary(selected.assetId)
           setReview(receipt)
-        })}>{session?.pendingLibraryReview ? '查询 / 找回初筛' : '提交图片初筛'}</Button>
-        {review && Number(review.status) > 1 && !review.canPublish && <Button disabled={busy || !!session.pendingLibraryPublish} onClick={() => run(async () => setReview(await session.reviewLibrary(selected.assetId, true)))}>重新初筛</Button>}
-        {review && Number(review.status) > 1 && !session.pendingLibraryPublish && <Button disabled={busy} onClick={() => { session.write('libraryReview', null); session.pendingLibraryReview = null; setReview(null); change({ selected: '' }); setPreview('') }}>更换图片</Button>}
+        })}>{session?.pendingLibraryReview ? uiText("查询 / 找回初筛") : uiText("提交图片初筛")}</Button>
+        {review && Number(review.status) > 1 && !review.canPublish && <Button disabled={busy || !!session.pendingLibraryPublish} onClick={() => run(async () => setReview(await session.reviewLibrary(selected.assetId, true)))}>{uiText("重新初筛")}</Button>}
+        {review && Number(review.status) > 1 && !session.pendingLibraryPublish && <Button disabled={busy} onClick={() => { session.write('libraryReview', null); session.pendingLibraryReview = null; setReview(null); change({ selected: '' }); setPreview('') }}>{uiText("更换图片")}</Button>}
         {!session?.pendingLibraryPublish && <Button type="primary" disabled={busy || !selected || !review?.canPublish || !flow.name.trim()} onClick={() => run(async () => {
           const body = { canvasId: session.document.canvasId, revisionNo: flow.revisionNo, nodeId: selected.nodeId, canvasAssetId: selected.assetId, reviewId: review.reviewId, assetType: flow.assetType, name: flow.name.trim(), description: flow.description, prompt: flow.prompt, aspectRatio: flow.aspectRatio, quality: flow.quality, resolution: flow.resolution, clientRequestId: canvasRequestId('publish') }
           complete(await session.publishLibrary(body))
-        })}>确认入库</Button>}
+        })}>{uiText("确认入库")}</Button>}
 
           </>}
-    {session?.pendingLibraryPublish && <Button disabled={busy} onClick={() => run(async () => complete(await session.recoverLibraryPublish()))}>找回入库提交</Button>}
+    {session?.pendingLibraryPublish && <Button disabled={busy} onClick={() => run(async () => complete(await session.recoverLibraryPublish()))}>{uiText("找回入库提交")}</Button>}
         </div>
       </div>}>
-      <ol className="library-publish__steps" aria-label="图片入库步骤">
+      <ol className="library-publish__steps" aria-label={uiText("图片入库步骤")}>
         {['选择图片', '图片初筛', '保存入库'].map((label, index) => {
           const current = published ? 3 : review?.canPublish ? 2 : selected ? 1 : 0
           return <li key={label} className={index < current ? 'is-complete' : index === current ? 'is-current' : ''} aria-current={index === current ? 'step' : undefined}><span>{index < current ? '✓' : index + 1}</span>{label}</li>
         })}
       </ol>
       {error && <Alert className="library-publish__notice" showIcon type="error" message={error} />}
-      {published && <Alert className="library-publish__notice" showIcon type="success" message="图片已入库" description={`可在素材库中查看并复用（条目 ${published.libraryItemId}）。`} />}
+      {published && <Alert className="library-publish__notice" showIcon type="success" message={uiText("图片已入库")} description={uiText("可在素材库中查看并复用（条目 {0}）。", published.libraryItemId)} />}
       {flow && <div className="library-publish__layout">
-        <section className="library-publish__source" aria-label="入库图片预览">
-          <div className="library-publish__section-heading"><h3>入库图片</h3><span>使用已保存的画布图片</span></div>
-          <Select aria-label="入库图片" className="library-publish__select" disabled={busy || !!session.pendingLibraryReview || !!session.pendingLibraryPublish} value={flow.selected || undefined} placeholder="选择一张图片"
+        <section className="library-publish__source" aria-label={uiText("入库图片预览")}>
+          <div className="library-publish__section-heading"><h3>{uiText("入库图片")}</h3><span>{uiText("使用已保存的画布图片")}</span></div>
+          <Select aria-label={uiText("入库图片")} className="library-publish__select" disabled={busy || !!session.pendingLibraryReview || !!session.pendingLibraryPublish} value={flow.selected || undefined} placeholder={uiText("选择一张图片")}
             options={flow.candidates.map(item => ({ value: `${item.nodeId}:${item.fieldPath}`, label: imageLabel(item) }))}
             onChange={value => { change({ selected: value }); setReview(null); setPreview('') }} />
           <div className="library-publish__preview">
-            {previewLoading ? <div className="library-publish__placeholder"><Spin /><p>正在加载图片…</p></div> : previewError ? <div className="library-publish__placeholder" role="alert"><p>{previewError}</p><Button size="small" onClick={() => { previewCache.delete(selected?.assetId); setPreviewRetry(value => value + 1) }}>重新加载</Button></div> : preview ? <img src={preview} alt="待入库图片" onError={() => setPreviewError('图片无法显示，请重新加载')} /> : <div className="library-publish__placeholder"><span aria-hidden="true">▧</span><strong>{selected ? '图片已选择' : '选择入库图片'}</strong><p>{selected ? '即将显示图片预览' : '选中图片后自动预览'}</p></div>}
+            {previewLoading ? <div className="library-publish__placeholder"><Spin /><p>{uiText("正在加载图片…")}</p></div> : previewError ? <div className="library-publish__placeholder" role="alert"><p>{previewError}</p><Button size="small" onClick={() => { previewCache.delete(selected?.assetId); setPreviewRetry(value => value + 1) }}>{uiText("重新加载")}</Button></div> : preview ? <img src={preview} alt={uiText("待入库图片")} onError={() => setPreviewError('图片无法显示，请重新加载')} /> : <div className="library-publish__placeholder"><span aria-hidden="true">▧</span><strong>{selected ? uiText("图片已选择") : uiText("选择入库图片")}</strong><p>{selected ? uiText("即将显示图片预览") : uiText("选中图片后自动预览")}</p></div>}
           </div>
-          <div className="library-publish__preview-caption"><span>{selected ? imageLabel(selected) : '支持角色、场景和道具图片'}</span></div>
-      {review && <Alert type={review.canPublish ? 'success' : 'warning'} message={review.canPublish ? '初筛通过，可入库' : '尚未达到入库条件'} description={review.error || review.message || `审核状态 ${review.status} · 风险等级 ${review.riskLevel ?? '待确认'}`} />}
+          <div className="library-publish__preview-caption"><span>{selected ? imageLabel(selected) : uiText("支持角色、场景和道具图片")}</span></div>
+      {review && <Alert type={review.canPublish ? 'success' : 'warning'} message={review.canPublish ? uiText("初筛通过，可入库") : uiText("尚未达到入库条件")} description={review.error || review.message || uiText("审核状态 {0} · 风险等级 {1}", review.status, review.riskLevel ?? uiText("待确认"))} />}
         </section>
-        <section className="library-publish__form" aria-label="入库信息">
-          <div className="library-publish__section-heading"><h3>素材信息</h3><span>方便后续查找与复用</span></div>
+        <section className="library-publish__form" aria-label={uiText("入库信息")}>
+          <div className="library-publish__section-heading"><h3>{uiText("素材信息")}</h3><span>{uiText("方便后续查找与复用")}</span></div>
           <div className="library-publish__identity">
-            <label className="library-publish__field">素材类型<Select aria-label="入库类型" value={flow.assetType} disabled={busy || !!session.pendingLibraryPublish} options={[{ value: 1, label: '角色' }, { value: 2, label: '场景' }, { value: 3, label: '道具' }]} onChange={assetType => change({ assetType })} /></label>
-            <label className="library-publish__field" htmlFor="library-publish-name"><span>素材名称 <em>*</em></span><Input id="library-publish-name" aria-required="true" placeholder="例如：雨夜巷道" value={flow.name} disabled={busy || !!session.pendingLibraryPublish} onChange={e => change({ name: e.target.value })} /></label>
+            <label className="library-publish__field">{uiText("素材类型")}<Select aria-label={uiText("入库类型")} value={flow.assetType} disabled={busy || !!session.pendingLibraryPublish} options={[{ value: 1, label: uiText("角色") }, { value: 2, label: uiText("场景") }, { value: 3, label: uiText("道具") }]} onChange={assetType => change({ assetType })} /></label>
+            <label className="library-publish__field" htmlFor="library-publish-name"><span>{uiText("素材名称") + " "}<em>*</em></span><Input id="library-publish-name" aria-required="true" placeholder={uiText("例如：雨夜巷道")} value={flow.name} disabled={busy || !!session.pendingLibraryPublish} onChange={e => change({ name: e.target.value })} /></label>
           </div>
-          <label className="library-publish__field" htmlFor="library-publish-description">描述<Input.TextArea id="library-publish-description" placeholder="描述主体、场景或用途，便于识别素材" autoSize={{ minRows: 2, maxRows: 4 }} value={flow.description} disabled={busy || !!session.pendingLibraryPublish} onChange={e => change({ description: e.target.value })} /></label>
-          <label className="library-publish__field" htmlFor="library-publish-prompt">复用提示词<Input.TextArea id="library-publish-prompt" placeholder="保留构图、光线、风格等生成要点" autoSize={{ minRows: 3, maxRows: 6 }} value={flow.prompt} disabled={busy || !!session.pendingLibraryPublish} onChange={e => change({ prompt: e.target.value })} /></label>
+          <label className="library-publish__field" htmlFor="library-publish-description">{uiText("描述")}<Input.TextArea id="library-publish-description" placeholder={uiText("描述主体、场景或用途，便于识别素材")} autoSize={{ minRows: 2, maxRows: 4 }} value={flow.description} disabled={busy || !!session.pendingLibraryPublish} onChange={e => change({ description: e.target.value })} /></label>
+          <label className="library-publish__field" htmlFor="library-publish-prompt">{uiText("复用提示词")}<Input.TextArea id="library-publish-prompt" placeholder={uiText("保留构图、光线、风格等生成要点")} autoSize={{ minRows: 3, maxRows: 6 }} value={flow.prompt} disabled={busy || !!session.pendingLibraryPublish} onChange={e => change({ prompt: e.target.value })} /></label>
           <div className="library-publish__defaults">
-            <div className="library-publish__section-heading"><h3>复用设置</h3><span>用于后续生成</span></div>
+            <div className="library-publish__section-heading"><h3>{uiText("复用设置")}</h3><span>{uiText("用于后续生成")}</span></div>
             <div className="library-publish__settings">
-              <label className="library-publish__field">画幅<Select aria-label="复用画幅" value={flow.aspectRatio} disabled={busy || !!session.pendingLibraryPublish} options={['9:16', '16:9', '4:3', '3:4', '1:1', '21:9'].map(value => ({ value, label: value }))} onChange={aspectRatio => change({ aspectRatio })} /></label>
-              <label className="library-publish__field">质量<Select aria-label="复用质量" value={flow.quality} disabled={busy || !!session.pendingLibraryPublish} options={[{ value: 1, label: '标准质量' }, { value: 2, label: '高质量' }]} onChange={quality => change({ quality })} /></label>
-              <label className="library-publish__field">分辨率<Select aria-label="复用分辨率" value={flow.resolution} disabled={busy || !!session.pendingLibraryPublish} options={[1, 2, 4].map(value => ({ value, label: `${value}K` }))} onChange={resolution => change({ resolution })} /></label>
+              <label className="library-publish__field">{uiText("画幅")}<Select aria-label={uiText("复用画幅")} value={flow.aspectRatio} disabled={busy || !!session.pendingLibraryPublish} options={['9:16', '16:9', '4:3', '3:4', '1:1', '21:9'].map(value => ({ value, label: value }))} onChange={aspectRatio => change({ aspectRatio })} /></label>
+              <label className="library-publish__field">{uiText("质量")}<Select aria-label={uiText("复用质量")} value={flow.quality} disabled={busy || !!session.pendingLibraryPublish} options={[{ value: 1, label: uiText("标准质量") }, { value: 2, label: uiText("高质量") }]} onChange={quality => change({ quality })} /></label>
+              <label className="library-publish__field">{uiText("分辨率")}<Select aria-label={uiText("复用分辨率")} value={flow.resolution} disabled={busy || !!session.pendingLibraryPublish} options={[1, 2, 4].map(value => ({ value, label: `${value}K` }))} onChange={resolution => change({ resolution })} /></label>
             </div>
-            <p>模型和视觉风格可在后续生成时选择。</p>
+            <p>{uiText("模型和视觉风格可在后续生成时选择。")}</p>
           </div>
         </section>
       </div>}

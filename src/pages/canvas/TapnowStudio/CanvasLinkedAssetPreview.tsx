@@ -1,3 +1,4 @@
+import { uiText, useUiLanguage } from '../../../i18n/uiText'
 import { Alert, Modal, Spin } from 'antd'
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -5,6 +6,8 @@ import { StudioCanvases } from '../../../services/studioCanvases'
 
 // This is an authenticated app link, never a public or token-bearing asset URL.
 export default function CanvasLinkedAssetPreview({ canvasId }: { canvasId: string }) {
+  useUiLanguage()
+
   const [params, setParams] = useSearchParams()
   const assetId = params.get('previewAsset') || ''
   const hint = params.get('previewMedia') || ''
@@ -34,12 +37,12 @@ export default function CanvasLinkedAssetPreview({ canvasId }: { canvasId: strin
     next.delete('previewAsset'); next.delete('previewMedia')
     return next
   }, { replace: true })
-  return <Modal title="素材预览" open={!!assetId} onCancel={close} footer={null} width={800} destroyOnClose>
+  return <Modal title={uiText("素材预览")} open={!!assetId} onCancel={close} footer={null} width={800} destroyOnClose>
     {loading && <Spin />}
-    {error && <Alert type="error" showIcon message={error} description="请使用有权限的账号打开；素材也可能已被移除。" />}
+    {error && <Alert type="error" showIcon message={error} description={uiText("请使用有权限的账号打开；素材也可能已被移除。")} />}
     {media && (media.type === 'video'
       ? <video src={media.url} controls playsInline style={{ width: '100%', maxHeight: '70vh' }} />
       : media.type === 'audio' ? <audio src={media.url} controls />
-        : <img src={media.url} alt="预览素材" style={{ display: 'block', maxWidth: '100%', maxHeight: '70vh', margin: 'auto' }} />)}
+        : <img src={media.url} alt={uiText("预览素材")} style={{ display: 'block', maxWidth: '100%', maxHeight: '70vh', margin: 'auto' }} />)}
   </Modal>
 }

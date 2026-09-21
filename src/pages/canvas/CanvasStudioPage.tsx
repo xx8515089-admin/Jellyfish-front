@@ -1,3 +1,5 @@
+import { uiText, useUiLanguage } from '../../i18n/uiText'
+import { canvasUserScope } from './canvasCache'
 import CanvasLinkedAssetPreview from './TapnowStudio/CanvasLinkedAssetPreview'
 import { Button, Spin } from 'antd'
 import { AlertCircle, ArrowLeft } from 'lucide-react'
@@ -16,6 +18,8 @@ import './CanvasStudioPage.css'
 const TapnowApp = lazy(() => import('./TapnowStudio/App.jsx'))
 
 const CanvasStudioContent: React.FC = () => {
+  useUiLanguage()
+
   const l = useBilingualText()
   const navigate = useNavigate()
   const { canvasId = '' } = useParams()
@@ -55,7 +59,7 @@ const CanvasStudioContent: React.FC = () => {
         }
       }
       if (active) { setCapabilities(ready); setTextModels(texts) }
-      const [detail, catalog] = await Promise.all([StudioCanvases.detail(canvasId), StudioCanvases.models()])
+      const [detail, catalog] = await Promise.all([StudioCanvases.detail(canvasId), StudioCanvases.models().catch(() => [])])
       if (String(detail.canvasId) !== canvasId) throw new Error('返回的画布与当前请求不一致，已停止载入')
       const hydrated = await hydrateCanvasDocument(detail, urls)
       if (!active) { urls.forEach(URL.revokeObjectURL); return }
@@ -86,7 +90,7 @@ const CanvasStudioContent: React.FC = () => {
     return (
       <main className="canvas-studio-error">
         <AlertCircle className="canvas-studio-error__icon" size={32} strokeWidth={1.7} />
-        <h1>{error || '画布加载失败'}</h1>
+        <h1>{error || uiText("画布加载失败")}</h1>
         <p>{l('\u8be5\u753b\u5e03\u53ef\u80fd\u5df2\u88ab\u5220\u9664\uff0c\u8fd4\u56de\u753b\u5e03\u5217\u8868\u91cd\u65b0\u9009\u62e9\u3002', 'This canvas may have been deleted. Return to the canvas list to continue.')}</p>
         <Button type="primary" onClick={() => navigate('/canvases')}>
           {l('\u8fd4\u56de\u753b\u5e03\u5217\u8868', 'Back to canvases')}
@@ -141,6 +145,14 @@ const CanvasStudioContent: React.FC = () => {
 // Reset loader state before a new route can render an editor with the previous document.
 const CanvasStudioPage: React.FC = () => {
   const { canvasId = '' } = useParams()
-  return <><CanvasStudioContent key={canvasId} /><CanvasLinkedAssetPreview key={`asset-${canvasId}`} canvasId={canvasId} /></>
+  const owner = useAppStore(() => canvasUserScope())
+  const [, refreshAccount] = useState(0)
+  useEffect(() => {
+    const changed = () => refreshAccount(value => value + 1)
+    window.addEventListener('storage', changed)
+    return () => window.removeEventListener('storage', changed)
+  }, [])
+  const scope = canvasUserScope() || owner
+  return <><CanvasStudioContent key={scope + ':' + canvasId} /><CanvasLinkedAssetPreview key={scope + ':asset-' + canvasId} canvasId={canvasId} /></>
 }
 export default CanvasStudioPage

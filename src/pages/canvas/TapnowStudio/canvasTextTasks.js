@@ -85,7 +85,7 @@ export function applyTextResult(node, task, shotDefaults = {}) {
     if (!Array.isArray(result.shots) || !result.shots.length || result.shots.length > 100) throw new Error('分镜结果格式不正确')
     const ids = result.shots.map(s => s.id == null ? '' : String(s.id))
     if (ids.some(id => !id) || new Set(ids).size !== ids.length) throw new Error('分镜结果缺少稳定的唯一 ID')
-    patch = { shots: result.shots.map((s, index) => ({ ...shotDefaults, id: s.id, description: s.description || '', prompt: s.prompt || '', scene_index: index + 1, duration: s.durationSeconds ? `${s.durationSeconds}s` : shotDefaults.duration, status: 'draft', outputEnabled: false, selectedImageIndex: -1 })), tableData: undefined, tableMarkdown: '', isGenerating: false }
+    patch = { shots: result.shots.map((s, index) => ({ ...shotDefaults, ...s, id: s.id, description: s.description || '', prompt: s.prompt || '', scene_index: index + 1, duration: s.durationSeconds != null ? `${s.durationSeconds}s` : s.duration ?? shotDefaults.duration, status: 'draft', outputEnabled: false, selectedImageIndex: -1 })), tableData: undefined, tableMarkdown: '', isGenerating: false }
   } else if (task.operation === 'storyboardPromptMerge') {
     const shots = node.settings?.shots || []
     const rows = result.shots

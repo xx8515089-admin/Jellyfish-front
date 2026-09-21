@@ -13,7 +13,8 @@ export async function clearCanvasCache(canvasId: string, cloud = true) {
   const user = canvasUserScope()
   const scopes = cloud ? [canvasEditorScope(canvasId, user), canvasId] : [canvasId]
   const prefixes = scopes.map(editorPrefix)
-  if (cloud) prefixes.push(`canvas-cloud:${user}:${canvasId}:`)
+  // Submission records belong to the original account and survive deletion/upgrade.
+  // Only disposable editor caches are cleared here.
   const keys: string[] = []
   for (let index = 0; index < window.localStorage.length; index++) {
     const key = window.localStorage.key(index)

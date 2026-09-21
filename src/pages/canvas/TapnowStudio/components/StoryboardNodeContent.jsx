@@ -1,3 +1,4 @@
+import { uiText, useUiLanguage } from '../../../../i18n/uiText'
 import { canvasConfirm, canvasAlert, canvasPrompt } from '../canvasDialogs';
 import CanvasTextModelSelect from './CanvasTextModelSelect';
 import { Fragment, useRef } from 'react';
@@ -59,6 +60,8 @@ import {
 } from '../freeCanvasShared';
 
 function StoryboardNodeContent({ node, context }) {
+  useUiLanguage()
+
     const latestNodeRef = useRef(node);
     latestNodeRef.current = node;
     const {
@@ -309,7 +312,7 @@ function StoryboardNodeContent({ node, context }) {
                                 className={`font-bold text-xs cursor-move ${theme === 'dark' ? 'text-zinc-200' : 'text-zinc-800'} ${!node.settings?.projectTitle ? (theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400') : ''}`}
                                 title={t('拖动移动窗口')}
                             >
-                                {node.settings?.projectTitle || '项目名称'}
+                                {node.settings?.projectTitle || uiText("项目名称")}
                             </span>
                         )}
                         <button
@@ -619,7 +622,7 @@ function StoryboardNodeContent({ node, context }) {
                                     }}
                                     className={`text-xs px-2 py-1 rounded transition-colors flex items-center gap-1 ${storyboardPrimaryButtonClass}`}
                                     onMouseDown={(e) => e.stopPropagation()}
-                                    title={`从 ${currentMode === 'image' ? '图片' : '视频'}节点同步: ${sourceSettings.model || '?'} / ${sourceSettings.ratio || '?'} / ${sourceSettings.resolution || '?'}${currentMode === 'video' ? ` / ${sourceSettings.duration || '?'}` : ''}`}
+                                    title={uiText("从 {0}节点同步: {1} / {2} / {3}{4}", currentMode === 'image' ? uiText("图片") : uiText("视频"), sourceSettings.model || '?', sourceSettings.ratio || '?', sourceSettings.resolution || '?', currentMode === 'video' ? ` / ${sourceSettings.duration || '?'}` : '')}
                                 >
                                     <RefreshCw size={12} />
                                     <span className="whitespace-nowrap">{t('参数')}</span>
@@ -650,11 +653,11 @@ function StoryboardNodeContent({ node, context }) {
                                         // V3.7.29: 使用 prompt 实现三选项（确定=终止/取消=跳过/空=放弃）
                                         const userChoice = await canvasPrompt(
                                             `检测到 ${stuckGenerating.length} 个镜头正在生成中。\n\n` +
-                                            `可能是任务卡住或等待中。\n\n` +
-                                            `请选择操作：\n` +
-                                            `● 输入 "1" 或 "ok" = 强制终止并重新开始\n` +
-                                            `● 输入 "2" 或 "skip" = 跳过这些镜头，继续其余\n` +
-                                            `● 点击取消或留空 = 放弃操作`,
+                                            uiText("可能是任务卡住或等待中。\n\n") +
+                                            uiText("请选择操作：\n") +
+                                            uiText("● 输入 \"1\" 或 \"ok\" = 强制终止并重新开始\n") +
+                                            uiText("● 输入 \"2\" 或 \"skip\" = 跳过这些镜头，继续其余\n") +
+                                            uiText("● 点击取消或留空 = 放弃操作"),
                                             ''
                                         );
 
@@ -699,7 +702,7 @@ function StoryboardNodeContent({ node, context }) {
                                             if (hasGenerating) {
                                                 canvasAlert(t('有镜头正在生成中，请等待完成后再试。'));
                                             } else if (isAllLocked && allShots.length > 0) {
-                                                canvasAlert('所有镜头已锁定（灰框已勾选），无法重新生成。\n请取消勾选需要重新生成的镜头。');
+                                                canvasAlert(uiText("所有镜头已锁定（灰框已勾选），无法重新生成。\n请取消勾选需要重新生成的镜头。"));
                                             } else {
                                                 canvasAlert(t('没有待生成的镜头'));
                                             }
@@ -770,7 +773,7 @@ function StoryboardNodeContent({ node, context }) {
                                     showToast(`✓ 已添加 ${newQueueItems.length} 个${mode === 'image' ? '图片' : '视频'}任务 | 线程: ${batchConcurrency === 0 ? '∞' : batchConcurrency}${isReroll ? ' (重新生成)' : ''}`, 'success', 5000);
                                 }}
                                 className={`p-1 rounded transition-colors ${storyboardPrimaryButtonClass}`}
-                                title={`批量全部生成${(normalizeStoryboardMode(node.settings?.mode)) === 'image' ? '图片' : '视频'}`}
+                                title={uiText("批量全部生成{0}", (normalizeStoryboardMode(node.settings?.mode)) === 'image' ? uiText("图片") : uiText("视频"))}
                             >
                                 <div className="flex items-center gap-1">
                                     {(normalizeStoryboardMode(node.settings?.mode)) === 'image' ? <ImageIcon size={12} /> : <Zap size={12} fill="currentColor" />}
@@ -829,8 +832,7 @@ function StoryboardNodeContent({ node, context }) {
                                                 : 'text-zinc-700 hover:bg-zinc-100'
                                                 }`}
                                         >
-                                            全部下载
-                                        </button>
+                                            {uiText("全部下载")}</button>
                                         <button
                                             onClick={() => {
                                                 setActiveDropdown(null);
@@ -841,8 +843,7 @@ function StoryboardNodeContent({ node, context }) {
                                                 : 'text-zinc-700 hover:bg-zinc-100'
                                                 }`}
                                         >
-                                            选中下载
-                                        </button>
+                                            {uiText("选中下载")}</button>
                                     </div>,
                                     document.body
                                 )}
@@ -871,7 +872,7 @@ function StoryboardNodeContent({ node, context }) {
                                     className={`p-1 rounded transition-colors relative ${theme === 'dark'
                                         ? 'bg-zinc-700 hover:bg-zinc-600 text-zinc-300'
                                         : 'bg-zinc-200 hover:bg-zinc-300 text-zinc-600'}`}
-                                    title={`队列：运行 ${nodeRunningItems.length} | 排队 ${nodeQueueItems.length}`}
+                                    title={uiText("队列：运行 {0} | 排队 {1}", nodeRunningItems.length, nodeQueueItems.length)}
                                     onMouseDown={(e) => e.stopPropagation()}
                                 >
                                     <Layers size={12} />
@@ -898,7 +899,7 @@ function StoryboardNodeContent({ node, context }) {
                                         onMouseDown={(e) => e.stopPropagation()}
                                     >
                                         <div className={`px-3 pb-2 text-[10px] ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                                            运行 {nodeRunningItems.length} · 排队 {nodeQueueItems.length}
+                                            {uiText("运行") + " "}{nodeRunningItems.length} {uiText("· 排队") + " "}{nodeQueueItems.length}
                                         </div>
                                         <div className="px-3 pb-2 flex gap-2">
                                             <button
@@ -928,11 +929,11 @@ function StoryboardNodeContent({ node, context }) {
                                         </div>
                                         {nodeRunningItems.length > 0 && (
                                             <div className="px-3 pb-2">
-                                                <div className={`text-[10px] mb-1 ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-500'}`}>运行中</div>
+                                                <div className={`text-[10px] mb-1 ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-500'}`}>{uiText("运行中")}</div>
                                                 <div className="space-y-1">
                                                     {nodeRunningItems.slice(0, 6).map((item, idx) => (
                                                         <div key={`${item.nodeId}-${item.shotId}-${idx}`} className={`text-[10px] flex items-center justify-between gap-2 ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-600'}`}>
-                                                            <span className="truncate max-w-[150px]">{item.projectTitle} · 镜头{item.sceneIndex}</span>
+                                                            <span className="truncate max-w-[150px]">{item.projectTitle} {uiText("· 镜头")}{item.sceneIndex}</span>
                                                             <div className="flex items-center gap-1 shrink-0">
                                                                 <span className="text-green-500">{t('运行')}</span>
                                                                 <button
@@ -950,22 +951,22 @@ function StoryboardNodeContent({ node, context }) {
                                                         </div>
                                                     ))}
                                                     {nodeRunningItems.length > 6 && (
-                                                        <div className={`text-[9px] ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>仅显示前 6 项</div>
+                                                        <div className={`text-[9px] ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>{uiText("仅显示前 6 项")}</div>
                                                     )}
                                                 </div>
                                             </div>
                                         )}
                                         <div className="px-3">
-                                            <div className={`text-[10px] mb-1 ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-500'}`}>排队中</div>
+                                            <div className={`text-[10px] mb-1 ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-500'}`}>{uiText("排队中")}</div>
                                             {nodeQueueItems.length === 0 ? (
-                                                <div className={`text-[10px] ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>队列为空</div>
+                                                <div className={`text-[10px] ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}`}>{uiText("队列为空")}</div>
                                             ) : (
                                                 <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
                                                     {nodeQueueItems.slice(0, 12).map((item) => (
                                                         <div key={`${item.nodeId}-${item.shotId}-${item.order}`} className={`text-[10px] flex items-center justify-between gap-2 ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-600'}`}>
-                                                            <span className="truncate max-w-[150px]">#{item.order} {item.projectTitle} · 镜头{item.sceneIndex}</span>
+                                                            <span className="truncate max-w-[150px]">#{item.order} {item.projectTitle} {uiText("· 镜头")}{item.sceneIndex}</span>
                                                             <div className="flex items-center gap-1 shrink-0">
-                                                                <span className="text-blue-400">{item.mode === 'image' ? '图' : '视'}</span>
+                                                                <span className="text-blue-400">{item.mode === 'image' ? uiText("图") : uiText("视")}</span>
                                                                 <button
                                                                     onClick={async () => {
                                                                         if (await canvasConfirm(t('确定移除该排队任务吗？'), { danger: true })) removeQueuedBatchItem(item.nodeId, item.shotId, item);
@@ -981,7 +982,7 @@ function StoryboardNodeContent({ node, context }) {
                                                         </div>
                                                     ))}
                                                     {nodeQueueItems.length > 12 && (
-                                                        <div className={`text-[9px] ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>仅显示前 12 项</div>
+                                                        <div className={`text-[9px] ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>{uiText("仅显示前 12 项")}</div>
                                                     )}
                                                 </div>
                                             )}
@@ -1012,7 +1013,7 @@ function StoryboardNodeContent({ node, context }) {
                                 className={`p-1 rounded transition-colors ${node.settings?.showOutputPreview
                                     ? 'bg-blue-500 text-white'
                                     : theme === 'dark' ? 'bg-zinc-700 hover:bg-zinc-600 text-zinc-400' : 'bg-zinc-200 hover:bg-zinc-300 text-zinc-500'}`}
-                                title={node.settings?.showOutputPreview ? '收起输出预览' : '展开输出预览'}
+                                title={node.settings?.showOutputPreview ? uiText("收起输出预览") : uiText("展开输出预览")}
                                 onMouseDown={(e) => e.stopPropagation()}
                             >
                                 <ChevronRight size={12} className={`transition-transform ${node.settings?.showOutputPreview ? 'rotate-90' : ''}`} />
@@ -1252,7 +1253,7 @@ function StoryboardNodeContent({ node, context }) {
                                                 : 'bg-zinc-200 text-zinc-700 hover:bg-zinc-300';
                                     };
                                     const onLlmTabClick = (mode) => {
-                                        if (cloudText && mode === 'custom') { canvasAlert('云端使用服务端的分镜拆分模板，不支持自定义供应商提示模板'); return; }
+                                        if (cloudText && mode === 'custom') { canvasAlert(uiText("云端使用服务端的分镜拆分模板，不支持自定义供应商提示模板")); return; }
                                         if (isPromptEditorMode) {
                                             updateNodeSettings(node.id, { llmPromptMode: mode });
                                             return;
@@ -1280,7 +1281,7 @@ function StoryboardNodeContent({ node, context }) {
                                                 title={t('LLM 拆脚本')}
                                             >
                                                 <Sparkles size={12} />
-                                                {node.settings?.isGenerating && !isPromptEditorMode && llmPromptMode === 'script' ? '拆分中...' : 'LLM拆脚本'}
+                                                {node.settings?.isGenerating && !isPromptEditorMode && llmPromptMode === 'script' ? uiText("拆分中...") : uiText("LLM拆脚本")}
                                             </button>
                                             <button
                                                 onClick={() => onLlmTabClick('novel')}
@@ -1290,7 +1291,7 @@ function StoryboardNodeContent({ node, context }) {
                                                 title={t('LLM 拆小说')}
                                             >
                                                 <Sparkles size={12} />
-                                                {node.settings?.isGenerating && !isPromptEditorMode && llmPromptMode === 'novel' ? '拆分中...' : 'LLM拆小说'}
+                                                {node.settings?.isGenerating && !isPromptEditorMode && llmPromptMode === 'novel' ? uiText("拆分中...") : uiText("LLM拆小说")}
                                             </button>
                                             <button
                                                 onClick={() => onLlmTabClick('custom')}
@@ -1300,7 +1301,7 @@ function StoryboardNodeContent({ node, context }) {
                                                 title={t('LLM 自定义')}
                                             >
                                                 <Sparkles size={12} />
-                                                {node.settings?.isGenerating && !isPromptEditorMode && llmPromptMode === 'custom' ? '拆分中...' : 'LLM自定义'}
+                                                {node.settings?.isGenerating && !isPromptEditorMode && llmPromptMode === 'custom' ? uiText("拆分中...") : uiText("LLM自定义")}
                                             </button>
                                             <button
                                                 onClick={() => updateNodeSettings(node.id, { showLlmPromptEditor: !isPromptEditorMode })}
@@ -1879,7 +1880,7 @@ function StoryboardNodeContent({ node, context }) {
 
                                                             return (
                                                                 <div key={type} className={`relative rounded-lg border overflow-hidden group ${sizeClass} ${bgColor} ${borderColor} flex flex-col items-center justify-center cursor-pointer hover:border-blue-500 transition-all`} onClick={(e) => { e.stopPropagation(); if (!isMain) updateShot(node.id, shot.id, { activeInput: type }); }}>
-                                                                    {imgUrl ? <LazyBase64Image src={imgUrl} className={`w-full h-full object-cover ${!isMain ? 'opacity-60 hover:opacity-100' : ''}`} /> : <div className="flex flex-col items-center gap-1 text-zinc-500"><FolderOpen size={isMain ? 20 : 14} />{isMain && <span className="text-[10px]">选择{label}</span>}</div>}
+                                                                    {imgUrl ? <LazyBase64Image src={imgUrl} className={`w-full h-full object-cover ${!isMain ? 'opacity-60 hover:opacity-100' : ''}`} /> : <div className="flex flex-col items-center gap-1 text-zinc-500"><FolderOpen size={isMain ? 20 : 14} />{isMain && <span className="text-[10px]">{uiText("选择")}{label}</span>}</div>}
                                                                     <div className="absolute top-0 left-0 bg-black/60 text-white text-[9px] px-1.5 py-0.5 rounded-br z-20 backdrop-blur-md pointer-events-none">{label}</div>
 
                                                                     {/* V3.7.5：恢复预览（最大化）按钮 */}
@@ -1902,7 +1903,7 @@ function StoryboardNodeContent({ node, context }) {
                                                                             </label>
                                                                             {/* V3.7.13：拆分模式开关放到右下角 */}
                                                                             {supportsFirstLastFrame && (
-                                                                                <div className="absolute bottom-1 right-1 p-1 rounded bg-black/40 hover:bg-blue-500 text-white transition-colors cursor-pointer z-30" onClick={(e) => { e.stopPropagation(); updateShot(node.id, shot.id, { useFirstLastFrame: !showLastFrame, activeInput: !showLastFrame ? 'last' : 'first' }); }} title="切换首尾帧模式">
+                                                                                <div className="absolute bottom-1 right-1 p-1 rounded bg-black/40 hover:bg-blue-500 text-white transition-colors cursor-pointer z-30" onClick={(e) => { e.stopPropagation(); updateShot(node.id, shot.id, { useFirstLastFrame: !showLastFrame, activeInput: !showLastFrame ? 'last' : 'first' }); }} title={uiText("切换首尾帧模式")}>
                                                                                     <Split size={12} />
                                                                                 </div>
                                                                             )}
@@ -2105,7 +2106,7 @@ function StoryboardNodeContent({ node, context }) {
                                                                 }`}
                                                         >
                                                             <span className="truncate font-mono text-[10px]">
-                                                                {getApiConfigByKey(shot.model)?.id || shot.model || '选择模型'}
+                                                                {getApiConfigByKey(shot.model)?.id || shot.model || uiText("选择模型")}
                                                             </span>
                                                             <ChevronDown size={10} className="opacity-50 shrink-0" />
                                                         </button>
@@ -2191,8 +2192,7 @@ function StoryboardNodeContent({ node, context }) {
                                                                     })()}
                                                                     {!hoveredProvider && (
                                                                         <div className={`text-[10px] px-2 py-3 text-center ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                                                                            ← 选择 Provider
-                                                                        </div>
+                                                                            {uiText("← 选择 Provider")}</div>
                                                                     )}
                                                                 </div>
                                                             </div>
@@ -2577,9 +2577,9 @@ function StoryboardNodeContent({ node, context }) {
                                                                             ? 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
                                                                             : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
                                                                             }`}
-                                                                        title={isExpanded ? "收起" : "打开角色库"}
+                                                                        title={isExpanded ? uiText("收起") : uiText("打开角色库")}
                                                                     >
-                                                                        {isExpanded ? '收起' : `+${characterLibrary.length - maxVisible}`}
+                                                                        {isExpanded ? uiText("收起") : `+${characterLibrary.length - maxVisible}`}
                                                                     </button>
                                                                 )}
                                                             </div>
@@ -2670,7 +2670,7 @@ function StoryboardNodeContent({ node, context }) {
                                                                     ? 'bg-blue-500 hover:bg-green-600'
                                                                     : mode === 'image' ? 'bg-blue-600 hover:bg-blue-500' : 'bg-green-600 hover:bg-green-500'
                                                                 }`}
-                                                            title={shot.status === 'generating' ? '停止生成' : (isDone ? '重新生成' : `生成${mode === 'image' ? '图片' : '视频'}`)}
+                                                            title={shot.status === 'generating' ? uiText("停止生成") : (isDone ? uiText("重新生成") : `生成${mode === 'image' ? '图片' : '视频'}`)}
                                                             onMouseDown={(e) => e.stopPropagation()}
                                                         >
                                                             {shot.status === 'generating' ? (
@@ -2756,7 +2756,7 @@ function StoryboardNodeContent({ node, context }) {
                                                             e.stopPropagation();
                                                             updateShot(node.id, shot.id, { outputEnabled: !shot.outputEnabled });
                                                         }}
-                                                        title={shot.outputEnabled ? '取消输出' : '允许输出'}
+                                                        title={shot.outputEnabled ? uiText("取消输出") : uiText("允许输出")}
                                                     >
                                                         {shot.outputEnabled && <Check size={10} />}
                                                     </div>
@@ -2825,7 +2825,7 @@ function StoryboardNodeContent({ node, context }) {
                                                                     {canSwitchHistory ? `${outputHistoryCursor + 1}/${outputHistoryCount}` : '-'}
                                                                 </span>
                                                                 <span className={`text-[10px] ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                                                                    {hasReadyOutput ? '已就绪' : '等待'}
+                                                                    {hasReadyOutput ? uiText("已就绪") : uiText("等待")}
                                                                 </span>
                                                             </div>
                                                         );

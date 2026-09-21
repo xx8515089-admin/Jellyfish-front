@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import vm from 'node:vm'
+import { createUiTextFixture } from './ui-text-fixture.mjs'
+const ui = createUiTextFixture()
 import ts from 'typescript'
 
 /** Exercise authenticated attachment reads and object-URL ownership without a server. */
@@ -16,6 +18,7 @@ function harness(api = {}) {
   const source = readFileSync(new URL('../src/pages/canvas/TapnowStudio/components/CanvasChatAttachment.jsx', import.meta.url), 'utf8')
   const code = ts.transpileModule(source, { fileName: 'CanvasChatAttachment.jsx', compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.React } }).outputText
   vm.runInNewContext(code, { exports, URL: { createObjectURL: blob => { created.push(blob); return `blob:preview-${created.length}` }, revokeObjectURL: url => revoked.push(url) }, require: name => {
+    if (name.endsWith('/uiText')) return ui
     if (name === 'react') return { ...React, default: React }
     if (name.endsWith('studioCanvases')) return { StudioCanvases: api }
     return {}

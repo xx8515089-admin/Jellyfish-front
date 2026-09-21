@@ -1,15 +1,18 @@
+import { uiText, useUiLanguage } from '../../../../i18n/uiText'
 import { useState } from 'react';
 import { Check, ChevronRight } from 'lucide-react';
 import './CanvasModelMenu.css';
 
 export default function CanvasModelMenu({ groups, currentModelKey, onSelect, onClose, getStatusColor }) {
+  useUiLanguage()
+
     const [hoveredKey, setHoveredKey] = useState(null);
     const currentGroup = groups.find(([, group]) => group.models.some(model => (model._uid || model.id) === currentModelKey));
     const activeGroup = groups.find(([key]) => key === hoveredKey) || currentGroup || groups[0];
     const [activeKey, group] = activeGroup || [];
 
     return (
-        <div className="canvas-model-menu" aria-label="选择生成模型"
+        <div className="canvas-model-menu" aria-label={uiText("选择生成模型")}
             onMouseDown={event => event.stopPropagation()}
             onClick={event => event.stopPropagation()}
             onWheel={event => event.stopPropagation()}
@@ -18,7 +21,7 @@ export default function CanvasModelMenu({ groups, currentModelKey, onSelect, onC
                 if (event.key === 'Escape') { event.preventDefault(); onClose(); }
             }}>
             <div className="canvas-model-menu__column canvas-model-menu__providers">
-                <div className="canvas-model-menu__heading">供应商 <span>{groups.length}</span></div>
+                <div className="canvas-model-menu__heading">{uiText("供应商") + " "}<span>{groups.length}</span></div>
                 <div className="canvas-model-menu__list custom-scrollbar">
                     {groups.map(([key, provider]) => (
                         <button type="button" key={key} className="canvas-model-menu__provider"
@@ -33,7 +36,7 @@ export default function CanvasModelMenu({ groups, currentModelKey, onSelect, onC
                 </div>
             </div>
             <div className="canvas-model-menu__column">
-                <div className="canvas-model-menu__heading">模型 <span>{group?.models.length || 0}</span></div>
+                <div className="canvas-model-menu__heading">{uiText("模型") + " "}<span>{group?.models.length || 0}</span></div>
                 <div className="canvas-model-menu__list custom-scrollbar">
                     {group?.models.map(model => {
                         const key = model._uid || model.id;
@@ -48,7 +51,7 @@ export default function CanvasModelMenu({ groups, currentModelKey, onSelect, onC
                             </button>
                         );
                     })}
-                    {!group && <div className="canvas-model-menu__empty">暂无可用模型</div>}
+                    {!group && <div className="canvas-model-menu__empty">{uiText("暂无可用模型")}</div>}
                 </div>
             </div>
         </div>

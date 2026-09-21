@@ -1,16 +1,16 @@
 import { StudioCanvases, canvasRequestId } from '../../../services/studioCanvases'
-import { textModelId, textOperations, supportsTextOperation } from './canvasTextTasks'
+import { applyTextResult, textModelId, textOperations, supportsTextOperation } from './canvasTextTasks'
 
 export const executionStatus = { 1: '排队', 2: '执行中', 3: '已完成', 4: '失败', 5: '调用前取消', 6: '结果待核查' }
 export const workflowStatus = { running: '运行中', waitingReview: '等待核查', cancelling: '取消中', succeeded: '已完成', failed: '失败', cancelled: '已取消', pending: '等待依赖', skipped: '已跳过' }
 export const chatBlocked = messages => messages.some(message => [1, 2, 6].includes(message.status))
-export const workflowPolling = workflow => ['running', 'cancelling'].includes(workflow.status)
+export const workflowPolling = workflow => workflow.shouldPoll ?? ['running', 'cancelling'].includes(workflow.status)
 export const credits = value => value == null ? '待核算' : String(value)
 const copy = value => JSON.parse(JSON.stringify(value))
 
 // Only definitive admission rejections can discard the original paid request.
-const rejected = new Set(['INSUFFICIENT_CREDITS', 'CANVAS_QUOTE_EXPIRED', 'CANVAS_QUOTE_CHANGED', 'CHAT_VERSION_CONFLICT', 'CHAT_SESSION_BUSY', 'CHAT_HISTORY_LIMIT', 'EXECUTION_CONCURRENCY_LIMIT', 'WORKFLOW_CONCURRENCY_LIMIT', 'MEDIA_PROVIDER_NOT_CONFIGURED', 'WORKFLOW_MEDIA_PROVIDER_NOT_CONFIGURED', 'MODEL_OPERATION_UNSUPPORTED', 'INPUT_MODALITY_UNSUPPORTED'])
-export async function submitCanvasV4(session, family, body, recover = false) {
+const rejected = error => error?.submissionState === 'notAccepted'
+async function performsubmitCanvasV4(session, family, body, recover = false) {
   if (!['execution', 'workflow'].includes(family)) throw new Error('未知任务类型')
   session.assertWritable()
   const key = 'v4:' + family
@@ -26,16 +26,15 @@ export async function submitCanvasV4(session, family, body, recover = false) {
     // Lookup errors, including permission failures, must preserve the request.
     try { receipt = await StudioCanvases[family + 'Submission'](pending.canvasId, pending.clientRequestId) }
     catch (error) {
-      const missing = family === 'execution' ? ['CANVAS_EXECUTION_SUBMISSION_NOT_FOUND'] : ['WORKFLOW_SUBMISSION_NOT_FOUND', 'CANVAS_WORKFLOW_SUBMISSION_NOT_FOUND']
-      if (!missing.includes(error.errorCode)) throw error
+      if (error.submissionState !== 'notFound') throw error
       // Explicit absence permits replay of exactly the persisted body and identity.
       try { receipt = await StudioCanvases[family + 'Create'](pending) }
-      catch (reason) { if (rejected.has(reason.errorCode)) session.write(key, null); throw reason }
+      catch (reason) { if (rejected(reason)) session.write(key, null); throw reason }
     }
     if (!receipt) throw new Error('尚未找到回执，请稍后再次查询；原提交标识已保留')
   } else {
     try { receipt = await StudioCanvases[family + 'Create'](pending) }
-    catch (error) { if (rejected.has(error.errorCode)) session.write(key, null); throw error }
+    catch (error) { if (rejected(error)) session.write(key, null); throw error }
   }
   if (!receipt || String(receipt.canvasId) !== String(pending.canvasId) || receipt[family === 'execution' ? 'taskId' : 'workflowId'] == null) throw new Error('回执与原画布不一致，提交记录已保留')
   session.write(key, null)
@@ -78,7 +77,29 @@ export const nodeOperations = node => ({
   'storyboard-node': ['storyboardSplit', 'storyboardPromptMerge'],
 }[node.type] || [])
 
-/** Traverse the saved dependency graph and require an explicit operation for every executable ancestor. */
+const savedTextTypes = ['text-node', 'novel-input', 'character-description', 'scene-description']
+const textOutputOperations = ['promptEnhance', 'promptFilter', 'transcribeAudio']
+const shotOutputOperations = ['storyboardSplit', 'storyboardPromptMerge']
+
+/** Validate actual output types: saved prose and executed structured results are distinct inputs. */
+export function validateWorkflowInputs(document, steps) {
+  const byId = new Map(steps.map(step => [step.nodeId, step]))
+  for (const step of steps.filter(item => textOperations[item.operation])) {
+    const edges = document.project.connections.filter(edge => edge.to === step.nodeId)
+    if (edges.some(edge => edge.inputType != null && edge.inputType !== 'default')) throw new Error('文字步骤只支持 default 默认端口，请修改连线')
+    if (step.operation === 'storyboardPromptMerge' && edges.length > 1) throw new Error('分镜汇总只能连接一个分镜来源')
+    for (const edge of edges) {
+      const source = document.project.nodes.find(node => node.id === edge.from)
+      const operation = byId.get(edge.from)?.operation
+      const valid = step.operation === 'storyboardPromptMerge'
+        ? source?.type === 'storyboard-node' && shotOutputOperations.includes(operation)
+        : operation ? textOutputOperations.includes(operation) : savedTextTypes.includes(source?.type)
+      if (!valid) throw new Error('上游输出不支持此操作，请先将分析场景、角色/场景或镜头数组转换为所需输入；分镜汇总需连接执行拆分或汇总的分镜节点')
+    }
+  }
+}
+
+/** Only explicitly selected operations execute; unselected prose nodes supply their saved text. */
 export function workflowPlan(document, targets, choices, capabilities, models, failurePolicy, analysis) {
   if (!targets.length || targets.length > 50) throw new Error('请选择 1–50 个目标节点')
   const nodes = new Map(document.project.nodes.map(node => [node.id, node]))
@@ -88,6 +109,7 @@ export function workflowPlan(document, targets, choices, capabilities, models, f
     if (visited.has(id)) return
     const node = nodes.get(id)
     if (!node) throw new Error('目标或依赖节点已删除')
+    if (!choices[id] && !targets.includes(id) && savedTextTypes.includes(node.type)) { visited.add(id); return }
     visiting.add(id)
     document.project.connections.filter(connection => connection.to === id).forEach(connection => walk(connection.from))
     const supported = nodeOperations(node)
@@ -104,6 +126,8 @@ export function workflowPlan(document, targets, choices, capabilities, models, f
       if (!textOperations[operation] || !supported.includes(operation) || !capabilities.operations?.includes(operation)) throw new Error(`请为节点 ${node.title || id} 选择已开放的操作`)
       const binding = document.modelBindings.find(binding => binding.nodeId === id && ['/settings/textModelId', '/settings/chatModel'].includes(binding.fieldPath))
       const modelId = textModelId(binding?.modelId)
+      const selectedModel = node.settings?.textModelId ?? node.settings?.chatModel
+      if (selectedModel != null && textModelId(selectedModel) !== modelId) throw new Error('文字模型与保存版本不一致，请重新选择模型并保存')
       if (!models.some(model => model.modelId === modelId && model.available === true && supportsTextOperation(model, operation))) throw new Error(`请先为节点 ${node.title || id} 绑定可用文本模型并保存`)
       steps.push({ nodeId: id, operation, modelId })
     }
@@ -111,7 +135,47 @@ export function workflowPlan(document, targets, choices, capabilities, models, f
   }
   targets.forEach(walk)
   if (!steps.length || steps.length > 50) throw new Error('工作流必须包含 1–50 个步骤')
+  validateWorkflowInputs(document, steps)
   return { canvasId: document.canvasId, revisionNo: document.revisionNo, targetNodeIds: targets, steps, failurePolicy }
 }
 
 export const createV4Body = (canvasId, quoteId, maxReservedCredits, family) => ({ canvasId, quoteId, ...(maxReservedCredits === undefined ? {} : { maxReservedCredits }), clientRequestId: canvasRequestId(family) })
+
+/** Rebuild the immutable run's shot chain, never match merge rows against the target's old shots. */
+export async function applyWorkflowTextResult(node, task, document, workflow, loadTask) {
+  if (String(document.canvasId) !== String(workflow.canvasId) || document.revisionNo !== workflow.revisionNo) throw new Error('工作流保存版本不一致')
+  if (node.id !== task.nodeId || node.type !== document.project.nodes.find(item => item.id === task.nodeId)?.type) throw new Error('目标节点类型已变化，请重新查看结果')
+  const cache = new Map(), visiting = new Set()
+  const resolve = async (nodeId, supplied) => {
+    if (visiting.has(nodeId)) throw new Error('工作流分镜依赖包含循环')
+    if (cache.has(nodeId)) return cache.get(nodeId)
+    const run = workflow.nodes.find(item => item.nodeId === nodeId)
+    const saved = document.project.nodes.find(item => item.id === nodeId)
+    if (!run || !saved || run.taskFamily !== 'text' || run.taskId == null) throw new Error('缺少本次工作流的文字任务')
+    const current = supplied || await loadTask(workflow.canvasId, run.taskId)
+    if (String(current.canvasId) !== String(workflow.canvasId) || current.revisionNo !== workflow.revisionNo || current.nodeId !== nodeId || String(current.taskId) !== String(run.taskId) || current.operation !== run.operation) throw new Error('子任务与工作流保存版本不一致')
+    visiting.add(nodeId)
+    let base = saved
+    if (current.operation === 'storyboardPromptMerge') {
+      const edges = document.project.connections.filter(edge => edge.to === nodeId)
+      if (edges.length > 1) throw new Error('分镜汇总只能连接一个分镜来源')
+      if (edges.length) {
+        const upstream = workflow.nodes.find(item => item.nodeId === edges[0].from)
+        if (!shotOutputOperations.includes(upstream?.operation)) throw new Error('缺少本次上游分镜结果')
+        base = { ...saved, settings: { ...saved.settings, ...(await resolve(edges[0].from)).settings } }
+      }
+    }
+    const result = applyTextResult(base, current)
+    visiting.delete(nodeId); cache.set(nodeId, result)
+    return result
+  }
+  const resolved = await resolve(task.nodeId, task)
+  // Only task-owned fields change; retain current target settings such as model selection.
+  if (task.operation === 'storyboardPromptMerge') return { ...node, settings: { ...node.settings, shots: resolved.settings.shots, tableData: resolved.settings.tableData, tableMarkdown: resolved.settings.tableMarkdown, isGenerating: false, errorMsg: '' } }
+  return applyTextResult(node, task)
+}
+
+export function submitCanvasV4(session, family, body, recover = false) {
+  const work = () => performsubmitCanvasV4(session, family, body, recover)
+  return session.exclusive ? session.exclusive('v4:' + family, work) : work()
+}

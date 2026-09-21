@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import fs from 'node:fs'
 import vm from 'node:vm'
+import { createUiTextFixture } from './ui-text-fixture.mjs'
+const ui = createUiTextFixture()
 import { createRequire } from 'node:module'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -13,7 +15,7 @@ const source = fs.readFileSync(new URL('../src/pages/canvas/TapnowStudio/compone
 const compiled = ts.transpileModule(source, { fileName: 'GenerationNodeContent.jsx', compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX } }).outputText
 const exports = {}
 const shared = { t: value => value, LazyBase64Image: () => null, MJ_VERSIONS: [], getValueLabelWithNotes: value => value, isImageModelType: type => type === 'Image', normalizeImageConcurrency: value => Number(value) || 1, normalizeImageResolution: value => value || '2K', normalizeVideoResolution: value => value || '720p' }
-vm.runInNewContext(compiled, { exports, setTimeout, require: name => name === '../freeCanvasShared' ? shared : name === './CanvasModelMenu' ? { default: () => null } : nativeRequire(name) })
+vm.runInNewContext(compiled, { exports, setTimeout, require: name => name.endsWith('/uiText') ? ui : name === '../freeCanvasShared' ? shared : name === './CanvasModelMenu' ? { default: () => null } : nativeRequire(name) })
 const GenerationNodeContent = exports.default
 const elements = tree => React.Children.toArray(tree).flatMap(element => React.isValidElement(element) ? [element, ...elements(element.props.children)] : [])
 

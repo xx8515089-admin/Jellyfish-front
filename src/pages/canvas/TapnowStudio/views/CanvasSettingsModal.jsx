@@ -1,3 +1,4 @@
+import { uiText, useUiLanguage } from '../../../../i18n/uiText'
 import { canvasAlert } from '../canvasDialogs';
 import React from 'react';
 import {
@@ -180,6 +181,8 @@ export default function CanvasSettingsModal({
     updateModelLibraryCustomParam,
     updateModelLibraryEntry,
 }) {
+  useUiLanguage()
+
     return (
 <Modal isOpen={settingsOpen && !cloudDocument} onClose={() => setSettingsOpen(false)} title={t('模型接口配置')} theme={theme}>
                             <div className="px-4 pt-3">
@@ -299,7 +302,7 @@ export default function CanvasSettingsModal({
                                                                         : 'bg-white border-zinc-300 text-zinc-800'
                                                                         }`}
                                                                 />
-                                                                <span className="text-[10px] text-zinc-500">条</span>
+                                                                <span className="text-[10px] text-zinc-500">{uiText("条")}</span>
                                                             </div>
                                                         </div>
                                                         <p className="text-[9px] text-zinc-500">{t('影响历史持久化与打包范围，最大160条。')}</p>
@@ -377,8 +380,7 @@ export default function CanvasSettingsModal({
                                                                 {t('撤销/重做步数')}
                                                             </label>
                                                             <p className={`text-[10px] mt-0.5 ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-500'}`}>
-                                                                设置可撤销的最大步数 (粘贴图片、删除节点等操作)
-                                                            </p>
+                                                                {uiText("设置可撤销的最大步数 (粘贴图片、删除节点等操作)")}</p>
                                                         </div>
                                                         <div className="flex items-center gap-2 ml-3">
                                                             <input
@@ -536,7 +538,7 @@ export default function CanvasSettingsModal({
                                                                 }
                                                                 canvasAlert(t('API 配置导入成功！'));
                                                             } catch (err) {
-                                                                canvasAlert('导入失败: ' + err.message);
+                                                                canvasAlert(uiText("导入失败: ") + err.message);
                                                             }
                                                         };
                                                         input.click();
@@ -628,7 +630,7 @@ export default function CanvasSettingsModal({
                                             setExpandedProviders(newExpanded);
                                         }}
                                         className={`p-1 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}
-                                        title={Object.values(expandedProviders).some(v => v) ? "折叠所有" : "展开所有"}
+                                        title={Object.values(expandedProviders).some(v => v) ? uiText("折叠所有") : uiText("展开所有")}
                                     >
                                         <ChevronsUp size={14} className={`transition-transform ${!Object.values(expandedProviders).some(v => v) ? 'rotate-180' : ''}`} />
                                     </button>
@@ -664,7 +666,7 @@ export default function CanvasSettingsModal({
                                             {deletingProviderKey === providerKey ? (
                                                 <div className="flex items-center justify-between w-full">
                                                     <span className={`text-sm font-semibold ${theme === 'dark' ? 'text-zinc-100' : 'text-zinc-800'}`}>
-                                                        确定删除 {group.name}?
+                                                        {uiText("确定删除") + " "}{group.name}?
                                                     </span>
                                                     <div className="flex items-center gap-2">
                                                         <button
@@ -736,8 +738,7 @@ export default function CanvasSettingsModal({
                                                             : theme === 'solarized'
                                                                 ? 'bg-[#eee8d5] text-zinc-600'
                                                                 : 'bg-zinc-200 text-zinc-500'}`}>
-                                                            {group.models.length} 模型
-                                                        </span>
+                                                            {group.models.length} {uiText("模型")}</span>
                                                     </div>
                                                     <div className="flex items-center gap-2">
                                                         {!editingProvider && (
@@ -804,7 +805,7 @@ export default function CanvasSettingsModal({
                                                                         : 'bg-zinc-300'
                                                                     } peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all`}></div>
                                                             </label>
-                                                            <span className={`text-[9px] ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-600'}`}>使用 {localServerUrl || 'http://127.0.0.1:9527'}/proxy</span>
+                                                            <span className={`text-[9px] ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-600'}`}>{uiText("使用") + " "}{localServerUrl || 'http://127.0.0.1:9527'}/proxy</span>
                                                         </div>
                                                     </div>
                                                     <div className="grid grid-cols-4 items-center gap-2">
@@ -907,7 +908,7 @@ export default function CanvasSettingsModal({
                                                                                 onClick={(e) => e.stopPropagation()}
                                                                                 className={`text-xs bg-transparent border-b border-transparent hover:border-zinc-600 focus:border-blue-500 outline-none flex-1 min-w-[120px] font-mono ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}
                                                                                 placeholder="model-id"
-                                                                                title={`模型 ID: ${api.id}`}
+                                                                                title={uiText("模型 ID: {0}", api.id)}
                                                                                 disabled={!isEditing}
                                                                             />
                                                                             <select
@@ -1631,7 +1632,7 @@ export default function CanvasSettingsModal({
                                                                             }`}
                                                                     >
                                                                         {[1, 2, 4, 9].map((count) => (
-                                                                            <option key={count} value={count}>{`${count}张`}</option>
+                                                                            <option key={count} value={count}>{uiText("{0}张", count)}</option>
                                                                         ))}
                                                                     </select>
                                                                 </div>
@@ -1982,7 +1983,7 @@ export default function CanvasSettingsModal({
                                                                             : 'bg-zinc-200 text-zinc-600 hover:bg-zinc-300'
                                                                             } ${(!isEditing || customParams.length >= MAX_CUSTOM_PARAMS) ? 'opacity-50 cursor-not-allowed' : ''}`}
                                                                     >
-                                                                        + 添加参数 ({customParams.length}/{MAX_CUSTOM_PARAMS})
+                                                                        {uiText("+ 添加参数 (")}{customParams.length}/{MAX_CUSTOM_PARAMS})
                                                                     </button>
                                                                 </div>
                                                                 {customParams.length > 0 ? (
@@ -2273,9 +2274,9 @@ export default function CanvasSettingsModal({
                                                                                             const { [entry.id]: _removed, ...rest } = prev;
                                                                                             return rest;
                                                                                         });
-                                                                                        showToast('Transport 配置已保存', 'success', 2000);
+                                                                                        showToast(uiText("Transport 配置已保存"), 'success', 2000);
                                                                                     } catch (e) {
-                                                                                        showToast('Transport Options JSON 格式无效', 'error', 2000);
+                                                                                        showToast(uiText("Transport Options JSON 格式无效"), 'error', 2000);
                                                                                     }
                                                                                 }}
                                                                                 disabled={!isEditing}
@@ -2431,7 +2432,7 @@ export default function CanvasSettingsModal({
                                                                 </div>
                                                                 <div className="flex items-center justify-between mt-2">
                                                                     <div className={`text-[9px] ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-500'}`}>
-                                                                        变量示例：{'{{prompt}}'}, {'{{duration:number}}'}, {'{{image:blob}}'}, {'{{size}}'}
+                                                                        {uiText("变量示例：")}{'{{prompt}}'}, {'{{duration:number}}'}, {'{{image:blob}}'}, {'{{size}}'}
                                                                     </div>
                                                                     <div className="flex items-center gap-2">
                                                                         <button
@@ -2481,9 +2482,9 @@ export default function CanvasSettingsModal({
                                                                                         const { [entry.id]: _removed, ...rest } = prev;
                                                                                         return rest;
                                                                                     });
-                                                                                    showToast('请求模板已保存', 'success', 2000);
+                                                                                    showToast(uiText("请求模板已保存"), 'success', 2000);
                                                                                 } catch (e) {
-                                                                                    showToast('请求模板 JSON 格式无效', 'error', 2000);
+                                                                                    showToast(uiText("请求模板 JSON 格式无效"), 'error', 2000);
                                                                                 }
                                                                             }}
                                                                             disabled={!isEditing}
@@ -2569,7 +2570,7 @@ export default function CanvasSettingsModal({
                                                                         />
                                                                         <div className="flex items-center justify-between mt-2">
                                                                             <div className={`text-[9px] ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-500'}`}>
-                                                                                变量示例：{'{{requestId}}'}, {'{{provider.key}}'}, {'{{provider.baseUrl}}'}
+                                                                                {uiText("变量示例：")}{'{{requestId}}'}, {'{{provider.key}}'}, {'{{provider.baseUrl}}'}
                                                                             </div>
                                                                             <div className="flex items-center gap-2">
                                                                                 <button
@@ -2584,9 +2585,9 @@ export default function CanvasSettingsModal({
                                                                                                 const { [entry.id]: _removed, ...rest } = prev;
                                                                                                 return rest;
                                                                                             });
-                                                                                            showToast('异步配置已保存', 'success', 2000);
+                                                                                            showToast(uiText("异步配置已保存"), 'success', 2000);
                                                                                         } catch (e) {
-                                                                                            showToast('异步配置 JSON 格式无效', 'error', 2000);
+                                                                                            showToast(uiText("异步配置 JSON 格式无效"), 'error', 2000);
                                                                                         }
                                                                                     }}
                                                                                     disabled={!isEditing}
@@ -2661,8 +2662,7 @@ export default function CanvasSettingsModal({
                                                                 />
                                                                 <div className="flex items-center justify-between mt-2">
                                                                     <div className={`text-[9px] ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-500'}`}>
-                                                                        Step 类型：`http` / `transform`，支持 extract 变量回填
-                                                                    </div>
+                                                                        {uiText("Step 类型：`http` / `transform`，支持 extract 变量回填")}</div>
                                                                     <div className="flex items-center gap-2">
                                                                         <button
                                                                             onClick={() => {
@@ -2677,9 +2677,9 @@ export default function CanvasSettingsModal({
                                                                                         const { [entry.id]: _removed, ...rest } = prev;
                                                                                         return rest;
                                                                                     });
-                                                                                    showToast('Request Chain 已保存', 'success', 2000);
+                                                                                    showToast(uiText("Request Chain 已保存"), 'success', 2000);
                                                                                 } catch (e) {
-                                                                                    showToast('Request Chain JSON 格式无效', 'error', 2000);
+                                                                                    showToast(uiText("Request Chain JSON 格式无效"), 'error', 2000);
                                                                                 }
                                                                             }}
                                                                             disabled={!isEditing}
@@ -2786,9 +2786,9 @@ export default function CanvasSettingsModal({
                                                                                                 const { [entry.id]: _removed, ...rest } = prev;
                                                                                                 return rest;
                                                                                             });
-                                                                                            showToast('预览参数已更新', 'success', 2000);
+                                                                                            showToast(uiText("预览参数已更新"), 'success', 2000);
                                                                                         } catch (e) {
-                                                                                            showToast('JSON 格式无效，请检查后再保存', 'error', 2000);
+                                                                                            showToast(uiText("JSON 格式无效，请检查后再保存"), 'error', 2000);
                                                                                         }
                                                                                     }}
                                                                                     className={`px-2 py-1 rounded text-[9px] ${theme === 'dark'
@@ -2872,7 +2872,7 @@ export default function CanvasSettingsModal({
                                                                             </div>
                                                                         </div>
                                                                         <div className={`text-[9px] mb-1 ${theme === 'dark' ? 'text-zinc-600' : 'text-zinc-500'}`}>
-                                                                            模板状态：{requestTemplateEnabled ? t('已启用') : t('未启用')} · BodyType: {requestTemplateValue?.bodyType || 'json'} · Transport: {transportModeValue}
+                                                                            {uiText("模板状态：")}{requestTemplateEnabled ? t('已启用') : t('未启用')} · BodyType: {requestTemplateValue?.bodyType || 'json'} · Transport: {transportModeValue}
                                                                         </div>
                                                                         {isRequestPreviewEditing ? (
                                                                             <div className="space-y-2">
@@ -2903,9 +2903,9 @@ export default function CanvasSettingsModal({
                                                                                                     const { [entry.id]: _removed, ...rest } = prev;
                                                                                                     return rest;
                                                                                                 });
-                                                                                                showToast('请求覆盖已更新', 'success', 2000);
+                                                                                                showToast(uiText("请求覆盖已更新"), 'success', 2000);
                                                                                             } catch (e) {
-                                                                                                showToast('请求预览 JSON 无效', 'error', 2000);
+                                                                                                showToast(uiText("请求预览 JSON 无效"), 'error', 2000);
                                                                                             }
                                                                                         }}
                                                                                         className={`px-2 py-1 rounded text-[9px] ${theme === 'dark'
@@ -2938,7 +2938,7 @@ export default function CanvasSettingsModal({
                                                                             </div>
                                                                         ) : (
                                                                             <pre className={`text-[9px] whitespace-pre-wrap ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>
-                                                                                {requestPreviewDisplay ? JSON.stringify(requestPreviewDisplay, null, 2) : '请求模板为空'}
+                                                                                {requestPreviewDisplay ? JSON.stringify(requestPreviewDisplay, null, 2) : uiText("请求模板为空")}
                                                                             </pre>
                                                                         )}
                                                                     </div>
@@ -2950,7 +2950,7 @@ export default function CanvasSettingsModal({
                                             );
                                         })}
                                     </div>
-                                    <p className="text-[9px] text-zinc-500">提示：映射提示名仅用于展示，模型ID用于真实调用；不填写列表将使用默认限制。</p>
+                                    <p className="text-[9px] text-zinc-500">{uiText("提示：映射提示名仅用于展示，模型ID用于真实调用；不填写列表将使用默认限制。")}</p>
                                 </div>
                             )}
 

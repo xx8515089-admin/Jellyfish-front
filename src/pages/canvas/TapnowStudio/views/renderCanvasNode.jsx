@@ -1,3 +1,5 @@
+import { uiText } from '../../../../i18n/uiText'
+import CanvasAssetIssues from '../components/CanvasAssetIssues';
 import { canvasAlert, canvasConfirm } from '../canvasDialogs';
 import PreviewEmptyState from '../components/PreviewEmptyState';
 import { getPreviewConnectionStatus } from '../canvasPreviewConnectionStatus';
@@ -413,26 +415,26 @@ export function createNodeRenderer({
                     )}
                     {!(node.type === 'input-image' ? inputImageDisplayContent : node.content) && (
                         <div className={`p-2 font-bold text-sm truncate ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>
-                            {node.type === 'input-image' ? '图片' :
-                                node.type === 'video-input' ? '视频' :
-                                    node.type === 'gen-image' ? '生成图片' :
-                                        node.type === 'gen-image' ? '生成图片' :
-                                            node.type === 'gen-video' ? '生成视频' :
-                                                node.type === 'text-node' ? '文字' :
-                                                    node.type === 'preview' ? '预览' :
-                                                        node.type === 'novel-input' ? '小说输入' :
-                                                            node.type === 'extract-characters-scenes' ? '提取角色和场景' :
-                                                                node.type === 'character-description' ? '角色描述' :
-                                                                    node.type === 'scene-description' ? '场景描述' :
-                                                                        node.type === 'generate-character-video' ? '生成角色视频' :
-                                                                            node.type === 'generate-scene-video' ? '生成场景视频' :
-                                                                                node.type === 'generate-character-image' ? '生成角色图片' :
-                                                                                    node.type === 'generate-scene-image' ? '生成场景图片' :
-                                                                                        node.type === 'create-character' ? '创建角色' :
-                                                                                            node.type === 'create-scene' ? '创建场景' :
-                                                                                                node.type === 'save-to-local' ? '保存到本地' :
-                                                                                                    node.type === 'local-save' ? '保存到本地' :
-                                                                                                        node.type || '节点'}
+                            {node.type === 'input-image' ? uiText("图片") :
+                                node.type === 'video-input' ? uiText("视频") :
+                                    node.type === 'gen-image' ? uiText("生成图片") :
+                                        node.type === 'gen-image' ? uiText("生成图片") :
+                                            node.type === 'gen-video' ? uiText("生成视频") :
+                                                node.type === 'text-node' ? uiText("文字") :
+                                                    node.type === 'preview' ? uiText("预览") :
+                                                        node.type === 'novel-input' ? uiText("小说输入") :
+                                                            node.type === 'extract-characters-scenes' ? uiText("提取角色和场景") :
+                                                                node.type === 'character-description' ? uiText("角色描述") :
+                                                                    node.type === 'scene-description' ? uiText("场景描述") :
+                                                                        node.type === 'generate-character-video' ? uiText("生成角色视频") :
+                                                                            node.type === 'generate-scene-video' ? uiText("生成场景视频") :
+                                                                                node.type === 'generate-character-image' ? uiText("生成角色图片") :
+                                                                                    node.type === 'generate-scene-image' ? uiText("生成场景图片") :
+                                                                                        node.type === 'create-character' ? uiText("创建角色") :
+                                                                                            node.type === 'create-scene' ? uiText("创建场景") :
+                                                                                                node.type === 'save-to-local' ? uiText("保存到本地") :
+                                                                                                    node.type === 'local-save' ? uiText("保存到本地") :
+                                                                                                        node.type || uiText("节点")}
                         </div>
                     )}
 
@@ -686,6 +688,7 @@ export function createNodeRenderer({
                     }
                 }}
             >
+                <CanvasAssetIssues node={node} onRetry={canvasCloud.retryNodeAssets} />
                 <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); deleteNode(node.id); }}
@@ -792,7 +795,7 @@ export function createNodeRenderer({
                                             updateNodeSettings(node.id, { content: newValue });
                                         }
                                     }}
-                                    placeholder={cloudDocument ? '输入小说内容（最多60,000字符）...' : t('输入小说内容（最多10,000字）...')}
+                                    placeholder={cloudDocument ? uiText("输入小说内容（最多60,000字符）...") : t('输入小说内容（最多10,000字）...')}
                                     maxLength={cloudDocument ? 60000 : 10000}
                                     className={`w-full flex-1 resize-none outline-none text-sm p-2 rounded border ${theme === 'dark'
                                         ? 'bg-zinc-800 border-zinc-700 text-zinc-200 placeholder-zinc-500'
@@ -804,7 +807,7 @@ export function createNodeRenderer({
                                 />
                                 <div className="text-right text-[10px] text-zinc-500 shrink-0">
                                     {(node.settings?.content || '').length}/{cloudDocument ? '60,000' : '10,000'}
-                                    {cloudDocument && node.settings?.analysisResults && <button type="button" onClick={() => generateFullWorkflow(node.id, node.settings.analysisResults)}>创建角色/场景节点（{node.settings.analysisResults.characters?.length || 0} 角色 · {node.settings.analysisResults.scenes?.length || 0} 场景）</button>}
+                                    {cloudDocument && node.settings?.analysisResults && <button type="button" onClick={() => generateFullWorkflow(node.id, node.settings.analysisResults)}>{uiText("创建角色/场景节点（")}{node.settings.analysisResults.characters?.length || 0} {uiText("角色 ·") + " "}{node.settings.analysisResults.scenes?.length || 0} {uiText("场景）")}</button>}
                                 </div>
                                 <button
                                     className="w-full py-2 rounded text-xs font-medium transition-colors flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white shrink-0"
@@ -823,7 +826,7 @@ export function createNodeRenderer({
                                 <div className="flex items-center gap-1.5 text-xs font-semibold">
                                     <Users size={12} className="text-purple-500" />
                                     <span>{t('角色与场景提取')}</span>
-                                    {cloudDocument && node.settings?.analysisResults && <button type="button" onClick={() => generateFullWorkflow(node.id, node.settings.analysisResults)}>创建角色/场景节点</button>}
+                                    {cloudDocument && node.settings?.analysisResults && <button type="button" onClick={() => generateFullWorkflow(node.id, node.settings.analysisResults)}>{uiText("创建角色/场景节点")}</button>}
                                 </div>
                                 {node.settings?.analysisResults && (
                                     <span className="text-[10px] opacity-70">
@@ -834,9 +837,9 @@ export function createNodeRenderer({
                             <div className="flex-1 flex flex-col p-3 overflow-hidden min-h-0">
                                 <div className="flex flex-col gap-3">
                                     <div className="flex flex-col gap-1.5">
-                                        <label className="text-[10px] font-medium opacity-70">分析模型</label>
+                                        <label className="text-[10px] font-medium opacity-70">{uiText("分析模型")}</label>
                                         {/* V3.4.10：供应商 -> 模型双层选择器 */}
-                                        {cloudDocument ? <><CanvasTextModelSelect theme={theme} models={canvasCloud.textModels} ready={canvasCloud.textReady} onRefresh={canvasCloud.refreshModels} operation="extractCharactersScenes" value={node.settings?.textModelId} onChange={(textModelId) => updateNodeSettings(node.id, { textModelId })} /><textarea aria-label="提取文本" placeholder="输入文本，或连接小说/文本节点" value={node.settings?.scriptText || ''} maxLength={60000} onChange={e => updateNodeSettings(node.id, { scriptText: e.target.value })} /></> : (<div className="relative">
+                                        {cloudDocument ? <><CanvasTextModelSelect theme={theme} models={canvasCloud.textModels} ready={canvasCloud.textReady} onRefresh={canvasCloud.refreshModels} operation="extractCharactersScenes" value={node.settings?.textModelId} onChange={(textModelId) => updateNodeSettings(node.id, { textModelId })} /><textarea aria-label={uiText("提取文本")} placeholder={uiText("输入文本，或连接小说/文本节点")} value={node.settings?.scriptText || ''} maxLength={60000} onChange={e => updateNodeSettings(node.id, { scriptText: e.target.value })} /></> : (<div className="relative">
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); setActiveDropdown(activeDropdown?.nodeId === node.id && activeDropdown.type === 'extract-model' ? null : { nodeId: node.id, type: 'extract-model' }); }}
                                                 className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-xs border transition-colors ${theme === 'dark'
@@ -903,8 +906,7 @@ export function createNodeRenderer({
                                                             })}
                                                         {!hoveredProvider && (
                                                             <div className={`text-[10px] px-2 py-3 text-center ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                                                                ← 选择 Provider
-                                                            </div>
+                                                                {uiText("← 选择 Provider")}</div>
                                                         )}
                                                     </div>
                                                 </div>
@@ -930,12 +932,12 @@ export function createNodeRenderer({
                                             <div className="flex flex-col gap-3">
                                                 {characters.length > 0 && (
                                                     <div>
-                                                        <div className="text-[10px] font-medium mb-1 opacity-70">角色 ({characters.length})</div>
+                                                        <div className="text-[10px] font-medium mb-1 opacity-70">{uiText("角色 (")}{characters.length})</div>
                                                         {characters.map((char, idx) => (
                                                             <div key={`${char.name || 'char'}-${idx}`} className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-zinc-800' : 'bg-white border border-zinc-200'}`}>
                                                                 <div className="flex items-center gap-1 text-[11px]">
                                                                     <span className={`w-2 h-2 rounded-full shrink-0 ${idx === 0 ? 'bg-red-500' : idx === 1 ? 'bg-purple-500' : idx === 2 ? 'bg-blue-500' : 'bg-zinc-400'}`}></span>
-                                                                    <span className="font-medium">{char.name || '未命名角色'}</span>
+                                                                    <span className="font-medium">{char.name || uiText("未命名角色")}</span>
                                                                 </div>
                                                                 {char.description && (
                                                                     <div className="mt-1 text-[10px] opacity-70 leading-snug">{char.description}</div>
@@ -946,12 +948,12 @@ export function createNodeRenderer({
                                                 )}
                                                 {scenes.length > 0 && (
                                                     <div>
-                                                        <div className="text-[10px] font-medium mb-1 opacity-70">场景 ({scenes.length})</div>
+                                                        <div className="text-[10px] font-medium mb-1 opacity-70">{uiText("场景 (")}{scenes.length})</div>
                                                         {scenes.map((scene, idx) => (
                                                             <div key={`${scene.location || 'scene'}-${idx}`} className={`p-2 rounded mb-1 ${theme === 'dark' ? 'bg-zinc-800' : 'bg-white border border-zinc-200'}`}>
                                                                 <div className="flex items-center gap-1 text-[11px]">
                                                                     <span className="w-2 h-2 rounded-full bg-green-500 shrink-0"></span>
-                                                                    <span className="font-medium">{scene.location || scene.name || '未命名场景'}</span>
+                                                                    <span className="font-medium">{scene.location || scene.name || uiText("未命名场景")}</span>
                                                                 </div>
                                                                 {scene.description && (
                                                                     <div className="mt-1 text-[10px] opacity-70 leading-snug">{scene.description}</div>
@@ -961,7 +963,7 @@ export function createNodeRenderer({
                                                     </div>
                                                 )}
                                                 {characters.length === 0 && scenes.length === 0 && (
-                                                    <div className="text-[11px] text-zinc-500">未返回角色/场景数据</div>
+                                                    <div className="text-[11px] text-zinc-500">{uiText("未返回角色/场景数据")}</div>
                                                 )}
                                             </div>
                                         );
@@ -973,7 +975,7 @@ export function createNodeRenderer({
 
                                 {node.settings?.isAnalyzing && (
                                     <div className="mt-2">
-                                        <div className="text-[10px] mb-1 opacity-70">正在分析小说内容...</div>
+                                        <div className="text-[10px] mb-1 opacity-70">{uiText("正在分析小说内容...")}</div>
                                         <div className={`w-full h-1.5 rounded-full overflow-hidden ${theme === 'dark' ? 'bg-zinc-800' : 'bg-zinc-200'}`}>
                                             <div
                                                 className="h-full bg-blue-500 transition-all duration-300"
@@ -990,7 +992,7 @@ export function createNodeRenderer({
                                     disabled={!!cloudDocument && !canvasCloud.textReady}
                                     onClick={(e) => { e.stopPropagation(); handleExtractAnalysis(node.id); }}
                                 >
-                                    {node.settings?.isAnalyzing ? <><Loader2 size={12} className="animate-spin" />分析中...</> : <><Sparkles size={12} />开始提取</>}
+                                    {node.settings?.isAnalyzing ? <><Loader2 size={12} className="animate-spin" />{uiText("分析中...")}</> : <><Sparkles size={12} />{uiText("开始提取")}</>}
                                 </button>
                             </div>
                         </div>
@@ -1026,14 +1028,14 @@ export function createNodeRenderer({
                                                 <span>{title}</span>
                                             </div>
                                             {isCharacter ? (
-                                                baseCharacter.name ? <div className="description-node__identity">角色: {baseCharacter.name}</div> : null
+                                                baseCharacter.name ? <div className="description-node__identity">{uiText("角色:") + " "}{baseCharacter.name}</div> : null
                                             ) : (
-                                                baseScene.name ? <div className="description-node__identity">场景: {baseScene.name}</div> : null
+                                                baseScene.name ? <div className="description-node__identity">{uiText("场景:") + " "}{baseScene.name}</div> : null
                                             )}
                                         </div>
 
                                         <div className="description-node__body custom-scrollbar">
-                                            <div className="description-node__modes" role="group" aria-label="生成模式">
+                                            <div className="description-node__modes" role="group" aria-label={uiText("生成模式")}>
                                                 <button
                                                     aria-pressed={mode === 'video'}
                                                     className={`description-node__mode px-2 py-1 rounded text-[10px] transition-colors ${mode === 'video'
@@ -1050,8 +1052,7 @@ export function createNodeRenderer({
                                                         setTimeout(() => ensureVideoNodeForDescription(node.id), 0);
                                                     }}
                                                 >
-                                                    视频模式
-                                                </button>
+                                                    {uiText("视频模式")}</button>
                                                 <button
                                                     aria-pressed={mode === 'image'}
                                                     className={`description-node__mode px-2 py-1 rounded text-[10px] transition-colors ${mode === 'image'
@@ -1070,8 +1071,7 @@ export function createNodeRenderer({
                                                         setTimeout(() => ensureImageNodeForDescription(node.id), 0);
                                                     }}
                                                 >
-                                                    图片模式
-                                                </button>
+                                                    {uiText("图片模式")}</button>
                                             </div>
 
                                             <div className="description-node__prompt">
@@ -1080,15 +1080,14 @@ export function createNodeRenderer({
                                                     {node.settings?.isEnhancing && (
                                                         <span className="flex items-center gap-1 text-blue-400">
                                                             <Loader2 size={10} className="animate-spin" />
-                                                            处理中
-                                                        </span>
+                                                            {uiText("处理中")}</span>
                                                     )}
                                                 </div>
                                                 <textarea
                                                     value={promptValue}
                                                     onChange={(e) => updateNodeSettings(node.id, { prompt: e.target.value })}
                                                     placeholder={t('输入角色/场景描述提示词...')}
-                                                    aria-label={isCharacter ? "角色提示词" : "场景提示词"}
+                                                    aria-label={isCharacter ? uiText("角色提示词") : uiText("场景提示词")}
                                                     className={`description-node__textarea w-full h-28 resize-none outline-none text-sm p-2 rounded border ${theme === 'dark'
                                                         ? 'bg-zinc-800 border-zinc-700 text-zinc-200 placeholder-zinc-500'
                                                         : theme === 'solarized' ? 'bg-[#fdf6e3] border-[#eee8d5] text-zinc-800 placeholder-zinc-400' : 'bg-white border-zinc-300 text-zinc-800 placeholder-zinc-400'
@@ -1099,7 +1098,7 @@ export function createNodeRenderer({
                                                     <button
                                                         onClick={() => runDescriptionPromptAction(node.id, 'enhance')}
                                                         disabled={node.settings?.isEnhancing || (!!cloudDocument && !canvasCloud.textReady)}
-                                                        title={cloudDocument && !canvasCloud.textReady ? '服务端尚未开放文本任务' : undefined}
+                                                        title={cloudDocument && !canvasCloud.textReady ? uiText("服务端尚未开放文本任务") : undefined}
                                                         className={`px-2 py-1 rounded text-[10px] transition-colors ${node.settings?.isEnhancing
                                                             ? theme === 'dark'
                                                                 ? 'bg-zinc-700 text-zinc-500 cursor-not-allowed'
@@ -1109,12 +1108,12 @@ export function createNodeRenderer({
                                                                 : 'bg-purple-600 text-white hover:bg-purple-500'
                                                             }`}
                                                     >
-                                                        {isCharacter ? '增强角色描述' : '增强场景描述'}
+                                                        {isCharacter ? uiText("增强角色描述") : uiText("增强场景描述")}
                                                     </button>
                                                     <button
                                                         onClick={() => runDescriptionPromptAction(node.id, 'filter')}
                                                         disabled={node.settings?.isEnhancing || (!!cloudDocument && !canvasCloud.textReady)}
-                                                        title={cloudDocument && !canvasCloud.textReady ? '服务端尚未开放文本任务' : undefined}
+                                                        title={cloudDocument && !canvasCloud.textReady ? uiText("服务端尚未开放文本任务") : undefined}
                                                         className={`px-2 py-1 rounded text-[10px] transition-colors ${node.settings?.isEnhancing
                                                             ? theme === 'dark'
                                                                 ? 'bg-zinc-700 text-zinc-500 cursor-not-allowed'
@@ -1124,8 +1123,7 @@ export function createNodeRenderer({
                                                                 : 'bg-zinc-200 text-zinc-700 hover:bg-zinc-300'
                                                             }`}
                                                     >
-                                                        过滤提示词
-                                                    </button>
+                                                        {uiText("过滤提示词")}</button>
                                                 </div>
                                             </div>
 
@@ -1137,7 +1135,7 @@ export function createNodeRenderer({
                                                 />
                                             ) : (
                                             <div className="description-node__field">
-                                                <label className="text-[10px] font-medium opacity-70">文本模型 · 用于增强 / 过滤</label>
+                                                <label className="text-[10px] font-medium opacity-70">{uiText("文本模型 · 用于增强 / 过滤")}</label>
                                                 <div className="relative">
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); setActiveDropdown(activeDropdown?.nodeId === node.id && activeDropdown.type === 'desc-model' ? null : { nodeId: node.id, type: 'desc-model' }); }}
@@ -1203,8 +1201,7 @@ export function createNodeRenderer({
                                                                     })}
                                                                 {!hoveredProvider && (
                                                                     <div className={`text-[10px] px-2 py-3 text-center ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                                                                        ← 选择 Provider
-                                                                    </div>
+                                                                        {uiText("← 选择 Provider")}</div>
                                                                 )}
                                                             </div>
                                                         </div>
@@ -1215,7 +1212,7 @@ export function createNodeRenderer({
                                             )}
 
                                             <div className="description-node__field">
-                                                <label className="text-[10px] font-medium opacity-70">风格</label>
+                                                <label className="text-[10px] font-medium opacity-70">{uiText("风格")}</label>
                                                 <select
                                                     value={node.settings?.style || 'none'}
                                                     onChange={(e) => {
@@ -1240,7 +1237,7 @@ export function createNodeRenderer({
                                             </div>
 
                                             <div className="description-node__field">
-                                                <label className="text-[10px] font-medium opacity-70">参考图</label>
+                                                <label className="text-[10px] font-medium opacity-70">{uiText("参考图")}</label>
                                                 <div
                                                     className={`description-node__reference rounded-lg border-2 border-dashed p-2 transition-colors drop-zone ${theme === 'dark'
                                                         ? 'border-zinc-700 bg-zinc-800/60'
@@ -1271,8 +1268,7 @@ export function createNodeRenderer({
                                                                 </div>
                                                             ))}
                                                             <label className="aspect-square rounded border border-dashed border-zinc-500/60 flex items-center justify-center text-[10px] text-zinc-400 cursor-pointer hover:border-blue-400 hover:text-blue-400">
-                                                                + 添加
-                                                                <input
+                                                                {uiText("+ 添加")}<input
                                                                     type="file"
                                                                     className="hidden"
                                                                     accept="image/*"
@@ -1284,8 +1280,7 @@ export function createNodeRenderer({
                                                     ) : (
                                                         <label className="flex flex-col items-center justify-center gap-1 text-[10px] text-zinc-500 cursor-pointer">
                                                             <FolderOpen size={16} />
-                                                            点击或拖拽添加参考图
-                                                            <input
+                                                            {uiText("点击或拖拽添加参考图")}<input
                                                                 type="file"
                                                                 className="hidden"
                                                                 accept="image/*"
@@ -1380,7 +1375,7 @@ export function createNodeRenderer({
 
                                         <div className="flex-1 flex flex-col gap-3 p-3 overflow-y-auto min-h-0">
                                             <div>
-                                                <label className="text-[10px] block mb-1 text-zinc-500">选择模型</label>
+                                                <label className="text-[10px] block mb-1 text-zinc-500">{uiText("选择模型")}</label>
                                                 <div className="relative">
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); setActiveDropdown(activeDropdown?.nodeId === node.id && activeDropdown.type === 'role-video-model' ? null : { nodeId: node.id, type: 'role-video-model' }); }}
@@ -1446,8 +1441,7 @@ export function createNodeRenderer({
                                                                     })}
                                                                 {!hoveredProvider && (
                                                                     <div className={`text-[10px] px-2 py-3 text-center ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                                                                        ← 选择 Provider
-                                                                    </div>
+                                                                        {uiText("← 选择 Provider")}</div>
                                                                 )}
                                                             </div>
                                                         </div>
@@ -1456,7 +1450,7 @@ export function createNodeRenderer({
                                             </div>
 
                                             <div>
-                                                <label className="text-[10px] block mb-1 text-zinc-500">时长</label>
+                                                <label className="text-[10px] block mb-1 text-zinc-500">{uiText("时长")}</label>
                                                 <select
                                                     value={currentDuration}
                                                     onChange={(e) => updateNodeSettings(node.id, { duration: e.target.value })}
@@ -1475,7 +1469,7 @@ export function createNodeRenderer({
                                             </div>
 
                                             <div>
-                                                <label className="text-[10px] block mb-1 text-zinc-500">比例</label>
+                                                <label className="text-[10px] block mb-1 text-zinc-500">{uiText("比例")}</label>
                                                 <select
                                                     value={node.settings?.ratio || '16:9'}
                                                     onChange={(e) => updateNodeSettings(node.id, { ratio: e.target.value })}
@@ -1516,7 +1510,7 @@ export function createNodeRenderer({
                                                     {resolutionOptions.map(res => (
                                                         <option key={res} value={res}>
                                                             {res === 'Auto'
-                                                                ? '不选'
+                                                                ? uiText("不选")
                                                                 : getValueLabelWithNotes(res, !!resolutionConfig?.videoResolutionNotesEnabled, resolutionConfig?.videoResolutionNotes || {})}
                                                         </option>
                                                     ))}
@@ -1563,13 +1557,13 @@ export function createNodeRenderer({
                                                 </div>
                                             ) : (
                                                 <div className={`w-full aspect-video rounded border-2 border-dashed flex items-center justify-center ${theme === 'dark' ? 'border-zinc-700' : 'border-zinc-300'}`}>
-                                                    <span className={`text-sm ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>点击下方按钮开始生成</span>
+                                                    <span className={`text-sm ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>{uiText("点击下方按钮开始生成")}</span>
                                                 </div>
                                             )}
 
                                             {latestGenerating && (
                                                 <div className="mb-2">
-                                                    <div className="text-[10px] mb-1 text-zinc-500">正在生成视频...</div>
+                                                    <div className="text-[10px] mb-1 text-zinc-500">{uiText("正在生成视频...")}</div>
                                                     <div className={`w-full h-1.5 rounded-full overflow-hidden ${theme === 'dark' ? 'bg-zinc-800' : 'bg-zinc-200'}`}>
                                                         <div
                                                             className="h-full bg-blue-500 transition-all duration-300"
@@ -1622,7 +1616,7 @@ export function createNodeRenderer({
                                                     );
                                                 }}
                                             >
-                                                {latestGenerating ? '生成中...' : '生成视频'}
+                                                {latestGenerating ? uiText("生成中...") : uiText("生成视频")}
                                             </button>
                                         </div>
                                     </>
@@ -1654,7 +1648,7 @@ export function createNodeRenderer({
 
                                         <div className="flex-1 flex flex-col gap-3 p-3 overflow-y-auto min-h-0">
                                             <div>
-                                                <label className="text-[10px] block mb-1 text-zinc-500">选择模型</label>
+                                                <label className="text-[10px] block mb-1 text-zinc-500">{uiText("选择模型")}</label>
                                                 <div className="relative">
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); setActiveDropdown(activeDropdown?.nodeId === node.id && activeDropdown.type === 'role-image-model' ? null : { nodeId: node.id, type: 'role-image-model' }); }}
@@ -1720,8 +1714,7 @@ export function createNodeRenderer({
                                                                     })}
                                                                 {!hoveredProvider && (
                                                                     <div className={`text-[10px] px-2 py-3 text-center ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                                                                        ← 选择 Provider
-                                                                    </div>
+                                                                        {uiText("← 选择 Provider")}</div>
                                                                 )}
                                                             </div>
                                                         </div>
@@ -1730,7 +1723,7 @@ export function createNodeRenderer({
                                             </div>
 
                                             <div>
-                                                <label className="text-[10px] block mb-1 text-zinc-500">比例</label>
+                                                <label className="text-[10px] block mb-1 text-zinc-500">{uiText("比例")}</label>
                                                 <select
                                                     value={node.settings?.ratio || '16:9'}
                                                     onChange={(e) => updateNodeSettings(node.id, { ratio: e.target.value })}
@@ -1820,7 +1813,7 @@ export function createNodeRenderer({
                                                 </div>
                                             ) : (
                                                 <div className={`w-full h-28 rounded border-2 border-dashed flex items-center justify-center ${theme === 'dark' ? 'border-zinc-700' : 'border-zinc-300'}`}>
-                                                    <span className={`text-sm ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>点击下方按钮开始生成</span>
+                                                    <span className={`text-sm ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>{uiText("点击下方按钮开始生成")}</span>
                                                 </div>
                                             )}
 
@@ -1877,7 +1870,7 @@ export function createNodeRenderer({
                                                     );
                                                 }}
                                             >
-                                                {latestGenerating ? '生成中...' : '生成图片'}
+                                                {latestGenerating ? uiText("生成中...") : uiText("生成图片")}
                                             </button>
                                         </div>
                                     </>
@@ -1902,7 +1895,7 @@ export function createNodeRenderer({
 
                                         <div className="flex-1 flex flex-col gap-3 p-3 overflow-y-auto min-h-0">
                                             <div>
-                                                <label className="text-[10px] block mb-1 text-zinc-500">{isCharacter ? '角色名称' : '场景名称'}</label>
+                                                <label className="text-[10px] block mb-1 text-zinc-500">{isCharacter ? uiText("角色名称") : uiText("场景名称")}</label>
                                                 <input
                                                     type="text"
                                                     value={node.settings?.name || ''}
@@ -1911,7 +1904,7 @@ export function createNodeRenderer({
                                                         ? 'bg-zinc-800 border-zinc-700 text-zinc-200'
                                                         : theme === 'solarized' ? 'bg-[#fdf6e3] border-[#eee8d5] text-zinc-800' : 'bg-white border-zinc-300 text-zinc-800'
                                                         }`}
-                                                    placeholder={isCharacter ? "输入角色名称..." : "输入场景名称..."}
+                                                    placeholder={isCharacter ? uiText("输入角色名称...") : uiText("输入场景名称...")}
                                                     onMouseDown={(e) => e.stopPropagation()}
                                                 />
                                             </div>
@@ -1931,7 +1924,7 @@ export function createNodeRenderer({
                                                             }`}
                                                         onMouseDown={(e) => e.stopPropagation()}
                                                     />
-                                                    <span className={`text-xs ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>到</span>
+                                                    <span className={`text-xs ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>{uiText("到")}</span>
                                                     <input
                                                         type="number"
                                                         min="0"
@@ -1945,7 +1938,7 @@ export function createNodeRenderer({
                                                         onMouseDown={(e) => e.stopPropagation()}
                                                     />
                                                     <span className={`text-xs ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                                                        秒（间隔: {(endSecond - startSecond).toFixed(1)}s）
+                                                        {uiText("秒（间隔:") + " "}{(endSecond - startSecond).toFixed(1)}s）
                                                     </span>
                                                 </div>
                                             </div>
@@ -1956,7 +1949,7 @@ export function createNodeRenderer({
                                                 <div className="flex items-center gap-2 mb-2">
                                                     <div className="flex-1">
                                                         <div className="flex items-center justify-between mb-1">
-                                                            <span className="text-[10px] text-zinc-500">{title}中...</span>
+                                                            <span className="text-[10px] text-zinc-500">{title}{uiText("中...")}</span>
                                                             <span className="text-[10px] text-zinc-500">{node.settings?.createProgress || 0}%</span>
                                                         </div>
                                                         <div className={`w-full h-1.5 rounded-full overflow-hidden ${theme === 'dark' ? 'bg-zinc-800' : 'bg-zinc-200'}`}>
@@ -1987,7 +1980,7 @@ export function createNodeRenderer({
                                                 onClick={async () => {
                                                     const name = node.settings?.name || '';
                                                     if (!name || name.trim().length === 0) {
-                                                        canvasAlert(`请填写${isCharacter ? '角色' : '场景'}名称`);
+                                                        canvasAlert(uiText("请填写{0}名称", isCharacter ? uiText("角色") : uiText("场景")));
                                                         return;
                                                     }
                                                     const start = startSecond ?? 1;
@@ -2089,7 +2082,7 @@ export function createNodeRenderer({
                                                                 characterId: data.id,
                                                                 characterUsername: data.username
                                                             });
-                                                            canvasAlert(`${isCharacter ? '角色' : '场景'} "${data.username}" 创建成功！`);
+                                                            canvasAlert(uiText("{0} \"{1}\" 创建成功！", isCharacter ? uiText("角色") : uiText("场景"), data.username));
                                                         }, 300);
                                                     } catch (err) {
                                                         let msg = err.message || '创建失败';
@@ -2099,11 +2092,11 @@ export function createNodeRenderer({
                                                             msg = '连接失败。可能原因：\n\n1. API 地址填写错误\n   - 请检查 API 接口地址是否多余了 "/sora" 前缀\n   - 有些服务商的路径可能不同，请询问服务商 Sora 创建接口的准确路径\n\n2. 跨域限制 (CORS)\n   - 请尝试安装 Allow CORS 浏览器插件\n\n3. 网络问题\n   - 请检查网络连接';
                                                         }
                                                         updateNodeSettings(node.id, { isCreating: false, createProgress: 0, createError: msg });
-                                                        canvasAlert(`${isCharacter ? '创建角色' : '创建场景'}失败: ${msg}`);
+                                                        canvasAlert(uiText("{0}失败: {1}", isCharacter ? uiText("创建角色") : uiText("创建场景"), msg));
                                                     }
                                                 }}
                                             >
-                                                {isCharacter ? '创建角色' : '创建场景'}
+                                                {isCharacter ? uiText("创建角色") : uiText("创建场景")}
                                             </button>
                                         </div>
                                     </>
@@ -2127,7 +2120,7 @@ export function createNodeRenderer({
                                         <HardDrive size={12} className="text-green-500" />
                                         <span>{t('保存到本地')}</span>
                                     </div>
-                                    <div className={`w-2 h-2 rounded-full ${serverConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`} title={serverConnected ? "已连接本地服务" : "未连接"} />
+                                    <div className={`w-2 h-2 rounded-full ${serverConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'}`} title={serverConnected ? uiText("已连接本地服务") : uiText("未连接")} />
                                 </div>
                                 <div className="flex-1 overflow-y-auto p-3 custom-scrollbar flex flex-col gap-3">
                                     <div className="flex flex-col gap-1.5">
@@ -2222,7 +2215,7 @@ export function createNodeRenderer({
                                         onMouseDown={(e) => e.stopPropagation()}
                                         onClick={async () => {
                                             if (pendingCount === 0) {
-                                                showToast('暂无待保存文件', 'warning');
+                                                showToast(uiText("暂无待保存文件"), 'warning');
                                                 return;
                                             }
                                             updateNodeSettings(node.id, { isSaving: true });
@@ -2235,7 +2228,7 @@ export function createNodeRenderer({
                                             }
                                         }}
                                     >
-                                        {isSaving ? '保存中...' : '保存到本地'}
+                                        {isSaving ? uiText("保存中...") : uiText("保存到本地")}
                                     </button>
                                 </div>
                             </div>
@@ -2389,7 +2382,7 @@ export function createNodeRenderer({
                                 </div>
                             ) : (
                                 <div className="canvas-node__media-empty flex flex-col items-center justify-center h-full w-full">
-                                    <div className="canvas-node__media-title">{node.type === 'video-input' ? '视频素材' : '参考图片'}</div>
+                                    <div className="canvas-node__media-title">{node.type === 'video-input' ? uiText("视频素材") : uiText("参考图片")}</div>
                                     <div
                                         className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-3 border ${theme === 'dark'
                                             ? 'bg-zinc-800 border-zinc-700/50'
@@ -2470,7 +2463,7 @@ export function createNodeRenderer({
                                             } : n));
                                         }}
                                         className={`p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded transition-colors ml-1 ${node.settings?.videoExpanded === false ? 'bg-zinc-200 dark:bg-zinc-700' : ''}`}
-                                        title={node.settings?.videoExpanded === false ? "展开视频" : "收起视频"}
+                                        title={node.settings?.videoExpanded === false ? uiText("展开视频") : uiText("收起视频")}
                                     >
                                         {node.settings?.videoExpanded === false ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
                                     </button>
@@ -2478,7 +2471,7 @@ export function createNodeRenderer({
                                 <div className="flex items-center gap-2 text-[10px] text-zinc-500">
                                     {node.videoMeta?.duration ? <span>{t('时长')} {node.videoMeta.duration.toFixed(1)}s</span> : null}
                                     {(node.videoMeta?.width || node.videoMeta?.w) ? <span>{node.videoMeta.width || node.videoMeta.w}x{node.videoMeta.height || node.videoMeta.h}</span> : null}
-                                    {node.selectedKeyframes?.length ? <span className="text-blue-500">关键帧 {node.selectedKeyframes.length} 个</span> : null}
+                                    {node.selectedKeyframes?.length ? <span className="text-blue-500">{uiText("关键帧") + " "}{node.selectedKeyframes.length} {uiText("个")}</span> : null}
                                 </div>
                             </div>
 
@@ -2892,11 +2885,11 @@ export function createNodeRenderer({
                                                             const metadata = { duration: video.duration, width: video.videoWidth, height: video.videoHeight };
                                                             setNodes(previous => applyVideoMetadata(previous, videoInputNode.id, videoInputNode.content, metadata));
                                                         }}
-                                                    /> : <p className="text-[11px] text-zinc-500">已连接视频节点，请先在生成任务中应用视频结果，或为视频输入节点上传视频。</p>
+                                                    /> : <p className="text-[11px] text-zinc-500">{uiText("已连接视频节点，请先在生成任务中应用视频结果，或为视频输入节点上传视频。")}</p>
                                                 )}
                                                 <div className={`text-[11px] px-2 py-1.5 rounded border ${theme === 'dark' ? 'bg-zinc-800 border-zinc-700' : 'bg-zinc-50 border-zinc-300'}`}>
                                                     <div className="flex items-center justify-between mb-1">
-                                                        <span className="text-zinc-500">{videoInputNode.isImageInput ? '关联的图片' : '关联的视频'}</span>
+                                                        <span className="text-zinc-500">{videoInputNode.isImageInput ? uiText("关联的图片") : uiText("关联的视频")}</span>
                                                     </div>
                                                     <div className="text-zinc-700 dark:text-zinc-300">
                                                         <div>{t('文件名:')} {videoInputNode.isImageInput ? t('图片输入') : videoFileName}</div>
@@ -2907,11 +2900,10 @@ export function createNodeRenderer({
 
                                                 {!!cloudDocument && (
                                                     <p role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-500">
-                                                        云端视频拆解暂未开放。当前可预览视频、在视频输入节点整理关键帧；AI 提示词反推、导演拆解和口播转写暂不可用。
-                                                    </p>
+                                                        {uiText("云端视频拆解暂未开放。当前可预览视频、在视频输入节点整理关键帧；AI 提示词反推、导演拆解和口播转写暂不可用。")}</p>
                                                 )}
                                                 {!cloudDocument && (node.settings?.analysisMode || 'manual') === 'manual' && selectedKeyframes.length === 0 && (
-                                                    <p className="text-[11px] text-zinc-500">请先连接“视频输入 / 关键帧整理”节点，抽帧并选中关键帧后再生成提示词。</p>
+                                                    <p className="text-[11px] text-zinc-500">{uiText("请先连接“视频输入 / 关键帧整理”节点，抽帧并选中关键帧后再生成提示词。")}</p>
                                                 )}
                                                 {/* 模式选择切换按钮 */}
                                                 <div className={`flex items-center gap-2 p-1 rounded-lg border shadow-inner ${theme === 'dark' ? 'bg-zinc-800 border-zinc-700' : theme === 'solarized' ? 'bg-[#fdf6e3] border-[#eee8d5]' : 'bg-zinc-100 border-zinc-200'
@@ -2928,8 +2920,7 @@ export function createNodeRenderer({
                                                             }`}
                                                         onMouseDown={(e) => e.stopPropagation()}
                                                     >
-                                                        <Camera size={12} /> 手动选帧拆解
-                                                    </button>
+                                                        <Camera size={12} /> {uiText("手动选帧拆解")}</button>
                                                     <button
                                                         onClick={() => updateNodeSettings(node.id, { analysisMode: 'auto' })}
                                                         className={`flex-1 py-1 px-2 text-[11px] rounded transition-all flex justify-center items-center gap-1 ${node.settings?.analysisMode === 'auto'
@@ -2942,14 +2933,13 @@ export function createNodeRenderer({
                                                             }`}
                                                         onMouseDown={(e) => e.stopPropagation()}
                                                     >
-                                                        <Sparkles size={12} /> AI 导演拆解
-                                                    </button>
+                                                        <Sparkles size={12} /> {uiText("AI 导演拆解")}</button>
                                                 </div>
 
                                                 {(node.settings?.analysisMode || 'manual') === 'manual' && (
                                                     <>
                                                         <div className="flex items-center gap-2">
-                                                            <label className="text-[11px] text-zinc-500">按时间段分组:</label>
+                                                            <label className="text-[11px] text-zinc-500">{uiText("按时间段分组:")}</label>
                                                             <input
                                                                 type="number"
                                                                 min="1"
@@ -2964,11 +2954,11 @@ export function createNodeRenderer({
                                                                 className={`w-16 px-2 py-1 text-[11px] rounded border ${theme === 'dark' ? 'bg-zinc-800 border-zinc-700 text-zinc-300' : theme === 'solarized' ? 'bg-[#fdf6e3] border-[#eee8d5] text-zinc-800' : 'bg-white border-zinc-300 text-zinc-800'}`}
                                                                 onMouseDown={(e) => e.stopPropagation()}
                                                             />
-                                                            <span className="text-[11px] text-zinc-500">秒</span>
+                                                            <span className="text-[11px] text-zinc-500">{uiText("秒")}</span>
                                                         </div>
 
                                                         <div className="flex items-center gap-2">
-                                                            <label className="text-[11px] text-zinc-500">模型:</label>
+                                                            <label className="text-[11px] text-zinc-500">{uiText("模型:")}</label>
                                                             {/* V3.4.10：供应商 -> 模型双层选择器 */}
                                                             <div className="relative flex-1">
                                                                 <button
@@ -2980,7 +2970,7 @@ export function createNodeRenderer({
                                                                         }`}
                                                                     onMouseDown={(e) => e.stopPropagation()}
                                                                 >
-                                                                    <span className="truncate font-mono">{cloudDocument ? '视频分析模型暂未开放' : (getApiConfigByKey(node.settings?.model)?.id || node.settings?.model || 'gemini-3-pro')}</span>
+                                                                    <span className="truncate font-mono">{cloudDocument ? uiText("视频分析模型暂未开放") : (getApiConfigByKey(node.settings?.model)?.id || node.settings?.model || 'gemini-3-pro')}</span>
                                                                     <ChevronDown size={10} className="opacity-50 shrink-0 ml-1" />
                                                                 </button>
                                                                 {!cloudDocument && activeDropdown?.nodeId === node.id && activeDropdown.type === 'analyze-model' && (
@@ -3038,8 +3028,7 @@ export function createNodeRenderer({
                                                                                 })}
                                                                             {!hoveredProvider && (
                                                                                 <div className={`text-[10px] px-2 py-3 text-center ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                                                                                    ← 选择 Provider
-                                                                                </div>
+                                                                                    {uiText("← 选择 Provider")}</div>
                                                                             )}
                                                                         </div>
                                                                     </div>
@@ -3087,8 +3076,7 @@ export function createNodeRenderer({
                                                     {node.settings.voiceoverResults?.length > 0 && (
                                                         <div className={`p-2 rounded-lg mb-4 ${theme === 'dark' ? 'bg-zinc-700/50 border border-zinc-700' : 'bg-zinc-50 border border-blue-200'}`}>
                                                             <h4 className={`text-xs font-semibold mb-2 flex items-center gap-1 ${theme === 'dark' ? 'text-white' : 'text-blue-700'}`}>
-                                                                <Mic2 size={12} /> 提取口播文案
-                                                            </h4>
+                                                                <Mic2 size={12} /> {uiText("提取口播文案")}</h4>
                                                             <div className="space-y-1">
                                                                 {node.settings.voiceoverResults.map((v, i) => (
                                                                     <p
@@ -3097,7 +3085,7 @@ export function createNodeRenderer({
                                                                         onMouseDown={(e) => e.stopPropagation()}
                                                                     >
                                                                         <span className="font-mono text-xs mr-2 opacity-70">[{v.time_range || `${v.time}s`}]</span>
-                                                                        {v.text || <span className="text-zinc-400 italic">（无口播）</span>}
+                                                                        {v.text || <span className="text-zinc-400 italic">{uiText("（无口播）")}</span>}
                                                                     </p>
                                                                 ))}
                                                             </div>
@@ -3106,14 +3094,13 @@ export function createNodeRenderer({
 
                                                     {/* 场景拆解结果 */}
                                                     <h4 className={`text-xs font-semibold mb-3 flex items-center gap-1 ${theme === 'dark' ? 'text-white' : 'text-zinc-800'}`}>
-                                                        <Camera size={12} /> 导演级场景分析 ({node.settings.analysisResults.length} 场景)
-                                                    </h4>
+                                                        <Camera size={12} /> {uiText("导演级场景分析 (")}{node.settings.analysisResults.length} {uiText("场景)")}</h4>
 
                                                     <div className="space-y-4">
                                                         {node.settings.analysisResults.map((scene, i) => (
                                                             <div key={i} className={`p-3 rounded-lg ${theme === 'dark' ? 'bg-zinc-800 border border-zinc-700' : 'bg-zinc-50 border border-zinc-200'}`}>
                                                                 <h5 className={`text-sm font-bold mb-2 ${theme === 'dark' ? 'text-purple-400' : 'text-purple-700'}`}>
-                                                                    场景 {scene.scene_index || scene.scene_id || i + 1} <span className="text-xs font-normal opacity-70 ml-2">({scene.time_range})</span>
+                                                                    {uiText("场景") + " "}{scene.scene_index || scene.scene_id || i + 1} <span className="text-xs font-normal opacity-70 ml-2">({scene.time_range})</span>
                                                                 </h5>
 
                                                                 {/* 视觉分析 */}
@@ -3123,7 +3110,7 @@ export function createNodeRenderer({
                                                                             className={`select-text cursor-text ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}
                                                                             onMouseDown={(e) => e.stopPropagation()}
                                                                         >
-                                                                            <span className="font-semibold mr-1">运镜/动态:</span> {scene.keyframes[0].description}
+                                                                            <span className="font-semibold mr-1">{uiText("运镜/动态:")}</span> {scene.keyframes[0].description}
                                                                         </p>
                                                                     )}
                                                                     {scene.global_tags?.style?.[0] && (
@@ -3131,7 +3118,7 @@ export function createNodeRenderer({
                                                                             className={`select-text cursor-text ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}
                                                                             onMouseDown={(e) => e.stopPropagation()}
                                                                         >
-                                                                            <span className="font-semibold mr-1">氛围/风格:</span> {scene.global_tags.style[0]}
+                                                                            <span className="font-semibold mr-1">{uiText("氛围/风格:")}</span> {scene.global_tags.style[0]}
                                                                         </p>
                                                                     )}
                                                                 </div>
@@ -3141,7 +3128,7 @@ export function createNodeRenderer({
                                                                     {/* 即梦 Prompt */}
                                                                     {scene.keyframes?.[0]?.jimeng_prompt && (
                                                                         <div className={`p-2 rounded ${theme === 'dark' ? 'bg-zinc-700 border border-zinc-600' : 'bg-zinc-50 border border-gray-300'}`}>
-                                                                            <h6 className={`text-[10px] font-semibold mb-1 flex items-center gap-1 ${theme === 'dark' ? 'text-yellow-300' : 'text-yellow-700'}`}><Code size={10} /> 即梦 Prompt</h6>
+                                                                            <h6 className={`text-[10px] font-semibold mb-1 flex items-center gap-1 ${theme === 'dark' ? 'text-yellow-300' : 'text-yellow-700'}`}><Code size={10} /> {uiText("即梦 Prompt")}</h6>
                                                                             <p
                                                                                 className={`text-[10px] whitespace-pre-wrap select-text cursor-text ${theme === 'dark' ? 'text-zinc-200' : 'text-zinc-800'}`}
                                                                                 onMouseDown={(e) => e.stopPropagation()}
@@ -3175,7 +3162,7 @@ export function createNodeRenderer({
                                             {/* 结果展示区 (Manual 模式) */}
                                             {(node.settings?.analysisMode || 'manual') === 'manual' && node.analysisResults && node.analysisResults.length > 0 ? (
                                                 <div className="space-y-3 flex-1 flex flex-col min-h-0">
-                                                    <div className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300 shrink-0">拆解提示词 ({node.analysisResults.length} 个场景)</div>
+                                                    <div className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300 shrink-0">{uiText("拆解提示词 (")}{node.analysisResults.length} {uiText("个场景)")}</div>
                                                     <div className="space-y-3 flex-1 overflow-y-auto custom-scrollbar min-h-0">
                                                         {node.analysisResults.map((result, idx) => {
                                                             // 获取关键帧对应的图片URL（从videoInputNode的frames或selectedKeyframes中查找）
@@ -3204,7 +3191,7 @@ export function createNodeRenderer({
                                                                     {/* 场景标题和时间区间 */}
                                                                     <div className="flex items-center justify-between mb-2">
                                                                         <div className="font-medium text-[11px] text-zinc-800 dark:text-zinc-200">
-                                                                            场景 {result.scene_index || idx + 1}
+                                                                            {uiText("场景") + " "}{result.scene_index || idx + 1}
                                                                         </div>
                                                                         <div className="text-[10px] text-zinc-500">
                                                                             {result.time_range}
@@ -3227,10 +3214,10 @@ export function createNodeRenderer({
                                                                             return (
                                                                                 <div key={kfIdx} className="relative aspect-video bg-black rounded overflow-hidden">
                                                                                     {imageUrl ? (
-                                                                                        <LazyBase64Image src={imageUrl} className="w-full h-full object-cover" alt={`关键帧 ${kfIdx + 1}`} loading="lazy" />
+                                                                                        <LazyBase64Image src={imageUrl} className="w-full h-full object-cover" alt={uiText("关键帧 {0}", kfIdx + 1)} loading="lazy" />
                                                                                     ) : (
                                                                                         <div className="w-full h-full flex items-center justify-center text-[8px] text-zinc-500">
-                                                                                            {kf.type === 'prev' ? '上一帧' : kf.type === 'current' ? '当前帧' : '下一帧'}
+                                                                                            {kf.type === 'prev' ? uiText("上一帧") : kf.type === 'current' ? uiText("当前帧") : uiText("下一帧")}
                                                                                         </div>
                                                                                     )}
                                                                                     <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[8px] px-1 py-0.5 text-center">
@@ -3246,7 +3233,7 @@ export function createNodeRenderer({
                                                                         {result.keyframes?.map((kf, kfIdx) => (
                                                                             <div key={kfIdx} className="space-y-1.5">
                                                                                 <div className="text-[9px] text-zinc-500">
-                                                                                    {kf.type === 'prev' ? '上一帧' : kf.type === 'current' ? '当前帧' : '下一帧'} ({kf.time.toFixed(1)}s)
+                                                                                    {kf.type === 'prev' ? uiText("上一帧") : kf.type === 'current' ? uiText("当前帧") : uiText("下一帧")} ({kf.time.toFixed(1)}s)
                                                                                 </div>
 
                                                                                 {/* MJ 提示词 */}
@@ -3254,7 +3241,7 @@ export function createNodeRenderer({
                                                                                     <div className={`p-2 rounded border ${theme === 'dark' ? 'bg-zinc-900 border-zinc-600' : theme === 'solarized' ? 'bg-[#fdf6e3] border-[#eee8d5]' : 'bg-zinc-50 border-zinc-200'}`}>
                                                                                         <div className="flex items-start justify-between gap-2">
                                                                                             <div className="flex-1">
-                                                                                                <div className="text-[9px] text-zinc-500 mb-1">Midjourney 提示词</div>
+                                                                                                <div className="text-[9px] text-zinc-500 mb-1">{uiText("Midjourney 提示词")}</div>
                                                                                                 <div
                                                                                                     className="text-[10px] text-zinc-700 dark:text-zinc-300 break-words select-text cursor-text"
                                                                                                     onMouseDown={(e) => e.stopPropagation()}
@@ -3338,7 +3325,7 @@ export function createNodeRenderer({
                                                                                     <div className={`p-2 rounded border ${theme === 'dark' ? 'bg-zinc-900 border-zinc-600' : theme === 'solarized' ? 'bg-[#fdf6e3] border-[#eee8d5]' : 'bg-zinc-50 border-zinc-200'}`}>
                                                                                         <div className="flex items-start justify-between gap-2">
                                                                                             <div className="flex-1">
-                                                                                                <div className="text-[9px] text-zinc-500 mb-1">即梦提示词</div>
+                                                                                                <div className="text-[9px] text-zinc-500 mb-1">{uiText("即梦提示词")}</div>
                                                                                                 <div
                                                                                                     className="text-[10px] text-zinc-700 dark:text-zinc-300 break-words select-text cursor-text"
                                                                                                     onMouseDown={(e) => e.stopPropagation()}
@@ -3369,7 +3356,7 @@ export function createNodeRenderer({
                                                                     {/* 全局标签 */}
                                                                     {result.global_tags && (
                                                                         <div className="mt-2 pt-2 border-t border-zinc-300 dark:border-zinc-700">
-                                                                            <div className="text-[9px] text-zinc-500 mb-1">全局标签</div>
+                                                                            <div className="text-[9px] text-zinc-500 mb-1">{uiText("全局标签")}</div>
                                                                             <div className="flex flex-wrap gap-1">
                                                                                 {Object.entries(result.global_tags).map(([key, values]) => (
                                                                                     Array.isArray(values) && values.map((val, valIdx) => (
@@ -3507,7 +3494,7 @@ export function createNodeRenderer({
                                         <span>{t('预览窗口')}</span>
                                     </div>
                                     <span className="text-[10px] text-zinc-500">
-                                        {node.previewType === 'video' ? '视频预览' : '图片预览'}
+                                        {node.previewType === 'video' ? uiText("视频预览") : uiText("图片预览")}
                                     </span>
                                 </div>
                                 <div className="flex-1 flex flex-col p-2 gap-2 min-h-0">
@@ -3564,7 +3551,7 @@ export function createNodeRenderer({
                                                             <LazyBase64Image
                                                                 src={imgUrl}
                                                                 className="max-w-full max-h-full w-auto h-auto object-contain"
-                                                                alt={`预览图 ${idx + 1}`}
+                                                                alt={uiText("预览图 {0}", idx + 1)}
                                                                 draggable={false}
                                                                 onError={(e) => {
                                                                     console.error(`预览图片 ${idx + 1} 加载失败`);
@@ -3621,8 +3608,8 @@ export function createNodeRenderer({
                                                 try {
                                                     const link = canvasCloud.getPreviewLink(node);
                                                     await writeClipboardText(link.url, navigator, document);
-                                                    showToast(link.authenticated ? '已复制素材预览链接，需登录有权限的账号打开' : '链接已复制', 'success');
-                                                } catch (error) { showToast(error.message || '复制失败，请重试', 'error'); }
+                                                    showToast(link.authenticated ? uiText("已复制素材预览链接，需登录有权限的账号打开") : uiText("链接已复制"), 'success');
+                                                } catch (error) { showToast(error.message || uiText("复制失败，请重试"), 'error'); }
                                             }}
                                         >
                                             <CopyPlus size={13} />
@@ -3638,8 +3625,8 @@ export function createNodeRenderer({
                                                 event.stopPropagation();
                                                 try {
                                                     sendPreviewToCanvas(node);
-                                                    showToast('已添加到画布并定位到新素材节点', 'success');
-                                                } catch (error) { showToast(error.message || '发送失败，请重试', 'error'); }
+                                                    showToast(uiText("已添加到画布并定位到新素材节点"), 'success');
+                                                } catch (error) { showToast(error.message || uiText("发送失败，请重试"), 'error'); }
                                             }}
                                         >
                                             <ArrowRightSquare size={13} />

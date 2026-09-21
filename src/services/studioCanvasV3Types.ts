@@ -2,6 +2,7 @@ import type { CanvasId, CanvasOperation } from './studioCanvases'
 
 export type CanvasTextOperation = 'promptEnhance' | 'promptFilter' | 'extractCharactersScenes' | 'storyboardSplit' | 'storyboardPromptMerge'
 export interface CanvasCapabilities {
+  contractVersion?: string; mediaWriteReady?: boolean; reviewReady?: boolean
   analysisTasksReady?: boolean; analysisOperations?: string[]; analysisUnavailableCode?: string; analysisUnavailableReason?: string
   chatUnavailableCode?: string; chatUnavailableReason?: string
   chatReady?: boolean; workflowReady?: boolean; advancedFeatures?: boolean; advancedOperations?: string[]; providerIdentityReady?: boolean
@@ -28,7 +29,7 @@ export interface CanvasTextCreateRequest {
   canvasId: CanvasId; quoteId: string; clientRequestId: string; maxReservedCredits: number
 }
 export interface CanvasTextTask extends CanvasTextEstimateRequest {
-  taskId: CanvasId; generationTaskId?: CanvasId; inputHash: string; status: number; shouldPoll: boolean
+  retryAfterMs?: number; taskId: CanvasId; generationTaskId?: CanvasId; inputHash: string; status: number; shouldPoll: boolean
   cancelRequested?: boolean; actions: { cancel?: boolean; retry?: boolean; retrySettlement?: boolean }
   result?: { schemaVersion: number; operation: CanvasTextOperation; prompt?: string; removedTerms?: string[]; characters?: Record<string, unknown>[]; scenes?: Record<string, unknown>[]; shots?: Record<string, unknown>[] }
   error?: string; billingState: string; reservedCredits: number | null; actualCredits: number | null

@@ -95,8 +95,12 @@ test('a mismatched quote cannot be sent even if it has a valid quote ID', async 
 function workflow(overrides = {}) {
   const snapshotRef = { current: { nodes: [{ id: '角色', type: 'character-description', settings: { prompt: '原文' } }], connections: [] } }
   const saves = []
+  const task = { canvasId: 12, revisionNo: 3, taskId: 71, nodeId: '角色', operation: 'promptEnhance', status: 3, inputHash: 'hash', result: { schemaVersion: 1, operation: 'promptEnhance', prompt: '增强后' } }
+  const doc = { canvasId: 12, revisionNo: 3, project: JSON.parse(JSON.stringify(snapshotRef.current)) }
   const context = {
-    snapshotRef, preview: { workflow: { workflowId: 8, revisionNo: 3 }, task: { taskId: 71, nodeId: '角色', operation: 'promptEnhance', status: 3, inputHash: 'hash', result: { schemaVersion: 1, operation: 'promptEnhance', prompt: '增强后' } } },
+    ...logic(), canvasId: 12, session: { document: doc, hydrate: async value => value }, saveToUndoStack() {},
+    StudioCanvases: { detail: async () => doc, textDetail: async () => task },
+    snapshotRef, preview: { workflow: { canvasId: 12, workflowId: 8, revisionNo: 3, nodes: [{ nodeId: '角色', taskId: 71, taskFamily: 'text', operation: 'promptEnhance' }] }, task: { taskId: 71, nodeId: '角色', operation: 'promptEnhance', status: 3, inputHash: 'hash', result: { schemaVersion: 1, operation: 'promptEnhance', prompt: '增强后' } } },
     run: fn => fn(), assertReady() {}, confirm: async () => true, setNodes() {}, save: async () => saves.push(JSON.stringify(snapshotRef.current)), setPreview() {},
     ...overrides,
   }

@@ -1,3 +1,4 @@
+import { uiText, useUiLanguage } from '../../../i18n/uiText'
 import { canvasAlert, canvasConfirm, canvasPrompt, canvasDialogStore } from './canvasDialogs';
 import CanvasDialogHost from './components/CanvasDialogHost';
 import { message } from 'antd'
@@ -156,6 +157,8 @@ import './components/DescriptionNode.css';
 
 
 function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cloudTextModels = [], onRefreshCloudModels, workspaceId = 'default', workspaceName = '', language: appLanguage, onLanguageChange, onWorkspaceChanged } = {}) {
+  useUiLanguage()
+
     const storageScope = cloudDocument ? canvasEditorScope(String(cloudDocument.canvasId)) : workspaceId;
     const localStorage = useMemo(
         () => createCanvasStorage(storageScope, onWorkspaceChanged),
@@ -492,7 +495,7 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
             stuckTasks.forEach(({ nodeId, shotId, timeoutMs }) => {
                 const timeoutSeconds = Math.round((timeoutMs || IMAGE_TASK_TIMEOUT_MS) / 1000);
                 // V3.7.29: 使用条件更新，防止覆盖已完成的状态
-                updateShot(nodeId, shotId, { status: 'failed', errorMsg: `任务超时（${timeoutSeconds}s）` }, { onlyIfStatus: 'generating' });
+                updateShot(nodeId, shotId, { status: 'failed', errorMsg: uiText("任务超时（{0}s）", timeoutSeconds) }, { onlyIfStatus: 'generating' });
             });
             currentGeneratingCount -= stuckTasks.length;
         }
@@ -1455,10 +1458,10 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
             localCacheFileIndexRef.current = next;
             localCacheIndexReadyRef.current = true;
             setLocalCacheIndexTick((prev) => prev + 1);
-            if (!silent) showToast('本地缓存索引已更新', 'success', 1500);
+            if (!silent) showToast(uiText("本地缓存索引已更新"), 'success', 1500);
         } catch (e) {
             localCacheIndexReadyRef.current = false;
-            if (!silent) showToast('本地缓存索引更新失败', 'warning', 1500);
+            if (!silent) showToast(uiText("本地缓存索引更新失败"), 'warning', 1500);
         }
     }, [localCacheActive, localServerUrl, normalizeLocalCacheRelPath, showToast]);
 
@@ -2785,7 +2788,7 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
         const silent = options.silent === true;
         const baseUrl = (localServerUrl || '').replace(/\/+$/, '');
         if (!baseUrl) {
-            if (!silent) showToast('本地服务地址为空', 'error');
+            if (!silent) showToast(uiText("本地服务地址为空"), 'error');
             return false;
         }
         const normalizedPatch = { ...patch };
@@ -2827,7 +2830,7 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
                 jpgQuality: serverConfig.jpg_quality ?? normalizedPatch.jpg_quality ?? prev.jpgQuality,
                 pilAvailable: serverConfig.pil_available ?? prev.pilAvailable
             }));
-            if (!silent) showToast(data?.message || '本地缓存配置已更新', 'success', 2000);
+            if (!silent) showToast(data?.message || uiText("本地缓存配置已更新"), 'success', 2000);
             return true;
         } catch (err) {
             if (!silent) showToast(`配置更新失败: ${err.message || '网络错误'}`, 'error', 2000);
@@ -2861,7 +2864,7 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
         }
         setCacheRefreshTick(prev => prev + 1);
         if (!silent) {
-            showToast('已触发缓存刷新，将重新写入本地缓存路径', 'success');
+            showToast(uiText("已触发缓存刷新，将重新写入本地缓存路径"), 'success');
         }
         refreshLocalCacheFileIndex({ silent: true });
     }, [showToast, refreshLocalCacheFileIndex]);
@@ -3350,7 +3353,7 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
             ? item.mjImages
             : [item.url || item.originalUrl || item.mjOriginalUrl].filter(Boolean);
         if (rawUrls.length === 0) {
-            showToast('没有可用的图片地址', 'warning');
+            showToast(uiText("没有可用的图片地址"), 'warning');
             return;
         }
         const baseProxy = getItemProxyPreference(item);
@@ -3376,7 +3379,7 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
             setHistory(prev => prev.map(h => h.id === item.id ? { ...h, thumbnailUrl: thumbnail || null } : h));
         }
         if (!options.silent) {
-            showToast('缩略图已更新', 'success');
+            showToast(uiText("缩略图已更新"), 'success');
         }
     }, [generateThumbnail, performanceMode, resolveHistoryUrl, showToast, getItemProxyPreference, getProxyPreferenceForUrl]);
 
@@ -3388,14 +3391,14 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
             )
         );
         if (imageItems.length === 0) {
-            showToast('没有可重建的图片', 'warning');
+            showToast(uiText("没有可重建的图片"), 'warning');
             return;
         }
         showToast(`开始重建 ${imageItems.length} 张缩略图`, 'success');
         for (const item of imageItems) {
             await rebuildHistoryThumbnail(item, { silent: true });
         }
-        showToast('历史缩略图已全部重建', 'success');
+        showToast(uiText("历史缩略图已全部重建"), 'success');
     }, [history, rebuildHistoryThumbnail, showToast]);
 
     const pickLocalCachePath = useCallback(async (fieldKey, patchKey) => {
@@ -3409,11 +3412,11 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
                         const normalized = normalizeLocalPath(data.path);
                         const ok = await updateLocalCacheServerConfig({ [patchKey]: normalized }, { silent: true });
                         if (ok) {
-                            showToast('路径已更新', 'success', 2000);
+                            showToast(uiText("路径已更新"), 'success', 2000);
                             refreshLocalCache({ silent: true });
                             return;
                         }
-                        showToast('路径更新失败，请确认允许目录', 'error', 2000);
+                        showToast(uiText("路径更新失败，请确认允许目录"), 'error', 2000);
                         return;
                     }
                 }
@@ -3432,17 +3435,17 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
             if (!file) return;
             const rawPath = file.path || '';
             if (!rawPath) {
-                showToast('浏览器无法读取本地路径，请手动输入', 'warning', 3000);
+                showToast(uiText("浏览器无法读取本地路径，请手动输入"), 'warning', 3000);
                 return;
             }
             const folderPath = rawPath.replace(/[\\/][^\\/]+$/, '');
             const normalized = normalizeLocalPath(folderPath);
             const ok = await updateLocalCacheServerConfig({ [patchKey]: normalized }, { silent: true });
             if (ok) {
-                showToast('路径已更新', 'success', 2000);
+                showToast(uiText("路径已更新"), 'success', 2000);
                 refreshLocalCache({ silent: true });
             } else {
-                showToast('路径更新失败，请确认允许目录', 'error', 2000);
+                showToast(uiText("路径更新失败，请确认允许目录"), 'error', 2000);
             }
         };
         input.click();
@@ -4975,7 +4978,7 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
     const testLocalSaveServer = useCallback(async (nodeId, rawUrl) => {
         const baseUrl = (rawUrl || localServerUrl || '').trim().replace(/\/+$/, '');
         if (!baseUrl) {
-            showToast('请输入本地服务地址', 'warning');
+            showToast(uiText("请输入本地服务地址"), 'warning');
             return;
         }
         updateNodeSettings(nodeId, { serverStatus: 'checking' });
@@ -4983,12 +4986,12 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
             const res = await fetch(`${baseUrl}/ping`, { method: 'GET' });
             if (res.ok) {
                 updateNodeSettings(nodeId, { serverStatus: 'connected' });
-                showToast('本地服务已连接', 'success');
+                showToast(uiText("本地服务已连接"), 'success');
                 return;
             }
         } catch (e) { }
         updateNodeSettings(nodeId, { serverStatus: 'disconnected' });
-        showToast('本地服务连接失败', 'error');
+        showToast(uiText("本地服务连接失败"), 'error');
     }, [localServerUrl, showToast, updateNodeSettings]);
 
     // V2.6.1：自动保存功能（local-save 节点）
@@ -5716,7 +5719,7 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
                 }
             }
         } catch (error) {
-            showToast(error?.message || '连接失败，请重试', 'error');
+            showToast(error?.message || uiText("连接失败，请重试"), 'error');
         } finally {
             cancelCanvasConnection();
         }
@@ -5749,7 +5752,7 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
         connect: handleNodeMouseUp,
         background: handleBackgroundClick,
         cancel: cancelCanvasConnection,
-        report: error => showToast(error?.message || '连接失败，请重试', 'error'),
+        report: error => showToast(error?.message || uiText("连接失败，请重试"), 'error'),
     };
     useEffect(() => bindCanvasPointerEvents(window, () => canvasPointerHandlers.current), []);
 
@@ -6415,7 +6418,7 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
         link.download = fileName;
         link.click();
         URL.revokeObjectURL(link.href);
-        showToast('模型库模型已导出', 'success', 2000);
+        showToast(uiText("模型库模型已导出"), 'success', 2000);
     }, [showToast]);
 
     const importApiModelConfigs = useCallback((...args) => modelsActions.importApiModelConfigs({
@@ -6441,7 +6444,7 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
                     .map((entry, idx) => normalizeModelLibraryEntry(entry, idx))
                     .filter(Boolean);
                 if (normalized.length === 0) {
-                    showToast('未识别到可导入的模型库配置', 'warning', 2000);
+                    showToast(uiText("未识别到可导入的模型库配置"), 'warning', 2000);
                     return;
                 }
                 setModelLibrary((prev) => {
@@ -6457,9 +6460,9 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
                     });
                     return next;
                 });
-                showToast('模型库导入完成', 'success', 2000);
+                showToast(uiText("模型库导入完成"), 'success', 2000);
             } catch (err) {
-                showToast('模型库导入失败：JSON 无效', 'error', 2000);
+                showToast(uiText("模型库导入失败：JSON 无效"), 'error', 2000);
             }
         };
         input.click();
@@ -7520,8 +7523,8 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
             || (chatSessions?.length || 0) > 1
             || (characterLibrary?.length || 0) > 0;
         if (hasContent) {
-            const shouldSave = await canvasConfirm('当前项目有内容，请选择保存后新建或直接新建。', {
-                okText: '保存后新建', cancelText: '直接新建', dismissValue: null,
+            const shouldSave = await canvasConfirm(uiText("当前项目有内容，请选择保存后新建或直接新建。"), {
+                okText: uiText("保存后新建"), cancelText: uiText("直接新建"), dismissValue: null,
             });
             if (shouldSave === null) return;
             if (shouldSave) {
@@ -7643,7 +7646,7 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
     };
 
     const DESCRIPTION_STYLE_OPTIONS = [
-        { value: 'none', label: '无' },
+        { value: 'none', label: uiText("无") },
         { value: '2d-anime', label: t('2D动漫') },
         { value: '3d-anime', label: t('3D动漫') },
         { value: 'realistic', label: t('写实') },
@@ -7915,11 +7918,11 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
         try {
             if (navigator?.clipboard?.writeText) {
                 await navigator.clipboard.writeText(jsonText);
-                showToast('LLM 记忆槽已复制到剪贴板', 'success', 2200);
+                showToast(uiText("LLM 记忆槽已复制到剪贴板"), 'success', 2200);
                 return;
             }
         } catch (err) { }
-        await canvasPrompt('复制以下 JSON（可用于导入记忆槽）', jsonText, { multiline: true, readOnly: true, okText: '完成' });
+        await canvasPrompt(uiText("复制以下 JSON（可用于导入记忆槽）"), jsonText, { multiline: true, readOnly: true, okText: uiText("完成") });
     }, [nodesMap, showToast]);
     const importStoryboardPromptSlots = useCallback((...args) => storyboardActions.importStoryboardPromptSlots({
         nodesMap,
@@ -8034,13 +8037,13 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
         if (!node || node.type !== 'storyboard-node') return false;
         const rawText = String(markdownText || '').trim();
         if (!rawText) {
-            showToast('请先输入表格内容', 'warning', 2200);
+            showToast(uiText("请先输入表格内容"), 'warning', 2200);
             return false;
         }
         const parsedResult = parseStoryboardTableInput(rawText);
         const parsedTable = parsedResult?.table || null;
         if (!parsedTable) {
-            showToast('未识别到有效表格。请确认首行是表头，并使用 Markdown / CSV / TSV（Tab）格式', 'warning', 3600);
+            showToast(uiText("未识别到有效表格。请确认首行是表头，并使用 Markdown / CSV / TSV（Tab）格式"), 'warning', 3600);
             return false;
         }
         const shouldSwitchView = options?.switchToTable !== false;
@@ -8061,13 +8064,13 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
         const node = nodesMap.get(nodeId);
         if (!node || node.type !== 'storyboard-node') return;
         if (!navigator?.clipboard?.readText) {
-            showToast('当前环境不支持剪贴板读取，请手动粘贴到 Markdown 输入框', 'warning', 3000);
+            showToast(uiText("当前环境不支持剪贴板读取，请手动粘贴到 Markdown 输入框"), 'warning', 3000);
             return;
         }
         try {
             const rawText = await navigator.clipboard.readText();
             if (!String(rawText || '').trim()) {
-                showToast('剪贴板为空', 'warning', 2200);
+                showToast(uiText("剪贴板为空"), 'warning', 2200);
                 return;
             }
             importStoryboardMarkdownTable(nodeId, rawText, { switchToTable: true });
@@ -8088,7 +8091,7 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
                 const content = await file.text();
                 const rawText = String(content || '').replace(/^\uFEFF/, '').trim();
                 if (!rawText) {
-                    showToast('文件内容为空', 'warning', 2200);
+                    showToast(uiText("文件内容为空"), 'warning', 2200);
                     return;
                 }
                 importStoryboardMarkdownTable(nodeId, rawText, { switchToTable: true });
@@ -8550,7 +8553,7 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
             if (!currentShot) return;
             if (currentShot.status !== 'generating') return;
             if (currentShot.generationStartTime !== startAt) return;
-            updateShot(nodeId, shotId, { status: 'failed', errorMsg: `任务超时（${timeoutSeconds}s）` }, { onlyIfStatus: 'generating' });
+            updateShot(nodeId, shotId, { status: 'failed', errorMsg: uiText("任务超时（{0}s）", timeoutSeconds) }, { onlyIfStatus: 'generating' });
         }, timeoutMs);
     };
 
@@ -8622,7 +8625,7 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
 
         const inputText = node.settings?.content || '';
         if (!inputText || inputText.trim().length === 0) {
-            showToast('请先输入小说内容', 'error');
+            showToast(uiText("请先输入小说内容"), 'error');
             return;
         }
 
@@ -8648,14 +8651,14 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
             || ''
         );
         if (!modelId) {
-            showToast('请在“提取角色和场景”节点选择分析模型', 'warning', 4000);
+            showToast(uiText("请在“提取角色和场景”节点选择分析模型"), 'warning', 4000);
             setActiveDropdown({ nodeId: targetId, type: 'extract-model' });
             return;
         }
 
         const credentials = getApiCredentials(modelId);
         if (!credentials.key) {
-            showToast('请先在设置中配置 API Key', 'error');
+            showToast(uiText("请先在设置中配置 API Key"), 'error');
             setSettingsOpen(true);
             return;
         }
@@ -8948,7 +8951,7 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
             setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, frames, selectedKeyframes: [], extractingFrames: false } : n));
         } catch (error) {
             console.error('智能抽帧失败', error);
-            canvasAlert(`智能抽帧失败: ${error.message}`);
+            canvasAlert(uiText("智能抽帧失败: {0}", error.message));
             setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, extractingFrames: false } : n));
         }
     };
@@ -9163,7 +9166,7 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
         const imageUrl = resolveHistoryUrl(item);
         if (!imageUrl) return false;
         if (item.type === 'video' || isVideoUrl(imageUrl)) {
-            showToast('当前分镜仅支持图片参考', 'warning');
+            showToast(uiText("当前分镜仅支持图片参考"), 'warning');
             return false;
         }
         updateShot(activeShot.nodeId, activeShot.shotId, { image_url: imageUrl, image_filename: '' });
@@ -9373,7 +9376,7 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
         const item = historyContextMenu.item;
         const promptText = String(item?.prompt || '').trim();
         if (!promptText) {
-            showToast('该历史记录无可发送提示词', 'warning', 2800);
+            showToast(uiText("该历史记录无可发送提示词"), 'warning', 2800);
             setHistoryContextMenu({ visible: false, x: 0, y: 0, item: null });
             setHistorySendMenuOpen(false);
             return;
@@ -9384,7 +9387,7 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
             if (activeNode?.type === 'storyboard-node') {
                 updateShot(activeShot.nodeId, activeShot.shotId, { prompt: promptText });
                 focusStoryboardShotCard(activeShot.nodeId, activeShot.shotId);
-                showToast('已发送提示词到激活镜头', 'success', 2200);
+                showToast(uiText("已发送提示词到激活镜头"), 'success', 2200);
                 setHistoryContextMenu({ visible: false, x: 0, y: 0, item: null });
                 setHistorySendMenuOpen(false);
                 return;
@@ -9396,9 +9399,9 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
             const result = applyHistoryPromptToNode(targetNodeId, promptText);
             if (result.applied) {
                 if (result.target === 'script') {
-                    showToast('已发送提示词到激活脚本', 'success', 2200);
+                    showToast(uiText("已发送提示词到激活脚本"), 'success', 2200);
                 } else {
-                    showToast('已发送提示词到激活节点', 'success', 2200);
+                    showToast(uiText("已发送提示词到激活节点"), 'success', 2200);
                 }
                 setHistoryContextMenu({ visible: false, x: 0, y: 0, item: null });
                 setHistorySendMenuOpen(false);
@@ -9408,10 +9411,10 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
 
         try {
             await navigator.clipboard.writeText(promptText);
-            showToast('未检测到激活节点，提示词已复制到剪贴板', 'info', 2800);
+            showToast(uiText("未检测到激活节点，提示词已复制到剪贴板"), 'info', 2800);
         } catch (error) {
             console.error('复制历史提示词失败:', error);
-            showToast('复制提示词失败，请手动复制', 'error', 3000);
+            showToast(uiText("复制提示词失败，请手动复制"), 'error', 3000);
         }
         setHistoryContextMenu({ visible: false, x: 0, y: 0, item: null });
         setHistorySendMenuOpen(false);
@@ -9440,7 +9443,7 @@ function TapnowApp({ cloudDocument, cloudModels = [], cloudCapabilities = {}, cl
                             return;
                         }
                     }
-                    showToast('请先选中分镜中的镜头', 'warning');
+                    showToast(uiText("请先选中分镜中的镜头"), 'warning');
                     return;
                 }
 

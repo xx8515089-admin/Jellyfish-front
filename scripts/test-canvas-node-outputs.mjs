@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import vm from 'node:vm'
+import { createUiTextFixture } from './ui-text-fixture.mjs'
+const ui = createUiTextFixture()
 import ts from 'typescript'
 import { insertPreviewMedia } from '../src/pages/canvas/TapnowStudio/canvasPreviewActions.js'
 import * as outputs from '../src/pages/canvas/TapnowStudio/canvasNodeOutputs.js'
@@ -156,6 +158,7 @@ test('image comparison pointer gestures do not initiate node dragging or cancel 
   }
   find(ast)
   const context = vm.createContext({
+    ...ui,
     React: { memo: fn => fn, createElement: (type, props, ...children) => ({ type, props, children }) },
     useState: initial => [initial, () => {}], useRef: () => ({ current: null }), useCallback: fn => fn, useEffect() {},
     LazyBase64Image: 'image', Split: 'split', t: value => value,

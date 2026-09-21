@@ -154,3 +154,7 @@
   .canvas-sync-panel__primary-actions { width: 100%; }
   .canvas-sync-panel__primary-actions .ant-btn { flex: 1; }
 }
+
+.canvas-node-asset-issue { position: absolute; top: -25px; left: 0; max-width: 100%; padding: 3px 8px; border-radius: 5px; background: #382e1d; color: #f3ce88; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: auto; }
+
+.canvas-node-asset-issue button { margin-left: 8px; text-decoration: underline; cursor: pointer; }

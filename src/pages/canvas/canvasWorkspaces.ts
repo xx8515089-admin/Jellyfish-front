@@ -1,14 +1,19 @@
-import { canvasDeletedKey, clearCanvasCache } from './canvasCache'
+import { withCanvasOperationLock } from './TapnowStudio/canvasOperationLock'
+import { canvasDeletedKey, clearCanvasCache, canvasUserScope } from './canvasCache'
 import { StudioCanvases, canvasRequestId, type CanvasSummary } from '../../services/studioCanvases'
 
-export interface CanvasWorkspace {
+export interface CanvasWorkspace extends Pick<CanvasSummary, 'coverAssetId' | 'coverFileId' | 'coverUrl' | 'coverType' | 'coverContentUrl'> {
   id: string; name: string; createdAt: string; updatedAt: string; revisionNo: number
 }
 const revisions = new Map<string, number>()
 const workspace = (item: CanvasSummary): CanvasWorkspace => {
   const id = String(item.canvasId)
   revisions.set(id, item.currentRevisionNo ?? item.revisionNo)
-  return { id, name: item.name, createdAt: item.createdAt, updatedAt: item.updatedAt, revisionNo: item.revisionNo }
+  return {
+    id, name: item.name, createdAt: item.createdAt, updatedAt: item.updatedAt, revisionNo: item.revisionNo,
+    coverAssetId: item.coverAssetId, coverFileId: item.coverFileId,
+    coverUrl: item.coverUrl, coverType: item.coverType, coverContentUrl: item.coverContentUrl,
+  }
 }
 export const getCanvasStoragePrefix = (id: string) => `jellyfish_canvas:${encodeURIComponent(id)}:`
 export async function listCanvasWorkspaces(): Promise<CanvasWorkspace[]> {
@@ -21,23 +26,43 @@ export async function listCanvasWorkspaces(): Promise<CanvasWorkspace[]> {
     if (!result.items.length || items.length >= result.total) return [...items, ...listLegacyCanvasWorkspaces()]
   }
 }
-let pendingCreate: { name: string; id: string } | null = null
+async function projectRequest<T>(kind: string, id: string, body: Record<string, any>, send: (body: Record<string, any>) => Promise<T>) {
+  const owner = canvasUserScope()
+  const key = 'canvas-project:' + owner + ':' + id + ':' + kind
+  return withCanvasOperationLock(key, async () => {
+    let pending = JSON.parse(window.localStorage.getItem(key) || 'null')
+    if (!pending) { pending = { ...body, clientRequestId: canvasRequestId(kind) }; window.localStorage.setItem(key, JSON.stringify(pending)) }
+    if (canvasUserScope() !== owner) throw new Error('账户已变化，请使用原账户恢复请求')
+    try {
+      const result = await send(pending)
+      if (canvasUserScope() !== owner) throw new Error('账户已变化，原请求记录已保留')
+      window.localStorage.setItem(key + ':history:' + pending.clientRequestId, JSON.stringify(pending))
+      window.localStorage.removeItem(key)
+      return result
+    } catch (error) {
+      if ((error as { submissionState?: string }).submissionState === 'notAccepted') {
+        window.localStorage.setItem(key + ':history:' + pending.clientRequestId, JSON.stringify(pending))
+        window.localStorage.removeItem(key)
+      }
+      throw error
+    }
+  })
+}
 export async function createCanvasWorkspace(name: string) {
-  if (!pendingCreate || pendingCreate.name !== name) pendingCreate = { name, id: canvasRequestId('create') }
-  const created = await StudioCanvases.create(name, pendingCreate.id)
+  const created = await projectRequest('create', 'new', { name }, body => StudioCanvases.create(body.name, body.clientRequestId))
+  if (created.deleted) throw new Error('原创建请求已确认，但画布已删除，请重新创建')
   const result = workspace(created)
   if (created.revisionNo === 1 && created.currentRevisionNo === 1 && !created.project.nodes.length) {
     await clearCanvasCache(result.id)
     window.localStorage.removeItem(canvasDeletedKey(result.id))
   }
-  pendingCreate = null
   return result
 }
 export async function renameCanvasWorkspace(id: string, name: string) {
   if (getLegacyCanvasWorkspace(id)) return changeLegacy(id, name)
   const revision = revisions.get(id)
   if (!revision) throw new Error('请刷新画布列表后重试')
-  return workspace(await StudioCanvases.rename(id, revision, name, canvasRequestId('rename')))
+  return workspace(await projectRequest('rename', id, { canvasId: id, expectedRevisionNo: revision, name }, body => StudioCanvases.rename(body.canvasId, body.expectedRevisionNo, body.name, body.clientRequestId)))
 }
 export async function deleteCanvasWorkspace(id: string) {
   if (getLegacyCanvasWorkspace(id)) { changeLegacy(id); await clearCanvasCache(id, false); return }

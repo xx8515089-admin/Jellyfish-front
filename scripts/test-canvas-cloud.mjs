@@ -1,3 +1,5 @@
+import { canvasMockFetch, withCanvasOperationLock } from './canvas-test-transport.mjs'
+import { analysisStoryboardShots } from '../src/pages/canvas/TapnowStudio/canvasAnalysisStoryboard.js'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { File } from 'node:buffer'
@@ -6,9 +8,10 @@ import vm from 'node:vm'
 import ts from 'typescript'
 
 function load(path, imports, globals = {}) {
+  imports = { './canvasOperationLock': { withCanvasOperationLock }, '../auth': { getStoredAuthUser: () => ({ id: 42 }) }, ...imports }
   const exports = {}
   const code = ts.transpileModule(readFileSync(new URL(path, import.meta.url), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS } }).outputText
-  vm.runInNewContext(code, { exports, Blob, File, fetch, URL, Map, ...globals, require(name) {
+  vm.runInNewContext(code, { exports, Headers, FormData, URLSearchParams, fetch: canvasMockFetch(imports), Blob, File, URL, Map, ...globals, require(name) {
     if (!(name in imports)) throw new Error(`Unexpected dependency: ${name}`)
     return imports[name]
   } })
@@ -17,12 +20,12 @@ function load(path, imports, globals = {}) {
 const fixture = () => ({ canvasId: 7, revisionNo: 2, currentRevisionNo: 2, schemaVersion: 1,
   project: { version: '2.5.7', projectName: '测试', nodes: [], connections: [], view: { x: 20, y: 30, zoom: 0.5 } }, assetBindings: [], modelBindings: [] })
 const models = [{ id: 9, type: 2, name: '图片模型', modelCode: 'image-test', imageCapabilities: { aspectRatios: ['16:9'], resolutions: [1, 2] } }]
-function harness(api = {}, document = fixture(), globals = {}) {
+function harness(api = {}, document = fixture(), globals = {}, services = {}) {
   let sequence = 0
   const storage = new Map()
   const window = { localStorage: { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: (key) => storage.delete(key) } }
   const module = load('../src/pages/canvas/TapnowStudio/canvasCloud.js', {
-    '../../../services/studioCanvases': { StudioCanvases: api, canvasRequestId: (operation) => `${operation}-${++sequence}` },
+    '../../../services/studioCanvases': { StudioCanvases: api, canvasRequestId: (operation) => `${operation}-${++sequence}`, ...services },
     '../../../auth': { getStoredAuthUser: () => ({ id: 42 }) },
   }, { window, ...globals })
   return { ...module, session: new module.CanvasCloudSession(document, models, async (value) => value), storage, window }
@@ -86,7 +89,7 @@ test('generation is persisted before create and recovered through submission aft
   let creates = 0, submissions = 0
   let harnessResult
   harnessResult = harness({
-    submission: async () => { submissions++; if (submissions === 1) throw Object.assign(new Error('missing'), { errorCode: 'CANVAS_SUBMISSION_NOT_FOUND' }); return { generationId: 90, status: 2 } },
+    submission: async () => { submissions++; return { generationId: 90, status: 2 } },
     generate: async () => { creates++; assert.ok(harnessResult.storage.has(harnessResult.session.prefix + 'generation')); throw new Error('timeout') },
   })
   const body = { canvasId: 7, revisionNo: 2, nodeId: 'g-1', operation: 'imageGenerate', clientRequestId: 'generate-stable' }
@@ -98,7 +101,7 @@ test('generation is persisted before create and recovered through submission aft
 
 test('submission not found resends original create parameters, never retry', async () => {
   const calls = []
-  const { session } = harness({ submission: async () => { throw Object.assign(new Error('missing'), { errorCode: 'CANVAS_SUBMISSION_NOT_FOUND' }) }, generate: async (body) => { calls.push(JSON.stringify(body)); if (calls.length === 1) throw new Error('timeout'); return { generationId: 6 } } })
+  const { session } = harness({ submission: async () => { throw Object.assign(new Error('missing'), { submissionState: 'notFound', errorCode: 'CANVAS_SUBMISSION_NOT_FOUND' }) }, generate: async (body) => { calls.push(JSON.stringify(body)); if (calls.length === 1) throw new Error('timeout'); return { generationId: 6 } } })
   await assert.rejects(session.submit({ canvasId: 7, revisionNo: 2, nodeId: 'g-1', operation: 'imageGenerate', clientRequestId: 'same' }), /timeout/)
   await session.recover()
   assert.equal(calls[0], calls[1])
@@ -153,7 +156,7 @@ test('HTTP validation failure permits a corrected save with a new request ID', a
   const calls = []
   const { session } = harness({ save: async (body) => {
     calls.push(JSON.parse(JSON.stringify(body)))
-    if (calls.length === 1) throw Object.assign(new Error('invalid dimensions'), { status: 422 })
+    if (calls.length === 1) throw Object.assign(new Error('invalid dimensions'), { status: 422, submissionState: 'notAccepted' })
     return { ...body, revisionNo: 3, currentRevisionNo: 3 }
   } })
   await assert.rejects(session.save(fixture().project), /invalid dimensions/)
@@ -183,14 +186,14 @@ test('a same-revision draft does not unnecessarily block saving', async () => {
 
 test('definitively rejected upload allows the user to retry instead of polling forever', async () => {
   let uploads = 0
-  const { session } = harness({ upload: async () => { uploads++; if (uploads === 1) throw Object.assign(new Error('validation'), { status: 422 }); return { assetId: 19 } } }, fixture(), { fetch: async () => ({ ok: true, blob: async () => new Blob(['x'], { type: 'image/png' }) }) })
+  const { session } = harness({ upload: async () => { uploads++; if (uploads === 1) throw Object.assign(new Error('validation'), { status: 422, submissionState: 'notAccepted' }); return { assetId: 19 } } }, fixture(), { fetch: async () => ({ ok: true, blob: async () => new Blob(['x'], { type: 'image/png' }) }) })
   await assert.rejects(session.upload('blob:x'), /validation/)
   assert.equal((await session.upload('blob:x')).assetId, 19)
   assert.equal(uploads, 2)
 })
 
 test('definitively rejected generation clears pending submission but network failure retains it', async () => {
-  const { session } = harness({ submission: async () => { throw Object.assign(new Error('missing'), { errorCode: 'CANVAS_SUBMISSION_NOT_FOUND' }) }, generate: async () => { throw Object.assign(new Error('validation'), { status: 422 }) } })
+  const { session } = harness({ submission: async () => { throw Object.assign(new Error('missing'), { submissionState: 'notFound', errorCode: 'CANVAS_SUBMISSION_NOT_FOUND' }) }, generate: async () => { throw Object.assign(new Error('validation'), { status: 422, submissionState: 'notAccepted' }) } })
   await assert.rejects(session.submit({ clientRequestId: 'bad' }), /validation/)
   assert.equal(session.pendingGeneration, null)
 })
@@ -263,7 +266,7 @@ test('v2 shot bindings follow stable IDs, preserve source links and bind operati
 test('v2 upload timeout replays identical multipart identity after receipt not found', async () => {
   const calls = []
   const { session } = harness({
-    assetSubmission: async () => { throw Object.assign(new Error('missing'), { errorCode: 'CANVAS_ASSET_SUBMISSION_NOT_FOUND' }) },
+    assetSubmission: async () => { throw Object.assign(new Error('missing'), { submissionState: 'notFound', errorCode: 'CANVAS_ASSET_SUBMISSION_NOT_FOUND' }) },
     upload: async (_id, file, requestId) => {
       calls.push({ name: file.name, requestId, body: await file.text() })
       if (calls.length === 1) throw new Error('timeout')
@@ -282,6 +285,7 @@ test('v2 library attach receipt preserves the specific source instead of choosin
     attachLibrary: async () => { submits++; },
     content: async () => new Blob(['x'], { type: 'image/png' }),
   })
+  session.write('library:1:2', { canvasId: 7, assetType: 1, libraryItemId: 2, clientRequestId: 'stable' })
   const result = await session.attachLibrary({ assetType: 1, id: 2 })
   assert.equal(submits, 0)
   assert.equal(result.asset.sourceLinkId, 8)
@@ -294,7 +298,7 @@ test('v2 batch timeout is recovered without creating another paid batch', async 
   const { session, storage } = harness({
     batchSubmission: async () => {
       if (result) return result
-      throw Object.assign(new Error('missing'), { errorCode: 'CANVAS_BATCH_SUBMISSION_NOT_FOUND' })
+      throw Object.assign(new Error('missing'), { submissionState: 'notFound', errorCode: 'CANVAS_BATCH_SUBMISSION_NOT_FOUND' })
     },
     batchCreate: async body => { creates++; assert.ok([...storage.keys()].some(key => key.endsWith(':batch'))); result = { batchId: 81, items: [], body }; throw new Error('timeout') },
   })
@@ -375,4 +379,44 @@ test('analysis snapshots preserve structured results and stable frame IDs while 
   assert.equal(saved.modelBindings[0].fieldPath, '/settings/analysisModelId')
   assert.equal(saved.project.nodes[1].settings.analysisResultData.fullText, 'https://example.com is transcript text')
   assert.equal(saved.project.nodes[1].settings.analysisProvenance[0].sceneIds[0], ' 场景 ')
+})
+
+const sceneResult = assetId => ({ operation: 'videoAnalyze', scenes: [{ sceneId: 'img_scene', startSeconds: 1, endSeconds: 4, description: '场景', prompts: { zh: 'https://example.com 是正文', en: 'an example' }, keyframes: [{ frameId: 'img_frame', timeSeconds: 2, assetId, role: 'current' }] }] })
+
+test('converted keyframes become standard shot bindings, round-trip and share the same real asset ID', async () => {
+  let uploads = 0
+  const doc = fixture(), h = harness({ content: async () => new Blob(['frame'], { type: 'image/png' }), upload: async () => { uploads++; throw new Error('must not reupload') } }, doc)
+  const url = await h.session.output({ canvasId: 7, assetId: 81 })
+  const shots = analysisStoryboardShots({ canvasId: 7, taskId: 10, nodeId: 'analyze', operation: 'videoAnalyze', status: 3, result: sceneResult(81) }, 'zh', new Map([['81', url]]))
+  const saved = await h.session.prepare({ ...doc.project, nodes: [node('board', 'storyboard-node', null, { shots })] })
+  assert.equal(uploads, 0); assert.equal(saved.assetBindings.length, 2)
+  assert.ok(saved.assetBindings.every(binding => binding.assetId === 81 && binding.shotId === shots[0].id))
+  assert.deepEqual(Array.from(saved.assetBindings, binding => binding.fieldPath).sort(), ['/analysisSource/keyframes/0/image_url', '/image_url'])
+  assert.equal(saved.project.nodes[0].settings.shots[0].prompts.zh, 'https://example.com 是正文')
+  assert.equal(saved.project.nodes[0].settings.shots[0].analysisSource.sceneId, 'img_scene')
+  const service = load('../src/services/studioCanvases.ts', { './generated': { OpenAPI: { BASE: '' } }, './generated/core/request': { request() {}, getHeaders: async () => ({}) } }, { fetch: async () => ({ ok: true, blob: async () => new Blob(['frame'], { type: 'image/png' }) }) })
+  const reloaded = harness({}, doc, {}, { hydrateCanvasDocument: service.hydrateCanvasDocument })
+  const hydrated = await reloaded.session.hydrate({ ...doc, ...saved })
+  assert.equal(reloaded.session.revision, 2)
+  const resaved = await reloaded.session.prepare(hydrated.project)
+  assert.deepEqual(JSON.parse(JSON.stringify(resaved.assetBindings)), JSON.parse(JSON.stringify(saved.assetBindings)))
+  h.session.urls.forEach(URL.revokeObjectURL); reloaded.session.urls.forEach(URL.revokeObjectURL)
+})
+
+test('copy hydration uses returned document IDs, while both analysis result references and provenance survive save', async () => {
+  const copied = { ...fixture(), canvasId: 70 }
+  copied.project.nodes = [node('image', 'input-image', null), node('analyze', 'video-analyze', null, { analysisResultData: sceneResult(810), analysisResults: sceneResult(810).scenes, analysisProvenance: [{ taskId: 10 }] })]
+  copied.assetBindings = [{ nodeId: 'image', fieldPath: '/content', assetId: 810 }]
+  const calls = []
+  const service = load('../src/services/studioCanvases.ts', { './generated': { OpenAPI: { BASE: '' } }, './generated/core/request': { request() {}, getHeaders: async () => ({}) } }, { fetch: async url => { calls.push(url); return { ok: true, blob: async () => new Blob(['frame'], { type: 'image/png' }) } } })
+  const urls = [], hydrated = await service.hydrateCanvasDocument(copied, urls), h = harness({}, hydrated)
+  const saved = await h.session.prepare(hydrated.project)
+  assert.ok(calls[0].includes('canvasId=70')); assert.ok(calls[0].includes('assetId=810'))
+  assert.equal(saved.assetBindings[0].assetId, 810)
+  assert.equal(saved.project.nodes[1].settings.analysisResultData.scenes[0].keyframes[0].assetId, 810)
+  assert.equal(saved.project.nodes[1].settings.analysisResults[0].keyframes[0].assetId, 810)
+  assert.equal(saved.project.nodes[1].settings.analysisProvenance[0].taskId, 10)
+  assert.equal(copied.project.nodes[0].content, null)
+  await assert.rejects(h.session.output({ canvasId: 7, assetId: 81 }), /先关联/)
+  urls.forEach(URL.revokeObjectURL)
 })
