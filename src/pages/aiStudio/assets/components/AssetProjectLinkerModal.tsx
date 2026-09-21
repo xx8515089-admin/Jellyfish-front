@@ -1,3 +1,4 @@
+import { uiText } from '../../../../i18n/uiText'
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Drawer, Modal, Select, Space, Table, Tag, Typography, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
@@ -11,11 +12,11 @@ import {
 import { bilingualText, useBilingualText } from '../../../../i18n/useBilingualText'
 
 const ASSET_TYPE_OPTIONS = [
-  { label: '全部资产', labelEn: 'All assets', value: '' },
-  { label: '演员', labelEn: 'Actors', value: 'actor' },
-  { label: '场景', labelEn: 'Scenes', value: 'scene' },
-  { label: '道具', labelEn: 'Props', value: 'prop' },
-  { label: '服装', labelEn: 'Costumes', value: 'costume' },
+  { get label() { return uiText("全部资产") }, labelEn: 'All assets', value: '' },
+  { get label() { return uiText("演员") }, labelEn: 'Actors', value: 'actor' },
+  { get label() { return uiText("场景") }, labelEn: 'Scenes', value: 'scene' },
+  { get label() { return uiText("道具") }, labelEn: 'Props', value: 'prop' },
+  { get label() { return uiText("服装") }, labelEn: 'Costumes', value: 'costume' },
 ]
 
 const STATUS_COLOR: Record<string, string> = {

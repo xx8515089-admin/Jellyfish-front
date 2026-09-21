@@ -1,0 +1,1983 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Java Asset Library Batch Imports",
+    "version": "1.0.0-draft",
+    "description": "Frontend integration proposal. Backend implementation pending; no legacy fallback."
+  },
+  "paths": {
+    "/api/v1/studio/assetLibrary/importTemplate": {
+      "get": {
+        "tags": [
+          "AssetImports"
+        ],
+        "operationId": "getImportTemplate",
+        "summary": "getImportTemplate",
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "csv",
+                "tsv"
+              ],
+              "default": "csv"
+            }
+          }
+        ],
+        "security": [
+          {
+            "Authorization": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportTemplateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/assetLibrary/importBatches": {
+      "post": {
+        "tags": [
+          "AssetImports"
+        ],
+        "operationId": "createImportBatch",
+        "summary": "createImportBatch",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "Authorization": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateImportBatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportBatchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/assetLibrary/importBatches/files": {
+      "post": {
+        "tags": [
+          "AssetImports"
+        ],
+        "operationId": "uploadImportFile",
+        "summary": "uploadImportFile",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "Authorization": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "clientItemId": {
+                    "type": "string"
+                  },
+                  "batchId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": ".*\\S.*"
+                  }
+                },
+                "required": [
+                  "file",
+                  "clientItemId",
+                  "batchId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadedImportFileResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/assetLibrary/importBatches/preview": {
+      "post": {
+        "tags": [
+          "AssetImports"
+        ],
+        "operationId": "previewImportBatch",
+        "summary": "previewImportBatch",
+        "parameters": [],
+        "security": [
+          {
+            "Authorization": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportPreviewResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/assetLibrary/importBatches/commit": {
+      "post": {
+        "tags": [
+          "AssetImports"
+        ],
+        "operationId": "commitImportBatch",
+        "summary": "commitImportBatch",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "Authorization": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportBatchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/assetLibrary/importBatches/detail": {
+      "get": {
+        "tags": [
+          "AssetImports"
+        ],
+        "operationId": "getImportBatch",
+        "summary": "getImportBatch",
+        "parameters": [
+          {
+            "name": "batchId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": ".*\\S.*"
+            }
+          }
+        ],
+        "security": [
+          {
+            "Authorization": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportBatchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/assetLibrary/importBatches/items": {
+      "get": {
+        "tags": [
+          "AssetImports"
+        ],
+        "operationId": "listImportItems",
+        "summary": "listImportItems",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "batchId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": ".*\\S.*"
+            }
+          }
+        ],
+        "security": [
+          {
+            "Authorization": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportItemPageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/assetLibrary/importBatches/retry": {
+      "post": {
+        "tags": [
+          "AssetImports"
+        ],
+        "operationId": "retryImportBatch",
+        "summary": "retryImportBatch",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "Authorization": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportBatchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Import request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFailure"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ImportError": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "code",
+          "message"
+        ]
+      },
+      "ImportItem": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "string"
+          },
+          "clientItemId": {
+            "type": "string"
+          },
+          "rowNumber": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "assetType": {
+            "type": "integer",
+            "format": "int32",
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "nullable": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "valid",
+              "invalid",
+              "pending",
+              "running",
+              "succeeded",
+              "skipped",
+              "failed"
+            ]
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "skip",
+              "none",
+              "created",
+              "updated",
+              "skipped"
+            ]
+          },
+          "stage": {
+            "type": "string"
+          },
+          "attempt": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "libraryItemId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "nullable": true
+          },
+          "assetId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "nullable": true
+          },
+          "defaultLookId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "nullable": true
+          },
+          "imageVersionId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "nullable": true
+          },
+          "fileId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "nullable": true
+          },
+          "coverUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportError"
+            }
+          }
+        },
+        "required": [
+          "itemId",
+          "name",
+          "status",
+          "action",
+          "errors"
+        ]
+      },
+      "ImportBatch": {
+        "type": "object",
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "manifest",
+              "images"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "ready",
+              "queued",
+              "running",
+              "succeeded",
+              "partial_success",
+              "failed",
+              "expired"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "totalCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "processedCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "succeededCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "skippedCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "failedCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "batchId",
+          "status",
+          "revision"
+        ]
+      },
+      "ImportPreview": {
+        "type": "object",
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "ready"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "previewToken": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "totalCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "validCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "invalidCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "createCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "updateCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "skipCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportItem"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "required": [
+          "batchId",
+          "status",
+          "revision",
+          "totalCount",
+          "validCount",
+          "invalidCount",
+          "createCount",
+          "updateCount",
+          "skipCount",
+          "items",
+          "page",
+          "pageSize"
+        ]
+      },
+      "ImportItemPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportItem"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
+      "ImportTemplate": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "supportedAssetTypes": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          "limits": {
+            "type": "object",
+            "properties": {
+              "maxTextBytes": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "maxRows": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "maxFileBytes": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "maxFiles": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "maxBatchBytes": {
+                "type": "integer",
+                "format": "int32"
+              }
+            },
+            "required": [
+              "maxTextBytes",
+              "maxRows",
+              "maxFileBytes",
+              "maxFiles",
+              "maxBatchBytes"
+            ]
+          }
+        },
+        "required": [
+          "filename",
+          "content",
+          "fields",
+          "supportedAssetTypes",
+          "limits"
+        ]
+      },
+      "ManifestInput": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "manifest"
+            ]
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "csv",
+              "tsv",
+              "auto"
+            ]
+          }
+        },
+        "required": [
+          "source",
+          "content",
+          "format"
+        ]
+      },
+      "ImageInput": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "images"
+            ]
+          },
+          "defaultAssetType": {
+            "type": "integer",
+            "format": "int32",
+            "enum": [
+              1,
+              2,
+              3
+            ]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "clientItemId": {
+                  "type": "string"
+                },
+                "fileName": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "clientItemId",
+                "fileName",
+                "size"
+              ]
+            }
+          }
+        },
+        "required": [
+          "source",
+          "defaultAssetType",
+          "items"
+        ]
+      },
+      "CreateImportBatch": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ManifestInput"
+          },
+          {
+            "$ref": "#/components/schemas/ImageInput"
+          }
+        ]
+      },
+      "UploadedImportFile": {
+        "type": "object",
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "clientItemId": {
+            "type": "string"
+          },
+          "fileId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "mimeType": {
+            "type": "string"
+          },
+          "width": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "height": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "required": [
+          "batchId",
+          "itemId",
+          "clientItemId",
+          "fileId",
+          "mimeType",
+          "width",
+          "height",
+          "revision"
+        ]
+      },
+      "PreviewRequest": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "batchId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": ".*\\S.*"
+          }
+        },
+        "required": [
+          "revision",
+          "batchId"
+        ]
+      },
+      "CommitRequest": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "previewToken": {
+            "type": "string"
+          },
+          "batchId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": ".*\\S.*"
+          }
+        },
+        "required": [
+          "revision",
+          "previewToken",
+          "batchId"
+        ]
+      },
+      "RetryRequest": {
+        "type": "object",
+        "properties": {
+          "itemIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "batchId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": ".*\\S.*"
+          }
+        },
+        "required": [
+          "itemIds",
+          "batchId"
+        ]
+      },
+      "ImportFailure": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "errorCode": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "errorCode": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "errorCode"
+        ]
+      },
+      "ImportBatchResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ImportBatch"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data"
+        ]
+      },
+      "ImportPreviewResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ImportPreview"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data"
+        ]
+      },
+      "ImportItemPageResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ImportItemPage"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data"
+        ]
+      },
+      "ImportTemplateResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ImportTemplate"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data"
+        ]
+      },
+      "UploadedImportFileResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/UploadedImportFile"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data"
+        ]
+      }
+    },
+    "securitySchemes": {
+      "Authorization": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization"
+      }
+    }
+  }
+}

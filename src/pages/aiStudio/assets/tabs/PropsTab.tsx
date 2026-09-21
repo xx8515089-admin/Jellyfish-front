@@ -1,13 +1,16 @@
+import { uiText, useUiLanguage } from '../../../../i18n/uiText'
 import { AssetTypeTab } from './AssetTypeTab'
 import { useNavigate } from 'react-router-dom'
 import { StudioEntitiesApi } from '../../../../services/studioEntities'
 
 export function PropsTab({ refreshToken = 0 }: { refreshToken?: number }) {
+  useUiLanguage()
+
   const navigate = useNavigate()
 
   return (
     <AssetTypeTab
-      label="道具"
+      label={uiText("道具")}
       labelEn="Prop"
       tabKey="prop"
       listAssets={async ({ q, page, pageSize }) => {

@@ -1,13 +1,16 @@
+import { uiText, useUiLanguage } from '../../../../i18n/uiText'
 import { AssetTypeTab } from './AssetTypeTab'
 import { useNavigate } from 'react-router-dom'
 import { StudioEntitiesApi } from '../../../../services/studioEntities'
 
 export function CostumesTab({ refreshToken = 0 }: { refreshToken?: number }) {
+  useUiLanguage()
+
   const navigate = useNavigate()
 
   return (
     <AssetTypeTab
-      label="服装"
+      label={uiText("服装")}
       labelEn="Costume"
       tabKey="costume"
       listAssets={async ({ q, page, pageSize }) => {

@@ -1,3 +1,4 @@
+import { uiText, useUiLanguage } from '../../../../i18n/uiText'
 import { useEffect, useMemo, useState, type Key } from 'react'
 import {
   Alert,
@@ -25,22 +26,22 @@ import {
 import { bilingualText, useBilingualText } from '../../../../i18n/useBilingualText'
 
 const ASSET_TYPE_OPTIONS = [
-  { label: '全部', labelEn: 'All', value: '' },
-  { label: '演员', labelEn: 'Actors', value: 'actor' },
-  { label: '场景', labelEn: 'Scenes', value: 'scene' },
-  { label: '道具', labelEn: 'Props', value: 'prop' },
-  { label: '服装', labelEn: 'Costumes', value: 'costume' },
+  { get label() { return uiText("全部") }, labelEn: 'All', value: '' },
+  { get label() { return uiText("演员") }, labelEn: 'Actors', value: 'actor' },
+  { get label() { return uiText("场景") }, labelEn: 'Scenes', value: 'scene' },
+  { get label() { return uiText("道具") }, labelEn: 'Props', value: 'prop' },
+  { get label() { return uiText("服装") }, labelEn: 'Costumes', value: 'costume' },
 ]
 
 const PRIORITY_OPTIONS = [
-  { label: '全部', labelEn: 'All', value: '' },
+  { get label() { return uiText("全部") }, labelEn: 'All', value: '' },
   { label: 'high', value: 'high' },
   { label: 'medium', value: 'medium' },
   { label: 'low', value: 'low' },
 ]
 
 const SOURCE_SHEET_OPTIONS = [
-  { label: '全部 sheet', labelEn: 'All sheets', value: '' },
+  { get label() { return uiText("全部 sheet") }, labelEn: 'All sheets', value: '' },
   { label: 'Sheet1', value: 'Sheet1' },
   { label: 'Sheet2', value: 'Sheet2' },
 ]
@@ -69,6 +70,8 @@ type Props = {
 }
 
 export function AssetImageBatchGenerationModal({ open, onCancel, onCreated }: Props) {
+  const uiLanguage = useUiLanguage()
+
   const l = useBilingualText()
   const [assetType, setAssetType] = useState('scene')
   const [priority, setPriority] = useState('')
@@ -91,8 +94,8 @@ export function AssetImageBatchGenerationModal({ open, onCancel, onCreated }: Pr
 
   const variantOptions = useMemo(() => {
     const variants = Array.from(new Set(rows.map((row) => row.asset_variant).filter(Boolean))).sort()
-    return [{ label: '全部', labelEn: 'All', value: '' }, ...variants.map((item) => ({ label: item, value: item }))]
-  }, [l, rows])
+    return [{ label: uiText("全部"), labelEn: 'All', value: '' }, ...variants.map((item) => ({ label: item, value: item }))]
+  }, [l, rows, uiLanguage])
 
   const buildFilters = (withSelection: boolean): AssetGenerationFilters => ({
     asset_type: assetType || undefined,

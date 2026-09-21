@@ -1,0 +1,188 @@
+/* 两个资产导入弹窗共用外壳、上传区与操作区，保持深色主题和响应式间距一致。 */
+.asset-import-modal.ant-modal {
+  max-width: calc(100vw - 32px);
+  padding-bottom: 0;
+}
+
+.asset-import-modal .ant-modal-content {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 48px);
+  border: 1px solid var(--jf-border);
+  overflow: hidden;
+  padding: 0;
+  border-radius: 14px;
+  box-shadow: 0 24px 80px rgb(0 0 0 / 35%);
+}
+
+.asset-import-modal .ant-modal-header {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 22px 60px 20px 24px;
+  border-bottom: 1px solid var(--jf-border-soft);
+  background: transparent !important;
+}
+
+.asset-import-modal .ant-modal-close { top: 22px; right: 22px; }
+.asset-import-modal__title { font-size: 19px; font-weight: 600; line-height: 1.5; }
+.asset-import-modal__description {
+  margin: 4px 0 0;
+  color: var(--jf-muted);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+.asset-import-modal .ant-modal-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 20px 24px;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
+.asset-import-modal .ant-modal-footer {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 16px 24px;
+  border-top: 1px solid var(--jf-border-soft);
+}
+
+.asset-import-modal__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  text-align: left;
+}
+
+.asset-import-modal__footer-note { color: var(--jf-muted); font-size: 12px; line-height: 1.6; }
+.asset-import-modal__actions { display: flex; flex-shrink: 0; flex-wrap: wrap; gap: 8px; }
+.asset-import-modal__actions .ant-btn { height: 36px; min-width: 76px; padding-inline: 16px; }
+.asset-import-modal__content { display: flex; min-width: 0; flex-direction: column; gap: 20px; }
+.asset-import-modal__section { min-width: 0; }
+.asset-import-modal__section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.asset-import-modal__section-heading h3 { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--jf-text); font-size: 14px; font-weight: 600; }
+.asset-import-modal__caption { color: var(--jf-muted); font-size: 12px; line-height: 1.65; }
+.asset-import-modal__count { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 22px; padding: 0 6px; border: 1px solid var(--jf-border); border-radius: 6px; color: var(--jf-text-soft); font-size: 12px; font-weight: 400; }
+
+.asset-import-modal__steps { display: flex; gap: 12px; margin: 0; padding: 0 0 18px; border-bottom: 1px solid var(--jf-border-soft); list-style: none; }
+.asset-import-modal__steps li { display: flex; flex: 1; align-items: center; gap: 9px; min-width: 0; color: var(--jf-muted); font-size: 13px; }
+.asset-import-modal__steps li::after { content: ''; flex: 1; height: 1px; margin-left: 4px; background: var(--jf-border-soft); }
+.asset-import-modal__steps li:last-child::after { display: none; }
+.asset-import-modal__step-number { display: inline-flex; flex: 0 0 24px; align-items: center; justify-content: center; width: 24px; height: 24px; border: 1px solid var(--jf-border); border-radius: 50%; font-size: 12px; }
+.asset-import-modal__steps .is-current { color: var(--jf-text); font-weight: 600; }
+.asset-import-modal__steps .is-current .asset-import-modal__step-number { background: var(--jf-accent); border-color: var(--jf-accent); color: #171718; }
+.asset-import-modal__steps .is-complete { color: var(--jf-text-soft); }
+.asset-import-modal__input-grid { display: grid; grid-template-columns: 280px minmax(0, 1fr); align-items: stretch; gap: 24px; }
+
+.asset-import-modal .asset-import-modal__dropzone .ant-upload-drag {
+  border-color: var(--jf-border) !important;
+  border-radius: 10px;
+  background: var(--jf-panel) !important;
+  transition: border-color .15s, background .15s;
+}
+
+.asset-import-modal .asset-import-modal__dropzone .ant-upload-drag:hover:not(.ant-upload-disabled) { border-color: var(--jf-accent) !important; background: var(--jf-panel-2) !important; }
+.asset-import-modal .asset-import-modal__dropzone .ant-upload-btn { padding: 20px 18px; background: transparent !important; }
+.asset-import-modal__drop-content { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.asset-import-modal__upload-icon { display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px; margin-bottom: 3px; border: 1px solid var(--jf-border); border-radius: 12px; background: var(--jf-panel-2); color: var(--jf-accent); font-size: 22px; }
+.asset-import-modal__drop-title { display: block; color: var(--jf-text); font-size: 14px; font-weight: 500; line-height: 1.6; }
+.asset-import-modal__drop-hint { display: block; color: var(--jf-muted); font-size: 12px; line-height: 1.6; }
+.asset-import-modal__source-card { padding: 16px; border: 1px solid var(--jf-border-soft); border-radius: 12px; background: var(--jf-bg-soft); }
+.asset-import-modal__source-card .asset-import-modal__section-heading { flex-wrap: wrap; gap: 4px; }
+.asset-import-modal__template { margin-top: 10px; }
+.asset-import-modal__field-heading { margin: 16px 0 10px; padding-top: 14px; border-top: 1px solid var(--jf-border-soft); color: var(--jf-muted); font-size: 12px; }
+.asset-import-modal__fields { display: grid; gap: 9px; margin: 0; }
+.asset-import-modal__fields > div { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.asset-import-modal__fields dt, .asset-import-modal__fields dd { margin: 0; font-size: 12px; }
+.asset-import-modal__fields dd { color: var(--jf-muted); text-align: right; }
+.asset-import-modal code { background: var(--jf-panel-2) !important; color: var(--jf-text-soft) !important; border: 1px solid var(--jf-border-soft); padding: 2px 5px; border-radius: 4px; font-size: 11px; overflow-wrap: anywhere; }
+.asset-import-modal__editor-label { color: var(--jf-text); font-size: 14px; font-weight: 600; }
+.asset-import-modal .asset-import-modal__editor { min-height: 300px; max-height: 420px; padding: 14px 16px; border-radius: 10px; background: var(--jf-panel) !important; font-family: 'Cascadia Code', Consolas, monospace; font-size: 12px; line-height: 1.9; tab-size: 2; resize: vertical; overflow-wrap: anywhere; }
+.asset-import-modal__editor-note { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 10px; }
+.asset-import-modal__results { display: flex; flex-direction: column; gap: 14px; padding-top: 20px; border-top: 1px solid var(--jf-border-soft); }
+.asset-import-modal__statistics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.asset-import-modal__statistics .ant-statistic { padding: 14px 18px; border: 1px solid var(--jf-border-soft); border-radius: 10px; background: var(--jf-panel); }
+.asset-import-modal__statistics .ant-statistic-title { color: var(--jf-muted); font-size: 12px; }
+.asset-import-modal__statistics .ant-statistic-content { color: var(--jf-text); font-size: 24px; line-height: 1.3; }
+.asset-import-modal__results .ant-table-wrapper, .asset-import-modal__queue .ant-table-wrapper { overflow: hidden; border: 1px solid var(--jf-border-soft); border-radius: 10px; }
+.asset-import-modal .ant-table-cell { font-size: 12px; }
+.asset-import-modal .ant-table-thead > tr > th { font-weight: 500; }
+
+.asset-import-modal__image-inputs { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: stretch; }
+.asset-import-modal__image-inputs > * { min-width: 0; }
+.asset-import-modal .asset-import-modal__image-dropzone .ant-upload-drag { height: 100%; }
+.asset-import-modal__image-drop { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
+.asset-import-modal__image-drop .asset-import-modal__upload-icon { flex-shrink: 0; width: 50px; height: 50px; margin: 0; font-size: 25px; }
+.asset-import-modal__image-drop .asset-import-modal__drop-title { margin-bottom: 5px; }
+.asset-import-modal__choose { flex-shrink: 0; margin: 0; padding: 7px 14px; border: 1px solid var(--jf-accent-border); border-radius: 7px; color: var(--jf-text-soft); font-size: 13px; }
+.asset-import-modal__naming { padding: 16px 18px; border: 1px solid var(--jf-border-soft); border-radius: 10px; background: var(--jf-bg-soft); }
+.asset-import-modal__naming h3 { margin: 0 0 12px; color: var(--jf-text-soft); font-size: 13px; font-weight: 500; }
+.asset-import-modal__naming dl { display: grid; gap: 8px; margin: 0; }
+.asset-import-modal__naming dl > div { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.asset-import-modal__naming dt { color: var(--jf-muted); font-size: 12px; }
+.asset-import-modal__naming dd { margin: 0; }
+.asset-import-modal__naming p { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--jf-border-soft); }
+.asset-import-modal__queue { min-width: 0; }
+.asset-import-modal__queue-summary { display: flex; flex-wrap: wrap; gap: 12px; color: var(--jf-muted); font-size: 12px; }
+.asset-import-modal__queue-summary .has-errors { color: #ff9b99; }
+.asset-import-modal__empty { display: flex; min-height: 140px; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px; border: 1px solid var(--jf-border-soft); border-radius: 10px; background: var(--jf-panel); text-align: center; }
+.asset-import-modal__empty > .anticon { margin-bottom: 4px; color: var(--jf-subtle); font-size: 30px; }
+.asset-import-modal__empty strong { color: var(--jf-text-soft); font-size: 13px; font-weight: 500; }
+.asset-import-modal__filename { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asset-import-modal__file-size { display: block; margin-top: 3px; color: var(--jf-muted); font-size: 11px; }
+
+@media (max-width: 760px) {
+  .asset-import-modal__input-grid, .asset-import-modal__image-inputs { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .asset-import-modal__source-card { padding: 14px; }
+  .asset-import-modal__image-drop { flex-direction: row; text-align: left; }
+  .asset-import-modal__image-drop > div { flex: 1; }
+  .asset-import-modal__fields { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .asset-import-modal__fields > div { flex-direction: column; gap: 4px; }
+  .asset-import-modal__drop-content { gap: 5px; }
+  .asset-import-modal .asset-import-modal__editor { min-height: 220px; }
+  .asset-import-modal__footer { flex-wrap: wrap; gap: 12px; }
+  .asset-import-modal__footer-note { flex-basis: 100%; }
+  .asset-import-modal__actions { justify-content: flex-end; width: 100%; }
+}
+
+@media (max-width: 480px) {
+  .asset-import-modal.ant-modal { max-width: calc(100vw - 16px); margin: 8px auto; }
+  .asset-import-modal .ant-modal-content { max-height: calc(100dvh - 24px); border-radius: 12px; }
+  .asset-import-modal .ant-modal-header { padding: 18px 48px 16px 16px; }
+  .asset-import-modal .ant-modal-close { top: 17px; right: 14px; }
+  .asset-import-modal .ant-modal-body { padding: 16px; scrollbar-gutter: auto; }
+  .asset-import-modal .ant-modal-footer { padding: 12px 16px; }
+  .asset-import-modal__title { font-size: 17px; }
+  .asset-import-modal__description { font-size: 12px; }
+  .asset-import-modal__steps { gap: 8px; }
+  .asset-import-modal__steps li { gap: 6px; font-size: 12px; }
+  .asset-import-modal__steps li::after { display: none; }
+  .asset-import-modal__step-number { flex-basis: 22px; width: 22px; height: 22px; }
+  .asset-import-modal__image-drop { flex-wrap: wrap; gap: 12px; }
+  .asset-import-modal__image-drop > div { flex: 1; min-width: 0; }
+  .asset-import-modal__choose { display: none; }
+  .asset-import-modal__queue .asset-import-modal__section-heading { align-items: flex-start; flex-direction: column; }
+  .asset-import-modal__statistics { gap: 8px; }
+  .asset-import-modal__statistics .ant-statistic { padding: 12px; }
+  .asset-import-modal__actions .ant-btn { min-width: 0; padding-inline: 12px; }
+}
+
+/* 矮窗口中仅内容区滚动，标题与底部操作始终保留。 */
+@media (max-height: 720px) and (min-width: 761px) {
+  .asset-import-modal .ant-modal-header { padding-top: 16px; padding-bottom: 14px; }
+  .asset-import-modal .ant-modal-close { top: 16px; }
+  .asset-import-modal .ant-modal-body { padding-top: 16px; padding-bottom: 16px; }
+  .asset-import-modal__content { gap: 16px; }
+  .asset-import-modal__steps { padding-bottom: 14px; }
+  .asset-import-modal .asset-import-modal__editor { min-height: 270px; }
+}
+/* Dragger defaults to 100% height; inside the stretched source card it must size to its content. */
+.asset-import-modal__source-card .ant-upload-wrapper { display: block; }
+.asset-import-modal__source-card .ant-upload-drag { height: auto; }
+@media (max-height: 720px) and (min-width: 761px) {
+  .asset-import-modal__source-card { padding: 14px; }
+  .asset-import-modal__source-card .ant-upload-btn { padding: 12px 14px; }
+  .asset-import-modal__field-heading { margin: 12px 0 8px; padding-top: 10px; }
+}
