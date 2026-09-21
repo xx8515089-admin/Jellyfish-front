@@ -2,9 +2,54 @@
 
 Reelmax 是面向 AI 短剧、分镜、资产生成和视频成片流程的前端工作台。本仓库为前端项目 `Jellyfish-front`，主要负责登录鉴权、项目工作台、自由画布、资产管理、提示词模板、文件管理、Agent、模型供应商、音色库、系统权限等页面能力。
 
-新用户请先阅读 [3D 导演台用户手册](docs/3d-director-desk-user-manual.md)，其中包含从创建场景到导出 MP4 参考视频的完整操作流程、快捷键和故障排查。
+新用户请阅读 [自由画布与 3D 导演台零基础用户手册](docs/canvas-director-beginner-manual.md) · [English](docs/canvas-director-beginner-manual.en.md)，按步骤完成图片生成、图生视频、批量分镜、导演台运镜、参考应用和保存。自由画布顶部与 3D 导演台的“用户手册”入口使用同一份内容。
 
-自由画布用户请阅读 [自由画布用户手册](docs/free-canvas-user-manual.md)，其中包含从新建画布、添加节点到生成图片/视频、导出备份和常见问题排查的完整操作说明。
+## 开发启动与检查
+
+在当前前端目录执行，包管理器版本由 `package.json` 的 `packageManager` 指定为 `pnpm@9.15.9`。
+
+```sh
+pnpm install
+pnpm run typecheck
+pnpm run build
+```
+
+后端地址在 `.env.local` 中配置 `VITE_BACKEND_URL`；部署时可通过 `public/env.js` 中的 `window.__ENV.BACKEND_URL` 覆盖。未配置时使用同源地址，具体解析逻辑见 `src/config/api.ts`。
+
+服务和端口由开发者手动管理。需要启动前端时运行 `pnpm run dev`；默认配置端口为 `7788`，实际以终端输出为准。不要重复启动已运行的服务。生产构建输出到 `dist/`；需要本地预览构建结果时手动运行 `pnpm run preview`。
+
+### 更新接口客户端
+
+全量同步前需明确配置有效的 `OPENAPI_URL` 或 `VITE_OPENAPI_URL`。脚本不会根据业务后端地址猜测文档地址。确认规范覆盖当前业务后执行：
+
+```sh
+pnpm run openapi:update
+```
+
+本地契约位于 `docs/contracts/`，生成代码主要位于 `src/services/generated/`。素材导入可使用 `pnpm run openapi:update -- --contract=asset-import` 单独更新；效能总览使用 `pnpm run openapi:efficiency`。各模块的额外生成脚本见 `scripts/`，同步前先阅读对应接入说明。
+
+## 文档索引
+
+用户操作统一维护在新版手册。开发文档按用途保留，日期或版本号表示当时的接入范围；同一主题的新契约说明优先于历史记录，历史测试结果不代表当前部署已完成联调。
+
+| 用途 | 文档 |
+| --- | --- |
+| 用户操作 | [自由画布与 3D 导演台零基础手册](docs/canvas-director-beginner-manual.md) |
+| 画布最新契约与验收边界 | [2026-09-21 接入记录](docs/canvas-handoff-20260921-integration.md) |
+| 画布基础能力与旧版兼容 | [V2 接入](docs/free-canvas-cloud-integration-v2.md)、[V3 文本与入库接入](docs/free-canvas-cloud-integration-v3.md) |
+| 画布节点样式 | [节点样式规范](docs/free-canvas-node-style.md) |
+| 画布历史需求与后续能力建议 | [V3 后续需求建议稿](docs/free-canvas-backend-api-development-v4.md)，不是当前已上线接口规范 |
+| 导演台云工程 | [云工程接入](docs/director-desk-cloud-integration.md)、[2026-09-21 加固记录](docs/director-desk-hardening-20260921-integration.md) |
+| 自由画布列表最新媒体封面 | [接口契约](docs/canvas-list-cover.md)、[前端接入](docs/canvas-list-cover-integration.md) |
+| 项目列表最新媒体封面 | [接口契约](docs/project-list-cover.md)、[前端接入](docs/project-list-cover-integration.md) |
+| 项目工作流 | [前端接入](docs/workflow-frontend-integration.md)、[2026-09-21 可靠性接入](docs/workflow-handoff-20260921-integration.md) |
+| 工作流契约与审查背景 | [历史后端交接](docs/workflow-backend-handoff.md)、[前端审查](docs/reviews/workflow-frontend-fixes-2026-09-20.md)、[后端核实清单](docs/reviews/workflow-backend-fixes-2026-09-20.md) |
+| 素材批量导入 | [接入记录](docs/asset-import-20260921-integration.md) |
+| 图生视频与分镜视频 | [独立图生视频](docs/image-to-video-integration.md)、[整图与分镜流程](docs/storyboard-panel-video-integration.md)、[批量视频](docs/storyboard-video-batch-integration.md) |
+| 配音 | [配音接入](docs/storyboard-dubbing-integration.md)，提交恢复与输入快照以工作流可靠性接入为准 |
+| 第三方来源与许可 | [Third-Party Notices](THIRD_PARTY_NOTICES.md)，以及素材包内的 LICENSE、SOURCES 和 README |
+
+`docs/contracts/` 中的 OpenAPI 文件供客户端生成和契约核对使用；`artifacts/` 中的审查报告、待联调需求和示例说明随对应产物保留。项目工作规范见 [AGENTS.md](AGENTS.md)。
 
 ## 功能总览
 
@@ -143,7 +188,7 @@ Reelmax 是面向 AI 短剧、分镜、资产生成和视频成片流程的前�
 - 支持摄影机、构图画幅、视口灵敏度、运镜预设和路线编辑。
 - 支持掌镜预览、路线预览、干净截图、参考视频导出和项目 JSON 导入导出。
 - 从项目章节进入时可作为分镜导演台使用，保留原 `/projects/:projectId/chapters/:chapterId/director-stage` 入口。
-- 操作文档见 [3D 导演台用户手册](docs/3d-director-desk-user-manual.md)。
+- 操作文档见 [零基础用户手册](docs/canvas-director-beginner-manual.md) 第 7～11 节；云工程实现参见 [导演台云工程接入](docs/director-desk-cloud-integration.md)。
 
 #### 后期剪辑
 
@@ -181,7 +226,7 @@ Reelmax 是面向 AI 短剧、分镜、资产生成和视频成片流程的前�
 - 支持关联角色、场景和道具；图片经服务端初筛后入库，保留真实库条目及来源信息。
 - 云端聊天支持会话、附件和任务恢复；工作流支持已开放的文本节点依赖执行，具体范围由后端能力及模型目录决定。
 - 支持节点自动排列；视口更新、连线计算和媒体预览使用缓存减少重复工作，统一弹窗隔离后台画布快捷键。
-- 操作文档见 [自由画布用户手册](docs/free-canvas-user-manual.md)。旧手册中的本地配置流程应结合 [V2 接入说明](docs/free-canvas-cloud-integration-v2.md)、[V3 接入说明](docs/free-canvas-cloud-integration-v3.md) 阅读；节点维护参见 [样式规范](docs/free-canvas-node-style.md)。
+- 操作文档见 [零基础用户手册](docs/canvas-director-beginner-manual.md) 第 3～6 节；开发时结合 [V2 基础接入](docs/free-canvas-cloud-integration-v2.md)、[V3 增量接入](docs/free-canvas-cloud-integration-v3.md) 和 [最新契约接入记录](docs/canvas-handoff-20260921-integration.md) 阅读；节点维护参见 [样式规范](docs/free-canvas-node-style.md)。
 
 ### 资产管理
 
