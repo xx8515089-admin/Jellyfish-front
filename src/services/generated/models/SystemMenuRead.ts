@@ -9,6 +9,9 @@ export type SystemMenuRead = {
     parentId?: (number | null);
     code: string;
     name: string;
+    /** Original Chinese name, independent of request language. */
+    nameZh?: string;
+    nameEn?: (string | null);
     path?: (string | null);
     icon?: (string | null);
     menuType: string;

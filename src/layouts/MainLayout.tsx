@@ -1,3 +1,4 @@
+import { uiText, useUiLanguage } from '../i18n/uiText'
 import type React from 'react';
 import { useEffect, useMemo, useState } from 'react'
 import { Layout, Menu, theme, Dropdown, Space, Avatar, Select, Breadcrumb, Tag, Tooltip, Button } from 'antd'
@@ -42,6 +43,23 @@ function buildNavigationItems(menus: AuthMenuSnapshot[]): MenuProps['items'] {
       disabled: !menu.path && !hasChildren,
     }
   })
+}
+
+/** Names come from the same server-localized tree as the sidebar, including custom menus. */
+function findMenuDisplayName(menus: AuthMenuSnapshot[], pathname: string, search: string): string | undefined {
+  let match: { name: string; score: number } | undefined
+  const visit = (items: AuthMenuSnapshot[]) => {
+    for (const menu of getVisibleMenus(items)) {
+      const route = parseMenuPath(menu.path)
+      if (route?.pathname === normalizePathname(pathname) && requiredQueryMatches(route.search, search)) {
+        const score = route.search ? 1 : 0
+        if (!match || score > match.score) match = { name: menu.name, score }
+      }
+      visit(menu.children ?? [])
+    }
+  }
+  visit(menus)
+  return match?.name
 }
 
 /** 根据完整路径（包括查询参数）定位当前菜单，子页面则选中最长的父路由。 */
@@ -121,6 +139,8 @@ function getProjectIdFromPathname(pathname: string): string | null {
 }
 
 const MainLayout: React.FC = () => {
+  useUiLanguage()
+
   const { t, i18n } = useTranslation('layout')
   const location = useLocation()
   const navigate = useNavigate()
@@ -168,7 +188,7 @@ const MainLayout: React.FC = () => {
     }
   }, [currentProjectId])
 
-  const menuItems = useMemo(() => buildNavigationItems(authMenus), [authMenus])
+  const menuItems = useMemo(() => buildNavigationItems(authMenus), [authMenus, language])
   const homePath = useMemo(() => getFirstMenuPath(authMenus) ?? '/projects', [authMenus])
   const appTitle = t('title', { defaultValue: 'Reelmax' })
   const appSubtitle = t('subtitle', { defaultValue: language === 'en-US' ? 'AI Short-form Studio' : 'AI 短剧工作台' })
@@ -232,14 +252,14 @@ const MainLayout: React.FC = () => {
       }
 
       const isLast = i === path.length - 1
-      const label = pathLabels[segment] ?? (path[0] === 'projects' && i === 1 ? t('breadcrumb.projectWorkspace') : segment)
+      const label = findMenuDisplayName(authMenus, href, location.search) ?? pathLabels[segment] ?? (path[0] === 'projects' && i === 1 ? t('breadcrumb.projectWorkspace') : segment)
       items.push({
         key: href,
         title: isLast ? label : <Link to={href}>{label}</Link>,
       })
     })
     return items
-  }, [language, location.pathname, t])
+  }, [authMenus, language, location.pathname, location.search, t])
 
   const userMenuItems = [
     {
@@ -354,16 +374,16 @@ const MainLayout: React.FC = () => {
             <Tooltip
               title={
                 user.isAdmin
-                  ? (language === 'en-US' ? 'Administrators have unlimited API quota' : '管理员 API 额度不限')
+                  ? (language === 'en-US' ? 'Administrators have unlimited API quota' : uiText("管理员 API 额度不限"))
                   : (language === 'en-US'
                     ? 'Used ' + user.apiUsed + ' of ' + user.apiQuota
-                    : '已使用 ' + user.apiUsed + ' / ' + user.apiQuota)
+                    : uiText("已使用 ") + user.apiUsed + ' / ' + user.apiQuota)
               }
             >
               <Tag color={user.isAdmin ? 'blue' : user.apiRemaining > 0 ? 'green' : 'red'} className="m-0">
                 {user.isAdmin
-                  ? (language === 'en-US' ? 'API Unlimited' : 'API 不限')
-                  : (language === 'en-US' ? 'API remaining: ' : 'API 剩余：') + user.apiRemaining}
+                  ? (language === 'en-US' ? 'API Unlimited' : uiText("API 不限"))
+                  : (language === 'en-US' ? 'API remaining: ' : uiText("API 剩余：")) + user.apiRemaining}
               </Tag>
             </Tooltip>
             <Select

@@ -1,6 +1,7 @@
+import { uiText, useUiLanguage } from '../i18n/uiText'
 ﻿import type React from 'react'
 import { useEffect, useState } from 'react'
-import { Spin } from 'antd'
+import { Alert, Button, Spin } from 'antd'
 import { Navigate, useLocation } from 'react-router-dom'
 import { ApiError, AuthService } from '../services/generated'
 import {
@@ -13,10 +14,18 @@ import {
 } from '../auth'
 import type { AuthUserSnapshot } from '../auth'
 import { useAppStore } from '../store/useAppStore'
+import { refreshAuthMenus } from '../services/authMenus'
+import { useBilingualText } from '../i18n/useBilingualText'
 import { withTimeout } from '../utils/withTimeout'
 
 /** 校验 bearer token，并定期刷新当前用户与额度展示。 */
 const RequireAuth: React.FC<{ children: React.ReactElement }> = ({ children }) => {
+  useUiLanguage()
+
+  const language = useAppStore(state => state.language)
+  const l = useBilingualText()
+  const [menuError, setMenuError] = useState(false)
+  const [menuRetry, setMenuRetry] = useState(0)
   const location = useLocation()
   const setUser = useAppStore((state) => state.setUser)
   const setMenus = useAppStore((state) => state.setMenus)
@@ -85,15 +94,28 @@ const RequireAuth: React.FC<{ children: React.ReactElement }> = ({ children }) =
     return () => { active = false; window.clearInterval(timer) }
   }, [setMenus, setUser])
 
+  useEffect(() => {
+    if (status !== 'authenticated') return
+    let active = true
+    setMenuError(false)
+    void refreshAuthMenus(language).catch(() => { if (active) setMenuError(true) })
+    return () => { active = false }
+  }, [language, status, menuRetry])
+
   if (status === 'checking') {
     return (
-      <div className="app-auth-loading" role="status" aria-label="正在校验登录状态">
+      <div className="app-auth-loading" role="status" aria-label={uiText("正在校验登录状态")}>
         <Spin size="large" />
       </div>
     )
   }
   if (status === 'anonymous') return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />
-  return children
+  return <>
+    {menuError && <Alert style={{ position: 'fixed', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 21000, maxWidth: '90vw' }} type="warning" showIcon
+      message={l('菜单刷新失败，当前仍显示上次的菜单', 'Menu refresh failed. Previous menus are still shown.')}
+      action={<Button size="small" onClick={() => setMenuRetry(value => value + 1)}>{l('重试', 'Retry')}</Button>} />}
+    {children}
+  </>
 }
 
 export default RequireAuth

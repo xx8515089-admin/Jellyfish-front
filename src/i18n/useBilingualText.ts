@@ -1,13 +1,12 @@
-import { useTranslation } from 'react-i18next'
-import i18n from '../i18n'
+import { useCallback } from 'react'
+import { useUiLanguage, getUiLanguage } from './uiText'
 
-/** 选择双语 UI 文案，并在当前语言变化时重新渲染。 */
+/** Return a language-dependent callback so memoized labels also update. */
 export function useBilingualText(): (zhCN: string, enUS: string) => string {
-  useTranslation()
-  return bilingualText
+  const language = useUiLanguage()
+  return useCallback((zhCN: string, enUS: string) => language === 'en-US' ? enUS : zhCN, [language])
 }
 
-/** 在 React 组件之外选择双语文案。 */
 export function bilingualText(zhCN: string, enUS: string): string {
-  return i18n.resolvedLanguage === 'en-US' || i18n.language.startsWith('en') ? enUS : zhCN
+  return getUiLanguage() === 'en-US' ? enUS : zhCN
 }

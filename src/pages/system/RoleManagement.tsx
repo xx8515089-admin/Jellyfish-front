@@ -1,5 +1,5 @@
 import type React from 'react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Card, Form, Input, Modal, Select, Space, Switch, Table, Tag, TreeSelect, Typography, message } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { CloseOutlined, DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
@@ -52,6 +52,7 @@ const RoleManagement: React.FC = () => {
   const english = useAppStore((state) => state.language) === 'en-US'
   const currentIsAdmin = useAppStore((state) => state.user.isAdmin)
   const text = (zh: string, en: string) => (english ? en : zh)
+  const loadSequence = useRef(0)
   const [roles, setRoles] = useState<SystemRoleRead[]>([])
   const [menus, setMenus] = useState<SystemMenuRead[]>([])
   const [loading, setLoading] = useState(false)
@@ -67,26 +68,31 @@ const RoleManagement: React.FC = () => {
 
   /** 同步加载角色列表和菜单树，菜单树用于角色编辑时绑定菜单权限。 */
   const loadRolePageData = async () => {
+    const sequence = ++loadSequence.current
+    const requestedEnglish = english
     setLoading(true)
     try {
       const [roleResponse, menuResponse] = await Promise.all([
         SystemRolesService.findAllRolesApiV1SystemRolesFindAllGet(),
         SystemMenusService.findAllMenusApiV1SystemMenusFindAllGet(),
       ])
+      if (sequence !== loadSequence.current || requestedEnglish !== (useAppStore.getState().language === 'en-US')) return
       assertApiSuccess(roleResponse, text('加载角色失败', 'Failed to load roles'))
       assertApiSuccess(menuResponse, text('加载菜单失败', 'Failed to load menus'))
       setRoles(roleResponse.data ?? [])
       setMenus(menuResponse.data ?? [])
     } catch (error) {
+      if (sequence !== loadSequence.current || requestedEnglish !== (useAppStore.getState().language === 'en-US')) return
       void messageApi.error(getErrorMessage(error, text('加载角色失败', 'Failed to load roles')))
     } finally {
-      setLoading(false)
+      if (sequence === loadSequence.current) setLoading(false)
     }
   }
 
   useEffect(() => {
     if (currentIsAdmin) void loadRolePageData()
-  }, [currentIsAdmin])
+    return () => { loadSequence.current += 1 }
+  }, [currentIsAdmin, english])
 
   /** 打开新增角色弹窗，创建接口只提交角色基础信息和权限编码。 */
   const openCreateModal = () => {

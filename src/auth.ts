@@ -79,9 +79,21 @@ export function getStoredAuthUser(): AuthUserSnapshot | null {
   }
 }
 
-/** 保存登录接口返回的当前用户菜单树。 */
+/** Menu cache entries are scoped to both the account and UI language. Legacy unscoped entries are ignored. */
+function menuCacheScope(): { userId: string; language: 'zh-CN' | 'en-US' } | null {
+  const user = getStoredAuthUser()
+  if (user?.id == null) return null
+  const storedLanguage = window.localStorage.getItem('jellyfish_language')
+  const language = storedLanguage === 'zh-CN' || storedLanguage === 'en-US'
+    ? storedLanguage
+    : (window.navigator.languages?.[0] ?? window.navigator.language).toLowerCase().startsWith('en') ? 'en-US' : 'zh-CN'
+  return { userId: String(user.id), language }
+}
+
+/** 保存当前用户及语言对应的菜单树。 */
 export function updateStoredAuthMenus(menus: AuthMenuSnapshot[]): void {
-  window.localStorage.setItem(AUTH_MENUS_KEY, JSON.stringify(menus))
+  const scope = menuCacheScope()
+  if (scope) window.localStorage.setItem(AUTH_MENUS_KEY, JSON.stringify({ ...scope, menus }))
 }
 
 /** 读取当前登录用户最近一次由后端确认的菜单树。 */
@@ -89,8 +101,10 @@ export function getStoredAuthMenus(): AuthMenuSnapshot[] {
   try {
     const value = window.localStorage.getItem(AUTH_MENUS_KEY)
     if (!value) return []
-    const menus = JSON.parse(value) as unknown
-    return Array.isArray(menus) ? menus as AuthMenuSnapshot[] : []
+    const cached = JSON.parse(value) as { userId?: string; language?: string; menus?: unknown } | null
+    const scope = menuCacheScope()
+    return scope && cached?.userId === scope.userId && cached.language === scope.language && Array.isArray(cached.menus)
+      ? cached.menus as AuthMenuSnapshot[] : []
   } catch {
     return []
   }

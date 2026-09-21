@@ -1,3 +1,4 @@
+import { uiText } from '../../../i18n/uiText'
 import { useEffect, useState, useMemo } from 'react'
 import {
   Layout,
@@ -168,8 +169,8 @@ const IMAGE_RESOLUTION_OPTIONS = [1, 2].map((value) => ({
 }))
 
 const IMAGE_QUALITY_OPTIONS = [
-  { label: '中', value: 1 },
-  { label: '高', value: 2 },
+  { get label() { return uiText("中") }, value: 1 },
+  { get label() { return uiText("高") }, value: 2 },
 ]
 
 const VIDEO_RESOLUTION_OPTIONS = ['480p', '720p'].map((value) => ({

@@ -1,3 +1,4 @@
+import { uiText, useUiLanguage } from '../i18n/uiText'
 import type React from 'react'
 import { useState } from 'react'
 import { Button, Card, Form, Input, Typography, message } from 'antd'
@@ -24,6 +25,8 @@ interface LoginValues { username: string; password: string }
 
 /** 调用后端登录接口，并只保存后端签发的 bearer session。 */
 const Login: React.FC = () => {
+  useUiLanguage()
+
   const { t } = useTranslation('login')
   const navigate = useNavigate()
   const location = useLocation()
@@ -92,11 +95,11 @@ const Login: React.FC = () => {
         />
       </div>
 
-      <div className="login-page__brand" aria-label="Reelmax AI 短剧工作台">
+      <div className="login-page__brand" aria-label={uiText("Reelmax AI 短剧工作台")}>
         <img src="/logo.svg" alt="" />
         <div>
           <span className="login-page__brand-name">Reelmax</span>
-          <span className="login-page__brand-subtitle">AI 短剧工作台</span>
+          <span className="login-page__brand-subtitle">{uiText("AI 短剧工作台")}</span>
         </div>
       </div>
 

@@ -1,5 +1,6 @@
+import { uiText } from '../../i18n/uiText'
 import type React from 'react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Card, Form, Input, InputNumber, Modal, Select, Space, Switch, Table, Tag, Typography, message } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
@@ -7,13 +8,18 @@ import { MenuIconPicker, MenuIconPreview } from '../../components'
 import { SystemMenusService } from '../../services/generated'
 import type { SystemMenuCreate, SystemMenuRead, SystemMenuUpdate } from '../../services/generated'
 import { useAppStore } from '../../store/useAppStore'
-import { assertApiSuccess, getErrorMessage, normalizeNullableText } from './systemApiHelpers'
+import { getErrorMessage, normalizeNullableText } from './systemApiHelpers'
+import { getSystemMenuDetail } from '../../services/systemMenuDetail'
+import { getAuthToken } from '../../auth'
+import { refreshAuthMenus } from '../../services/authMenus'
+import { assertMenuSuccess, menuNameFields, menuNamePayload } from './menuLanguage'
 import './MenuManagement.css'
 
 type MenuFormValues = {
   parentId?: number | null
   code: string
   name: string
+  nameEn?: string | null
   path?: string | null
   icon?: string | null
   menuType: string
@@ -28,9 +34,8 @@ type ParentOption = {
 }
 
 const MENU_TYPE_OPTIONS = [
-  { label: '目录', value: 'directory' },
-  { label: '菜单', value: 'menu' },
-  { label: '按钮', value: 'button' },
+  { get label() { return uiText("目录") }, value: 'directory' },
+  { get label() { return uiText("菜单") }, value: 'menu' },
 ]
 
 /** 菜单管理页：使用 Java 后端菜单树接口完成查询、新增、编辑和删除。 */
@@ -38,6 +43,9 @@ const MenuManagement: React.FC = () => {
   const english = useAppStore((state) => state.language) === 'en-US'
   const currentIsAdmin = useAppStore((state) => state.user.isAdmin)
   const text = (zh: string, en: string) => (english ? en : zh)
+  const detailSequence = useRef(0)
+  const [detailLoadingId, setDetailLoadingId] = useState<number | null>(null)
+  const loadSequence = useRef(0)
   const [menus, setMenus] = useState<SystemMenuRead[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -50,21 +58,28 @@ const MenuManagement: React.FC = () => {
 
   /** 从后端加载完整菜单树。 */
   const loadMenus = async () => {
+    const sequence = ++loadSequence.current
+    const requestedEnglish = english
     setLoading(true)
     try {
       const response = await SystemMenusService.findAllMenusApiV1SystemMenusFindAllGet()
-      assertApiSuccess(response, text('加载菜单失败', 'Failed to load menus'))
+      if (sequence !== loadSequence.current || requestedEnglish !== (useAppStore.getState().language === 'en-US')) return
+      assertMenuSuccess(response, text('加载菜单失败', 'Failed to load menus'))
       setMenus(response.data ?? [])
     } catch (error) {
+      if (sequence !== loadSequence.current || requestedEnglish !== (useAppStore.getState().language === 'en-US')) return
       void messageApi.error(getErrorMessage(error, text('加载菜单失败', 'Failed to load menus')))
     } finally {
-      setLoading(false)
+      if (sequence === loadSequence.current) setLoading(false)
     }
   }
 
   useEffect(() => {
     if (currentIsAdmin) void loadMenus()
-  }, [currentIsAdmin])
+    return () => { loadSequence.current += 1 }
+  }, [currentIsAdmin, english])
+
+  useEffect(() => () => { detailSequence.current += 1 }, [])
 
   const parentOptions = useMemo(
     () => buildParentOptions(menus, editing?.id ?? null),
@@ -73,11 +88,14 @@ const MenuManagement: React.FC = () => {
 
   /** 打开新增菜单弹窗，可传入父级菜单作为默认父节点。 */
   const openCreateModal = (parent?: SystemMenuRead) => {
+    detailSequence.current += 1
+    setDetailLoadingId(null)
     setEditing(null)
     setFormSeed({
       parentId: parent?.id ?? null,
       code: '',
       name: '',
+      nameEn: '',
       path: null,
       icon: null,
       menuType: 'menu',
@@ -88,23 +106,34 @@ const MenuManagement: React.FC = () => {
   }
 
   /** 打开编辑菜单弹窗，并回填当前行数据。 */
-  const openEditModal = (menu: SystemMenuRead) => {
-    setEditing(menu)
-    setFormSeed({
-      parentId: menu.parentId ?? null,
-      code: menu.code,
-      name: menu.name,
-      path: menu.path ?? null,
-      icon: menu.icon ?? null,
-      menuType: menu.menuType,
-      sortOrder: menu.sortOrder,
-      active: menu.active,
-    })
-    setModalOpen(true)
+  const openEditModal = async (row: SystemMenuRead) => {
+    const sequence = ++detailSequence.current
+    const token = getAuthToken()
+    setDetailLoadingId(row.id)
+    try {
+      const menu = await getSystemMenuDetail(row.id, useAppStore.getState().language)
+      if (sequence !== detailSequence.current || token !== getAuthToken()) return
+      const names = menuNameFields(menu)
+      setEditing(menu)
+      setFormSeed({
+        parentId: menu.parentId ?? null, code: menu.code, ...names,
+        path: menu.path ?? null, icon: menu.icon ?? null, menuType: menu.menuType,
+        sortOrder: menu.sortOrder, active: menu.active,
+      })
+      setModalOpen(true)
+    } catch (error) {
+      if (sequence === detailSequence.current && token === getAuthToken()) {
+        void messageApi.error(getErrorMessage(error, text('读取菜单详情失败', 'Failed to load menu details')))
+      }
+    } finally {
+      if (sequence === detailSequence.current) setDetailLoadingId(null)
+    }
   }
 
   /** 关闭菜单编辑弹窗，清理动作放到 afterOpenChange 中等待表单完成挂载状态切换。 */
   const closeMenuModal = () => {
+    detailSequence.current += 1
+    setDetailLoadingId(null)
     setModalOpen(false)
   }
 
@@ -127,22 +156,23 @@ const MenuManagement: React.FC = () => {
       if (editing) {
         const requestBody: SystemMenuUpdate = {
           id: editing.id,
+          menuType: values.menuType,
           parentId: values.parentId ?? null,
           code: values.code.trim(),
-          name: values.name.trim(),
+          ...menuNamePayload(values),
           path: normalizeNullableText(values.path),
           icon: normalizeNullableText(values.icon),
           sortOrder: values.sortOrder ?? 0,
           active: values.active,
         }
         const response = await SystemMenusService.updateMenuApiV1SystemMenusUpdatePost({ requestBody })
-        assertApiSuccess(response, text('编辑菜单失败', 'Failed to update menu'))
+        assertMenuSuccess(response, text('编辑菜单失败', 'Failed to update menu'))
         void messageApi.success(text('菜单已更新', 'Menu updated'))
       } else {
         const requestBody: SystemMenuCreate = {
           parentId: values.parentId ?? null,
           code: values.code.trim(),
-          name: values.name.trim(),
+          ...menuNamePayload(values),
           path: normalizeNullableText(values.path),
           icon: normalizeNullableText(values.icon),
           menuType: values.menuType,
@@ -150,11 +180,12 @@ const MenuManagement: React.FC = () => {
           active: values.active,
         }
         const response = await SystemMenusService.createMenuApiV1SystemMenusCreatePost({ requestBody })
-        assertApiSuccess(response, text('创建菜单失败', 'Failed to create menu'))
+        assertMenuSuccess(response, text('创建菜单失败', 'Failed to create menu'))
         void messageApi.success(text('菜单已创建', 'Menu created'))
       }
       closeMenuModal()
       await loadMenus()
+      void refreshAuthMenus().catch(() => messageApi.warning(text('菜单已保存，但导航刷新失败；请切换语言或刷新页面重试', 'Menu saved, but navigation could not refresh. Switch language or reload to retry.')))
     } catch (error) {
       if (error && typeof error === 'object' && 'errorFields' in error) return
       void messageApi.error(getErrorMessage(error, editing ? text('编辑菜单失败', 'Failed to update menu') : text('创建菜单失败', 'Failed to create menu')))
@@ -179,9 +210,10 @@ const MenuManagement: React.FC = () => {
           const response = await SystemMenusService.deleteMenuApiV1SystemMenusDeletePost({
             requestBody: { id: menu.id },
           })
-          assertApiSuccess(response, text('删除菜单失败', 'Failed to delete menu'))
+          assertMenuSuccess(response, text('删除菜单失败', 'Failed to delete menu'))
           void messageApi.success(text('菜单已删除', 'Menu deleted'))
           await loadMenus()
+          void refreshAuthMenus().catch(() => messageApi.warning(text('菜单已保存，但导航刷新失败；请切换语言或刷新页面重试', 'Menu saved, but navigation could not refresh. Switch language or reload to retry.')))
         } catch (error) {
           void messageApi.error(getErrorMessage(error, text('删除菜单失败', 'Failed to delete menu')))
         }
@@ -255,7 +287,8 @@ const MenuManagement: React.FC = () => {
             type="text"
             icon={<EditOutlined />}
             className="menu-management__action"
-            onClick={() => openEditModal(record)}
+            loading={detailLoadingId === record.id}
+            onClick={() => void openEditModal(record)}
           >
             {text('编辑', 'Edit')}
           </Button>
@@ -347,14 +380,17 @@ const MenuManagement: React.FC = () => {
                     options={parentOptions}
                   />
                 </Form.Item>
-                <Form.Item name="code" label={text('菜单编码', 'Menu code')} rules={[{ required: true, message: text('请输入菜单编码', 'Enter menu code') }]}>
-                  <Input placeholder="roles" />
+                <Form.Item name="code" label={text('菜单编码', 'Menu code')} rules={[{ required: true, message: text('请输入菜单编码', 'Enter menu code') }, { type: 'string', max: 64, pattern: /^[a-z][a-z0-9_-]*$/, transform: value => value?.trim(), message: text('编码最多 64 位，以小写字母开头，仅允许小写字母、数字、下划线和连字符', 'Up to 64 characters. Start with a lowercase letter; use lowercase letters, digits, underscores, or hyphens.') }]}>
+                  <Input placeholder="roles" maxLength={64} />
                 </Form.Item>
-                <Form.Item name="name" label={text('菜单名称', 'Menu name')} rules={[{ required: true, message: text('请输入菜单名称', 'Enter menu name') }]}>
-                  <Input placeholder={text('角色管理', 'Role Management')} />
+                <Form.Item name="name" label={text('中文名称', 'Chinese name')} rules={[{ required: true, whitespace: true, message: text('请输入中文菜单名称', 'Enter the Chinese menu name') }, { max: 120, transform: value => value?.trim(), message: text('中文名称最多 120 个字符', 'Chinese name must be at most 120 characters') }]}>
+                  <Input placeholder="角色管理" maxLength={120} />
                 </Form.Item>
-                <Form.Item name="menuType" label={text('菜单类型', 'Menu type')} rules={[{ required: true, message: text('请选择菜单类型', 'Select menu type') }]}>
-                  <Select options={MENU_TYPE_OPTIONS.map((item) => ({ ...item, label: text(item.label, item.value) }))} disabled={Boolean(editing)} />
+                <Form.Item name="nameEn" label={text('英文名称', 'English name')} rules={[{ max: 120, transform: value => value?.trim(), message: text('英文名称最多 120 个字符', 'English name must be at most 120 characters') }]} extra={text('留空时，英文界面使用中文名称', 'Leave empty to show the Chinese name in English mode')}>
+                  <Input placeholder="Role Management" maxLength={120} allowClear />
+                </Form.Item>
+                <Form.Item name="menuType" label={text('菜单类型', 'Menu type')} rules={[{ required: true, type: 'enum', enum: ['directory', 'menu'], message: text('请选择目录或菜单', 'Select directory or menu') }]}>
+                  <Select options={MENU_TYPE_OPTIONS} />
                 </Form.Item>
                 <Form.Item name="sortOrder" label={text('排序', 'Sort order')} rules={[{ required: true, message: text('请输入排序值', 'Enter sort order') }]}>
                   <InputNumber min={0} precision={0} className="w-full" />
@@ -365,11 +401,15 @@ const MenuManagement: React.FC = () => {
             <div className="menu-editor__section">
               <div className="menu-editor__section-title">{text('路由与显示', 'Route and display')}</div>
               <div className="menu-editor__grid">
-                <Form.Item name="path" label={text('路由路径', 'Route path')}>
+                <Form.Item name="path" label={text('路由路径', 'Route path')} dependencies={['menuType']} rules={[({ getFieldValue }) => ({
+                  validator: (_, value) => getFieldValue('menuType') === 'menu' && !String(value ?? '').trim()
+                    ? Promise.reject(new Error(text('菜单项必须填写路由路径', 'Menu items require a route path')))
+                    : Promise.resolve(),
+                })]}>
                   <Input placeholder="/system/roles" />
                 </Form.Item>
                 <Form.Item name="icon" label={text('图标标识', 'Icon key')}>
-                  <MenuIconPicker placeholder="Select menu icon" />
+                  <MenuIconPicker placeholder={text('选择菜单图标', 'Select menu icon')} />
                 </Form.Item>
                 <Form.Item label={text('启用状态', 'Active state')} className="menu-editor__switch-item">
                   <div className="menu-editor__switch-row">

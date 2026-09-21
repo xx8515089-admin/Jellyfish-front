@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { SupportedLanguage } from '../i18n'
+import i18n, { type SupportedLanguage } from '../i18n'
 import { getAuthUserView, getStoredAuthMenus, getStoredAuthUser } from '../auth'
 import type { AuthMenuSnapshot } from '../auth'
 
@@ -45,8 +45,19 @@ export const useAppStore = create<AppState>((set) => ({
   setMenus: (menus) => set({ menus }),
   setLanguage: (lang) => {
     window.localStorage.setItem('jellyfish_language', lang)
-    document.documentElement.lang = lang === 'en-US' ? 'en' : 'zh-CN'
+    if (i18n.language !== lang) void i18n.changeLanguage(lang)
     set(() => ({ language: lang }))
   },
   toggleSider: () => set((state) => ({ siderCollapsed: !state.siderCollapsed })),
 }))
+
+// Keep standalone pages, the canvas, and the app shell on the same language.
+i18n.on('languageChanged', (value: string) => {
+  const language = value.startsWith('en') ? 'en-US' : 'zh-CN'
+  if (useAppStore.getState().language !== language) useAppStore.setState({ language })
+})
+window.addEventListener('storage', (event) => {
+  if (event.key === 'jellyfish_language' && (event.newValue === 'zh-CN' || event.newValue === 'en-US')) {
+    useAppStore.getState().setLanguage(event.newValue)
+  }
+})

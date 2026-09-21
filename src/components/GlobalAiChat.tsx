@@ -1,3 +1,4 @@
+import { uiText, useUiLanguage } from '../i18n/uiText'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { Check, Clipboard, MessageCircle, Minus, Send, Sparkles, X } from 'lucide-react'
@@ -117,6 +118,8 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
 }
 
 const GlobalAiChat = () => {
+  useUiLanguage()
+
   const location = useLocation()
   const [isOpen, setIsOpen] = useState(false)
   const [position, setPosition] = useState<PositionOffset>(() => readStoredPosition())
@@ -348,17 +351,16 @@ const GlobalAiChat = () => {
           onPointerCancel={stopDrag}
           onLostPointerCapture={stopDrag}
           onClick={openPanel}
-          aria-label="打开 Reelmax AI 聊天"
+          aria-label={uiText("打开 Reelmax AI 聊天")}
         >
           <span className="global-ai-chat-orb-glow" />
           <img src={AI_IMAGE_SRC} alt="" draggable={false} />
           <span className="global-ai-chat-orb-label">
             <MessageCircle size={13} />
-            AI 助手
-          </span>
+            {uiText("AI 助手")}</span>
         </button>
       ) : (
-        <section className="global-ai-chat-panel" aria-label="Reelmax AI 聊天">
+        <section className="global-ai-chat-panel" aria-label={uiText("Reelmax AI 聊天")}>
           <div className="global-ai-chat-dialog">
             <header
               className="global-ai-chat-header"
@@ -376,7 +378,7 @@ const GlobalAiChat = () => {
                   type="button"
                   onPointerDown={(event) => event.stopPropagation()}
                   onClick={minimizePanel}
-                  aria-label="最小化 AI 聊天"
+                  aria-label={uiText("最小化 AI 聊天")}
                 >
                   <Minus size={16} />
                 </button>
@@ -384,7 +386,7 @@ const GlobalAiChat = () => {
                   type="button"
                   onPointerDown={(event) => event.stopPropagation()}
                   onClick={minimizePanel}
-                  aria-label="关闭 AI 聊天"
+                  aria-label={uiText("关闭 AI 聊天")}
                 >
                   <X size={16} />
                 </button>
@@ -407,8 +409,8 @@ const GlobalAiChat = () => {
                           event.stopPropagation()
                           void handleCopyMessage(message)
                         }}
-                        aria-label={copiedMessageId === message.id ? '已复制消息' : '复制消息'}
-                        title={copiedMessageId === message.id ? '已复制' : '复制'}
+                        aria-label={copiedMessageId === message.id ? uiText("已复制消息") : uiText("复制消息")}
+                        title={copiedMessageId === message.id ? uiText("已复制") : uiText("复制")}
                       >
                         {copiedMessageId === message.id ? <Check size={12} /> : <Clipboard size={12} />}
                       </button>
@@ -445,10 +447,10 @@ const GlobalAiChat = () => {
                 onCompositionStart={() => { isComposingRef.current = true }}
                 onCompositionEnd={() => { isComposingRef.current = false }}
                 onKeyDown={handleInputKeyDown}
-                placeholder="问问 Reelmax AI..."
+                placeholder={uiText("问问 Reelmax AI...")}
                 rows={1}
               />
-              <button type="button" onClick={() => sendMessage()} disabled={!input.trim() || isThinking} aria-label="发送消息">
+              <button type="button" onClick={() => sendMessage()} disabled={!input.trim() || isThinking} aria-label={uiText("发送消息")}>
                 <Send size={17} />
               </button>
             </footer>

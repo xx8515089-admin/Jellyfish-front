@@ -6,6 +6,7 @@ export type SystemMenuCreate = {
     parentId?: (number | null);
     code: string;
     name: string;
+    nameEn?: (string | null);
     path?: (string | null);
     icon?: (string | null);
     menuType: string;
