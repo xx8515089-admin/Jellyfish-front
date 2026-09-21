@@ -1,614 +1,253 @@
-import type React from 'react'
-import { useEffect, useMemo, useState } from 'react'
-import { Button, DatePicker, Spin, message } from 'antd'
-import type { TaskListItemRead } from '../../../services/generated'
-import { FilmService } from '../../../services/generated'
-import { useBilingualText } from '../../../i18n/useBilingualText'
-import { resolveTaskSourceLabel, resolveTaskTitle } from '../components/taskCopy'
-import {
-  Activity,
-  ArrowDownRight,
-  ArrowUpRight,
-  Clock3,
-  Download,
-  Gem,
-  PackageOpen,
-  Sparkles,
-  X,
-} from 'lucide-react'
+import type { ReactNode } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { Alert, Button, DatePicker, Drawer, Empty, Select, Space, Spin, Table, Tag, message } from 'antd'
+import type { ColumnsType } from 'antd/es/table'
+import { Clock3, Download, Gem, RefreshCw, Sparkles, X } from 'lucide-react'
 import dayjs from 'dayjs'
-import type { Dayjs } from 'dayjs'
 import { useNavigate } from 'react-router-dom'
+import { getAuthUserView, getStoredAuthUser } from '../../../auth'
+import { useEfficiencyLabels } from './useEfficiencyLabels'
+import { EfficiencyService as api } from '../../../services/efficiencyGenerated'
+import type { EfficiencyMetric, EfficiencyDrawScope, EfficiencyMeta, EfficiencyComparison, EfficiencyRankings, EfficiencyRecord } from '../../../services/efficiencyGenerated'
+import type { CancelablePromise } from '../../../services/generated'
+import { coverageIssues, detailQuery, efficiencyError, formatMetric, metricQuery, projectHref, shanghaiToday, validateDates } from './efficiencyModel'
+import type { CommonFilters, DrillFilter } from './efficiencyModel'
+import { useEfficiencyResource } from './useEfficiencyResource'
+import type { EfficiencyResource } from './useEfficiencyResource'
+import { EfficiencyMemberChart, EfficiencyTrendChart } from './EfficiencyCharts'
+import { EfficiencyCoverageNotice } from './EfficiencyCoverageNotice'
+import { EfficiencyModelChart } from './EfficiencyModelChart'
 import './EfficiencyOverview.css'
 
-const { RangePicker } = DatePicker
+type Details = { title?: string; metric: EfficiencyMetric; drill?: DrillFilter }
 
-type MetricKey = 'credits' | 'duration' | 'draws'
-type RangeKey = 'today' | 'yesterday' | '7d' | '30d' | 'custom'
-type DrawScope = 'video' | 'image' | 'asset'
-
-type DateRange = {
-  start: number
-  end: number
-  label: string
-}
-
-type Summary = {
-  credits: number
-  durationMinutes: number
-  draws: number
-}
-
-type GroupRow = {
-  key: string
-  label: string
-  value: number
-}
-
-const DRAW_RELATION_TYPES = new Set([
-  'video',
-  'shot_first_frame_prompt',
-  'shot_last_frame_prompt',
-  'shot_key_frame_prompt',
-  'shot_frame_image',
-  'actor_image',
-  'scene_image',
-  'prop_image',
-  'costume_image',
-  'character_image',
-])
-
-const ASSET_IMAGE_RELATION_TYPES = new Set([
-  'actor_image',
-  'scene_image',
-  'prop_image',
-  'costume_image',
-  'character_image',
-])
-
-function getTaskTimestampMs(task: TaskListItemRead): number {
-  const timestamp = task.started_at_ts ?? task.created_at_ts ?? task.updated_at_ts ?? 0
-  return timestamp * 1000
-}
-
-function getTaskElapsedMs(task: TaskListItemRead, now: number): number {
-  if (typeof task.elapsed_ms === 'number' && task.elapsed_ms > 0) return task.elapsed_ms
-  if (task.started_at_ts && ['pending', 'running', 'processing', 'streaming'].includes(task.status)) {
-    return Math.max(0, now - task.started_at_ts * 1000)
-  }
-  return 0
-}
-
-function isDrawTask(task: TaskListItemRead): boolean {
-  const kind = task.task_kind ?? ''
-  const relationType = task.relation_type ?? ''
-  return kind.includes('generation') || kind.includes('shot_frame') || DRAW_RELATION_TYPES.has(relationType)
-}
-
-function isDrawTaskInScope(task: TaskListItemRead, scope: DrawScope): boolean {
-  const kind = task.task_kind ?? ''
-  const relationType = task.relation_type ?? ''
-  if (scope === 'video') return kind === 'video_generation' || relationType === 'video'
-  if (scope === 'image') {
-    return kind === 'image_generation' || relationType === 'shot_frame_image' || relationType.includes('frame_prompt')
-  }
-  return ASSET_IMAGE_RELATION_TYPES.has(relationType) || kind.includes('portrait') || kind.includes('_info')
-}
-
-function buildDateRange(rangeKey: RangeKey, customRange: [Dayjs | null, Dayjs | null] | null, l: (zh: string, en: string) => string): DateRange {
-  const now = dayjs()
-  if (rangeKey === 'today') {
-    return { start: now.startOf('day').valueOf(), end: now.valueOf(), label: l('今日', 'Today') }
-  }
-  if (rangeKey === 'yesterday') {
-    const yesterday = now.subtract(1, 'day')
-    return { start: yesterday.startOf('day').valueOf(), end: yesterday.endOf('day').valueOf(), label: l('昨日', 'Yesterday') }
-  }
-  if (rangeKey === '30d') {
-    return { start: now.subtract(29, 'day').startOf('day').valueOf(), end: now.valueOf(), label: l('近30天', 'Last 30 days') }
-  }
-  if (rangeKey === 'custom' && customRange?.[0] && customRange?.[1]) {
-    return {
-      start: customRange[0].startOf('day').valueOf(),
-      end: customRange[1].endOf('day').valueOf(),
-      label: l('自定义', 'Custom'),
-    }
-  }
-  return { start: now.subtract(6, 'day').startOf('day').valueOf(), end: now.valueOf(), label: l('近7天', 'Last 7 days') }
-}
-
-function filterTasksByRange(tasks: TaskListItemRead[], range: DateRange): TaskListItemRead[] {
-  return tasks.filter((task) => {
-    const timestamp = getTaskTimestampMs(task)
-    return timestamp >= range.start && timestamp <= range.end
-  })
-}
-
-function getPreviousRange(range: DateRange): DateRange {
-  const duration = range.end - range.start
-  return {
-    start: range.start - duration,
-    end: range.start,
-    label: 'previous',
-  }
-}
-
-function summarizeTasks(tasks: TaskListItemRead[], now: number): Summary {
-  return {
-    credits: 0,
-    durationMinutes: tasks.reduce((total, task) => total + getTaskElapsedMs(task, now) / 60000, 0),
-    draws: tasks.filter(isDrawTask).length,
-  }
-}
-
-function getMetricUnit(metric: MetricKey, l: (zh: string, en: string) => string): string {
-  if (metric === 'credits') return l('积分', 'pts')
-  if (metric === 'duration') return l('分钟', 'min')
-  return l('次', 'times')
-}
-
-function getChangePercent(current: number, previous: number): number | null {
-  if (previous === 0 && current === 0) return null
-  if (previous === 0) return 100
-  return ((current - previous) / previous) * 100
-}
-
-function formatMetricValue(value: number, metric: MetricKey): string {
-  if (metric === 'duration') {
-    if (value === 0) return '0'
-    if (value < 1) return value.toFixed(1)
-  }
-  return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: metric === 'duration' ? 1 : 0 }).format(value)
-}
-
-function getTaskMetricValue(task: TaskListItemRead, metric: MetricKey, now: number, drawScope: DrawScope): number {
-  if (metric === 'credits') return 0
-  if (metric === 'duration') return getTaskElapsedMs(task, now) / 60000
-  return isDrawTaskInScope(task, drawScope) ? 1 : 0
-}
-
-function buildTrend(tasks: TaskListItemRead[], range: DateRange, metric: MetricKey, now: number, drawScope: DrawScope) {
-  const rangeDays = Math.max(1, Math.ceil((range.end - range.start) / 86400000))
-  const bucketCount = rangeDays <= 2 ? 24 : Math.min(rangeDays, 30)
-  const bucketSize = (range.end - range.start) / bucketCount
-  const buckets = Array.from({ length: bucketCount }, (_, index) => {
-    const start = range.start + bucketSize * index
-    const end = index === bucketCount - 1 ? range.end : start + bucketSize
-    return {
-      label: rangeDays <= 2 ? dayjs(start).format('HH:mm') : dayjs(start).format('MM/DD'),
-      start,
-      end,
-      value: 0,
-    }
-  })
-
-  tasks.forEach((task) => {
-    const timestamp = getTaskTimestampMs(task)
-    const bucket = buckets.find((item) => timestamp >= item.start && timestamp <= item.end)
-    if (!bucket) return
-    bucket.value += getTaskMetricValue(task, metric, now, drawScope)
-  })
-
-  return buckets
-}
-
-function groupTasks(
-  tasks: TaskListItemRead[],
-  metric: MetricKey,
-  now: number,
-  drawScope: DrawScope,
-  mode: 'project' | 'member' | 'kind',
-  l: (zh: string, en: string) => string,
-): GroupRow[] {
-  const map = new Map<string, GroupRow>()
-  tasks.forEach((task) => {
-    const value = getTaskMetricValue(task, metric, now, drawScope)
-    if (value <= 0) return
-    const label =
-      mode === 'member'
-        ? l('当前账号', 'Current account')
-        : mode === 'kind'
-          ? resolveTaskTitle(task.task_kind)
-          : resolveTaskSourceLabel(task.relation_type, task.relation_entity_id) ?? l('未关联项目', 'Unlinked project')
-    const key = `${mode}:${label}`
-    const current = map.get(key)
-    if (current) {
-      current.value += value
-    } else {
-      map.set(key, { key, label, value })
-    }
-  })
-  return Array.from(map.values()).sort((first, second) => second.value - first.value).slice(0, 8)
-}
-
-function downloadCsv(tasks: TaskListItemRead[], l: (zh: string, en: string) => string) {
-  const headers = [
-    'task_id',
-    'task_kind',
-    'title',
-    'status',
-    'progress',
-    'started_at',
-    'finished_at',
-    'elapsed_minutes',
-    'relation_type',
-    'relation_entity_id',
-  ]
-  const rows = tasks.map((task) => [
-    task.task_id,
-    task.task_kind,
-    resolveTaskTitle(task.task_kind),
-    task.status,
-    String(task.progress ?? 0),
-    task.started_at_ts ? new Date(task.started_at_ts * 1000).toISOString() : '',
-    task.finished_at_ts ? new Date(task.finished_at_ts * 1000).toISOString() : '',
-    task.elapsed_ms ? String((task.elapsed_ms / 60000).toFixed(2)) : '',
-    task.relation_type ?? '',
-    task.relation_entity_id ?? '',
-  ])
-  const csv = [headers, ...rows]
-    .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-    .join('\n')
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `efficiency-overview-${dayjs().format('YYYYMMDD-HHmmss')}.csv`
-  link.click()
-  URL.revokeObjectURL(url)
-  message.success(l('已导出当前筛选数据', 'Current filtered data exported'))
-}
-
-const EfficiencyOverview: React.FC = () => {
-  const l = useBilingualText()
+/** Load statistics on entry, filter changes or explicit refresh; never poll or create snapshots. */
+export default function EfficiencyOverview() {
+  const { l, units, titles, taskStatuses, billingStatuses } = useEfficiencyLabels()
   const navigate = useNavigate()
-  const [metric, setMetric] = useState<MetricKey>('credits')
-  const [rangeKey, setRangeKey] = useState<RangeKey>('7d')
-  const [drawScope, setDrawScope] = useState<DrawScope>('video')
-  const [customRange, setCustomRange] = useState<[Dayjs | null, Dayjs | null] | null>(null)
-  const [tasks, setTasks] = useState<TaskListItemRead[]>([])
-  const [loading, setLoading] = useState(false)
-  const [now, setNow] = useState(() => Date.now())
-
-  const dateRange = useMemo(() => buildDateRange(rangeKey, customRange, l), [customRange, l, rangeKey])
-  const previousRange = useMemo(() => getPreviousRange(dateRange), [dateRange])
-  const selectedTasks = useMemo(() => filterTasksByRange(tasks, dateRange), [dateRange, tasks])
-  const previousTasks = useMemo(() => filterTasksByRange(tasks, previousRange), [previousRange, tasks])
-  const summary = useMemo(() => summarizeTasks(selectedTasks, now), [now, selectedTasks])
-  const previousSummary = useMemo(() => summarizeTasks(previousTasks, now), [now, previousTasks])
-  const trend = useMemo(() => buildTrend(selectedTasks, dateRange, metric, now, drawScope), [dateRange, drawScope, metric, now, selectedTasks])
-  const trendHasData = trend.some((item) => item.value > 0)
-  const projectRows = useMemo(() => groupTasks(selectedTasks, metric, now, drawScope, 'project', l), [drawScope, l, metric, now, selectedTasks])
-  const memberRows = useMemo(() => groupTasks(selectedTasks, metric, now, drawScope, 'member', l), [drawScope, l, metric, now, selectedTasks])
-  const kindRows = useMemo(() => groupTasks(selectedTasks, metric, now, drawScope, 'kind', l), [drawScope, l, metric, now, selectedTasks])
+  const isAdmin = getAuthUserView(getStoredAuthUser()).isAdmin
+  const [filters, setFilters] = useState<CommonFilters>({ range: '7d' })
+  const [filterNames, setFilterNames] = useState<{ project?: string; member?: string }>({})
+  const [metric, setMetric] = useState<EfficiencyMetric>('credits')
+  const [drawScope, setDrawScope] = useState<EfficiencyDrawScope>('all')
+  const [refresh, setRefresh] = useState(0)
+  const [details, setDetails] = useState<Details | null>(null)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const [invalidDates, setInvalidDates] = useState<[string, string]>()
+  const dateError = invalidDates ? validateDates(...invalidDates, new Date(), l) : undefined
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<unknown>()
+  const exportRequest = useRef<CancelablePromise<Blob> | null>(null)
+  const viewFilters = filters
+  const commonKey = JSON.stringify([viewFilters, refresh])
+  const query = metricQuery(viewFilters, metric, drawScope)
+  const metricKey = JSON.stringify([query, refresh])
+  const summary = useEfficiencyResource(commonKey, () => api.getSummary(viewFilters))
+  const trend = useEfficiencyResource(metricKey, () => api.getTrend({ ...query, granularity: 'auto' }))
+  const projects = useEfficiencyResource(metricKey, () => api.getRankings({ ...query, groupBy: 'project', limit: 8 }))
+  const members = useEfficiencyResource(metricKey, () => api.getRankings({ ...query, groupBy: 'member', limit: 8 }))
+  const distribution = useEfficiencyResource(commonKey, () => api.getDistribution(viewFilters))
+  const models = useEfficiencyResource(commonKey, () => api.getModelDistribution(viewFilters))
+  const recordQuery = detailQuery(viewFilters, details?.metric ?? metric, drawScope, details?.drill)
+  const recordKey = details ? JSON.stringify([recordQuery, page, pageSize, refresh]) : null
+  const records = useEfficiencyResource(recordKey, () => api.getRecords({ ...recordQuery, page, pageSize }))
+  const exportContext = JSON.stringify([viewFilters, metric, drawScope, details, refresh])
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 30_000)
-    return () => window.clearInterval(timer)
-  }, [])
+    setExporting(false)
+    setExportError(undefined)
+    return () => { exportRequest.current?.cancel(); exportRequest.current = null }
+  }, [exportContext])
 
-  useEffect(() => {
-    let cancelled = false
-    const seconds = Math.max(300, Math.ceil((Date.now() - previousRange.start) / 1000))
-    setLoading(true)
-    void FilmService.listTasksApiV1FilmTasksGet({
-      recentSeconds: seconds,
-      page: 1,
-      pageSize: 200,
-    })
-      .then((response) => {
-        if (cancelled) return
-        setTasks(response.data?.items ?? [])
-      })
-      .catch(() => {
-        if (cancelled) return
-        setTasks([])
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
+  /** Reset pagination and drilling whenever the common scope changes. */
+  const changeFilters = (next: CommonFilters) => { setFilters(next); setPage(1); setDetails(null); setInvalidDates(undefined) }
+  /** Keep metric-specific drill filters from leaking into another metric. */
+  const changeMetric = (next: EfficiencyMetric) => { setMetric(next); setPage(1); setDetails(null) }
+  /** A drill always starts at the first contribution page. */
+  const openDetails = (next: Details) => { setDetails(next); setPage(1) }
+  /** Download all matching rows through the generated endpoint, never the current table page. */
+  const download = async (selection: ReturnType<typeof detailQuery>) => {
+    if (exportRequest.current) return
+    setExportError(undefined); setExporting(true)
+    const pending = api.getExport(selection)
+    exportRequest.current = pending
+    try {
+      const blob = await pending
+      if (exportRequest.current !== pending) return
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = blob instanceof File ? blob.name : 'efficiency-overview.csv'
+      document.body.appendChild(link)
+      try { link.click() } finally { link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 60_000) }
+      message.success(l("已下载全部匹配明细", "All matching records downloaded"))
+    } catch (error) {
+      if (exportRequest.current === pending) setExportError(error)
+    } finally {
+      if (exportRequest.current === pending) { exportRequest.current = null; setExporting(false) }
     }
-  }, [previousRange.start])
-
-  const metricTabs = [
-    { key: 'credits' as const, label: l('积分消耗', 'Credits') },
-    { key: 'duration' as const, label: l('生成时长', 'Duration') },
-    { key: 'draws' as const, label: l('抽卡次数', 'Draws') },
+  }
+  /** Use a ranking's real ID as a common filter while retaining the visible snapshot name. */
+  const filterRanking = (group: 'project' | 'member', id: number, name: string) => {
+    changeFilters({ ...filters, ...(group === 'project' ? { projectId: id } : { memberId: id }) })
+    setFilterNames((previous) => ({ ...previous, [group]: name }))
+  }
+  const retry = () => setRefresh((value) => value + 1)
+  const columns: ColumnsType<EfficiencyRecord> = [
+    { title: l("任务", "Task"), dataIndex: 'taskId', width: 100 },
+    { title: l("项目", "Project"), width: 160, render: (_, row) => {
+      const href = projectHref(row)
+      return href ? <Button type="link" onClick={() => navigate(href)}>{row.projectName || l("项目", "Project")}</Button> : row.projectName || l("归属未知", "Unknown project")
+    } },
+    { title: l("成员", "Member"), dataIndex: 'memberName', render: (value: string | null) => value || l("成员未知", "Unknown member"), width: 120 },
+    { title: l("业务", "Operation"), dataIndex: 'operationCode', width: 150 },
+    { title: l('供应商', 'Supplier'), dataIndex: 'supplierName', render: (value: string | null) => value || '—', width: 140 },
+    { title: l("模型", "Model"), dataIndex: 'modelName', render: (value: string | null) => value || '—', width: 150 },
+    { title: l("任务状态", "Task status"), dataIndex: 'taskStatus', render: (value: number) => taskStatuses[value] || l("未知", "Unknown"), width: 130 },
+    { title: l("账单状态", "Billing status"), dataIndex: 'billingStatus', render: (value: number | null) => value === null ? l("无账单", "No billing record") : billingStatuses[value] || l("未知", "Unknown"), width: 110 },
+    { title: `${titles[details?.metric ?? metric]}（${units[details?.metric ?? metric]}）`, dataIndex: 'metricValue', render: (value: number) => formatMetric(value, details?.metric ?? metric), width: 150 },
+    { title: l("实际积分", "Actual credits"), dataIndex: 'actualCredits', render: (value: number | null) => formatMetric(value, 'credits'), width: 110 },
+    { title: l("耗时（分钟）", "Duration (min)"), render: (_, row) => `${formatMetric(row.durationMs, 'duration')}${row.durationQuality === 'estimated' ? l("（估算）", " (estimated)") : ''}`, width: 140 },
+    { title: l("统计时间（上海）", "Event time (Shanghai)"), dataIndex: 'eventAt', render: (value: string) => shanghaiTime(value), width: 200 },
   ]
-  const rangeTabs = [
-    { key: 'today' as const, label: l('今日', 'Today') },
-    { key: 'yesterday' as const, label: l('昨日', 'Yesterday') },
-    { key: '7d' as const, label: l('近7天', 'Last 7 days') },
-    { key: '30d' as const, label: l('近30天', 'Last 30 days') },
-  ]
-  const customRangeLabel =
-    customRange?.[0] && customRange?.[1]
-      ? `${customRange[0].format('MM/DD')}-${customRange[1].format('MM/DD')}`
-      : l('自定义', 'Custom')
-  const drawTabs = [
-    { key: 'video' as const, label: l('片段编辑-视频抽卡', 'Clip edit - video draws') },
-    { key: 'image' as const, label: l('片段编辑-图片抽卡', 'Clip edit - image draws') },
-    { key: 'asset' as const, label: l('提取资产-图片抽卡', 'Asset extraction - image draws') },
-  ]
-
-  const trendTitle =
-    metric === 'credits'
-      ? l('消耗趋势', 'Consumption trend')
-      : metric === 'duration'
-        ? l('生成时长趋势', 'Generation duration trend')
-        : l('抽卡趋势', 'Draw trend')
-  const projectTitle =
-    metric === 'credits'
-      ? l('项目消耗', 'Project consumption')
-      : metric === 'duration'
-        ? l('项目生成时长', 'Project generation duration')
-        : l('项目抽卡数', 'Project draws')
-  const thirdTitle =
-    metric === 'credits'
-      ? l('消耗分布', 'Consumption distribution')
-      : metric === 'duration'
-        ? l('成员生成时长', 'Member generation duration')
-        : l('成员抽卡数', 'Member draws')
-  const thirdRows = metric === 'credits' ? kindRows : memberRows
-
-  return (
-    <main className="efficiency-overview">
-      <button
-        type="button"
-        className="efficiency-overview__close"
-        aria-label={l('关闭', 'Close')}
-        onClick={() => {
-          if (window.history.length > 1) navigate(-1)
-          else navigate('/projects', { replace: true })
-        }}
-      >
-        <X size={18} strokeWidth={1.75} />
-      </button>
-
-      <section className="efficiency-overview__hero">
-        <div>
-          <h1>{l('AI制剧效能总览', 'AI production efficiency overview')}</h1>
-          <p>{l('监控生产效率与资源消耗，非实时数据，约1小时延迟', 'Track production efficiency and resource usage with about a one-hour reporting delay')}</p>
+  const rangeLabel = filters.range === 'custom' ? `${filters.startDate} — ${filters.endDate}` : ({ today: l("今日", "Today"), yesterday: l("昨日", "Yesterday"), '7d': l("近7天", "Last 7 days"), '30d': l("近30天", "Last 30 days") } as const)[filters.range]
+  const coverageMetas = [summary.data?.meta, trend.data?.meta, projects.data?.meta, members.data?.meta, distribution.data?.meta, models.data?.meta].filter((meta): meta is EfficiencyMeta => Boolean(meta))
+  const hasCoverageWarning = coverageIssues(coverageMetas).length > 0
+  return <main className="efficiency-overview">
+    <button type="button" className="efficiency-overview__close" aria-label={l('关闭', 'Close')} onClick={() => window.history.length > 1 ? navigate(-1) : navigate('/projects', { replace: true })}><X size={18} /></button>
+    <section className="efficiency-overview__hero">
+      <div><h1>{l('AI制剧效能总览', 'AI production efficiency overview')}</h1><p>{l("监控生产效率与资源消耗", "Monitor production efficiency and resource usage")}</p></div>
+      <div className="efficiency-overview__actions">
+        <div className="efficiency-overview__range-tabs" role="tablist" aria-label={l("时间范围", "Date range")}>
+          {(['today', 'yesterday', '7d', '30d'] as const).map((range, index) => <button type="button" role="tab" aria-selected={filters.range === range} key={range} className={filters.range === range ? 'is-active' : ''} onClick={() => changeFilters({ ...filters, range, startDate: undefined, endDate: undefined })}>{[l("今日", "Today"), l("昨日", "Yesterday"), l("近7天", "Last 7 days"), l("近30天", "Last 30 days")][index]}</button>)}
+          <span className={`efficiency-overview__custom-range-trigger ${filters.range === 'custom' ? 'is-active has-value' : ''}`}>
+            <span className="efficiency-overview__custom-range-label">{filters.range === 'custom' ? `${filters.startDate?.slice(5)}–${filters.endDate?.slice(5)}` : l("自定义", "Custom")}</span>
+        <DatePicker.RangePicker className="efficiency-overview__custom-range" aria-label={l("自定义时间范围", "Custom date range")} size="small" disabledDate={(date) => date.format('YYYY-MM-DD') > shanghaiToday()} value={filters.range === 'custom' ? [dayjs(filters.startDate), dayjs(filters.endDate)] : null} onChange={(dates) => {
+          if (!dates?.[0] || !dates[1]) { changeFilters({ ...filters, range: '7d', startDate: undefined, endDate: undefined }); return }
+          const startDate = dates[0].format('YYYY-MM-DD'), endDate = dates[1].format('YYYY-MM-DD')
+          const error = validateDates(startDate, endDate, new Date(), l)
+          if (error) { setInvalidDates([startDate, endDate]); return }
+          changeFilters({ ...filters, range: 'custom', startDate, endDate })
+        }} />
+          </span>
         </div>
-        <div className="efficiency-overview__actions">
-          <div className="efficiency-overview__range-tabs" role="tablist" aria-label={l('时间范围', 'Date range')}>
-            {rangeTabs.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                className={rangeKey === item.key ? 'is-active' : ''}
-                onClick={() => {
-                  setCustomRange(null)
-                  setRangeKey(item.key)
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
-            <span
-              className={[
-                'efficiency-overview__custom-range-trigger',
-                rangeKey === 'custom' ? 'is-active' : '',
-                customRange?.[0] && customRange?.[1] ? 'has-value' : '',
-              ].filter(Boolean).join(' ')}
-            >
-              <span className="efficiency-overview__custom-range-label">{customRangeLabel}</span>
-              <RangePicker
-                size="small"
-                className="efficiency-overview__custom-range"
-                onChange={(dates) => {
-                  setCustomRange(dates ? [dates[0], dates[1]] : null)
-                  setRangeKey('custom')
-                }}
-              />
-            </span>
-          </div>
-          <Button
-            className="efficiency-overview__export"
-            icon={<Download size={15} strokeWidth={1.75} />}
-            onClick={() => downloadCsv(selectedTasks, l)}
-          >
-            {l('导出', 'Export')}
-          </Button>
-        </div>
-      </section>
-
-      <section className="efficiency-overview__stats">
-        <MetricCard
-          label={l('消耗积分', 'Credits used')}
-          value={formatMetricValue(summary.credits, 'credits')}
-          unit={l('积分', 'pts')}
-          change={getChangePercent(summary.credits, previousSummary.credits)}
-          icon={<Gem size={24} strokeWidth={1.6} />}
-        />
-        <MetricCard
-          label={l('生成时长', 'Generation duration')}
-          value={formatMetricValue(summary.durationMinutes, 'duration')}
-          unit={l('分钟', 'min')}
-          change={getChangePercent(summary.durationMinutes, previousSummary.durationMinutes)}
-          icon={<Clock3 size={24} strokeWidth={1.6} />}
-        />
-        <MetricCard
-          label={l('抽卡次数', 'Draw count')}
-          value={formatMetricValue(summary.draws, 'draws')}
-          unit={l('次', 'times')}
-          change={getChangePercent(summary.draws, previousSummary.draws)}
-          icon={<Sparkles size={24} strokeWidth={1.6} />}
-        />
-      </section>
-
-      <div className="efficiency-overview__metric-tabs" role="tablist" aria-label={l('指标', 'Metric')}>
-        {metricTabs.map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            className={metric === item.key ? 'is-active' : ''}
-            onClick={() => setMetric(item.key)}
-          >
-            {item.label}
-          </button>
-        ))}
+        <Button className="efficiency-overview__refresh" aria-label={l("刷新统计", "Refresh statistics")} title={l("刷新统计", "Refresh statistics")} icon={<RefreshCw size={14} />} onClick={retry} />
+        <Button className="efficiency-overview__export" icon={<Download size={15} />} loading={exporting} onClick={() => void download(detailQuery(viewFilters, metric, drawScope))}>{l("导出", "Export")}</Button>
       </div>
-
-      {metric === 'draws' ? (
-        <div className="efficiency-overview__draw-tabs" role="tablist" aria-label={l('抽卡类型', 'Draw type')}>
-          {drawTabs.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              className={drawScope === item.key ? 'is-active' : ''}
-              onClick={() => setDrawScope(item.key)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
-
-      <section className="efficiency-overview__panel efficiency-overview__panel--trend">
-        <PanelHeader title={trendTitle} suffix={dateRange.label} />
-        {loading ? (
-          <div className="efficiency-overview__panel-loading"><Spin /></div>
-        ) : trendHasData ? (
-          <TrendChart items={trend} metric={metric} l={l} />
-        ) : (
-          <EmptyState />
-        )}
-      </section>
-
-      <section className="efficiency-overview__panel">
-        <PanelHeader title={projectTitle} />
-        {loading ? (
-          <div className="efficiency-overview__panel-loading"><Spin /></div>
-        ) : projectRows.length > 0 ? (
-          <RankList rows={projectRows} metric={metric} l={l} />
-        ) : (
-          <EmptyState />
-        )}
-      </section>
-
-      <section className="efficiency-overview__panel">
-        <PanelHeader title={thirdTitle} />
-        {loading ? (
-          <div className="efficiency-overview__panel-loading"><Spin /></div>
-        ) : thirdRows.length > 0 ? (
-          <RankList rows={thirdRows} metric={metric} l={l} />
-        ) : (
-          <EmptyState />
-        )}
-      </section>
-    </main>
-  )
-}
-
-function MetricCard({
-  label,
-  value,
-  unit,
-  change,
-  icon,
-}: {
-  label: string
-  value: string
-  unit: string
-  change: number | null
-  icon: React.ReactNode
-}) {
-  const improved = change === null || change >= 0
-  return (
-    <article className="efficiency-overview__metric-card">
-      <div className="efficiency-overview__metric-label">{label}</div>
-      <div className="efficiency-overview__metric-value">
-        <strong>{value}</strong>
-        <span>{unit}</span>
-        {change === null ? (
-          <small>-</small>
-        ) : (
-          <small className={improved ? 'is-positive' : 'is-negative'}>
-            {improved ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
-            {Math.abs(change).toFixed(1)}%
-          </small>
-        )}
+    </section>
+    {(filters.projectId || filters.memberId) && <Space className="efficiency-overview__filters">
+      {filters.projectId && <Tag closable onClose={() => changeFilters({ ...filters, projectId: undefined })}>{l("项目：", "Project: ")}{filterNames.project || filters.projectId}</Tag>}
+      {filters.memberId && <Tag closable onClose={() => changeFilters({ ...filters, memberId: undefined })}>{l("成员：", "Member: ")}{filterNames.member || filters.memberId}</Tag>}
+    </Space>}
+    {dateError && <Alert type="warning" showIcon message={dateError} />}
+    {exportError !== undefined && <Alert type="error" showIcon message={efficiencyError(exportError, l)} />}
+    <Resource state={summary} retry={retry}>{(data) => <section className="efficiency-overview__stats">
+      <MetricCard meta={data.meta} label={l("消耗积分", "Credits used")} metric="credits" comparison={data.credits} icon={<Gem size={26} />} />
+      <MetricCard meta={data.meta} label={l("生成时长", "Generation time")} metric="duration" comparison={data.duration} icon={<Clock3 size={26} />} />
+      <MetricCard meta={data.meta} label={l("抽卡次数", "Generations")} metric="draws" comparison={data.draws} icon={<Sparkles size={26} />} />
+    </section>}</Resource>
+    <div className="efficiency-overview__metric-tabs" role="tablist" aria-label={l("指标", "Metric")}>
+      {(['credits', 'duration', 'draws'] as const).map((key) => <button type="button" role="tab" aria-selected={metric === key} key={key} className={metric === key ? 'is-active' : ''} onClick={() => changeMetric(key)}>{titles[key]}</button>)}
+    </div>
+    {metric === 'draws' && <div className="efficiency-overview__draw-tabs" role="tablist" aria-label={l("抽卡类型", "Generation type")}>
+      {(['all', 'video', 'image', 'asset'] as const).map((key, index) => <button type="button" role="tab" aria-selected={drawScope === key} key={key} className={drawScope === key ? 'is-active' : ''} onClick={() => { setDrawScope(key); setPage(1); setDetails(null) }}>{[l("全部", "All"), l("视频", "Video"), l("分镜图片", "Storyboard images"), l("资产图片", "Asset images")][index]}</button>)}
+    </div>}
+    <details className={`efficiency-overview__data-note${hasCoverageWarning ? ' has-warning' : ''}`}>
+      <summary>{hasCoverageWarning ? l('统计覆盖与归属提示 · 查看说明', 'Coverage and attribution notes · View details') : l("统计说明", "Statistics notes")}{summary.data && <span>{l("更新于", "Updated at")} {shanghaiTime(summary.data.meta.generatedAt)}</span>}</summary>
+      <EfficiencyCoverageNotice metas={coverageMetas} />
+      <p>{l("上海时间统计。积分按结算时间；耗时为已结束任务自身执行阶段的累计时间，包含供应商等待；抽卡按创建时间，顶部卡片统计全部类型。", "Statistics use Shanghai time. Credits are counted by settlement time; duration is the cumulative execution time of finished tasks, including provider wait time; generations are counted by creation time. The summary card includes all generation types.")}</p>
+      {summary.data && <p>{l(`待结算 ${summary.data.quality.pendingBillingCount} 笔（非已消费积分） · 缺少耗时 ${summary.data.quality.missingDurationCount} 笔 · 估算耗时 ${summary.data.quality.estimatedDurationCount} 笔。抽卡：视频 ${summary.data.drawBreakdown.video} / 分镜图片 ${summary.data.drawBreakdown.image} / 资产图片 ${summary.data.drawBreakdown.asset}。`, `Pending settlement: ${summary.data.quality.pendingBillingCount} (not spent credits) · Missing durations: ${summary.data.quality.missingDurationCount} · Estimated durations: ${summary.data.quality.estimatedDurationCount}. Generations: video ${summary.data.drawBreakdown.video} / storyboard images ${summary.data.drawBreakdown.image} / asset images ${summary.data.drawBreakdown.asset}.`)}</p>}
+      {summary.data && <p>{l(`缺少账单 ${summary.data.quality.missingBillingCount} 条 · 未知模型 ${summary.data.quality.unknownModelCount} 条；未知归属仍保留已知贡献。`, `Missing billing records: ${summary.data.quality.missingBillingCount} · Unknown models: ${summary.data.quality.unknownModelCount}. Known contributions are retained when attribution is unknown.`)}</p>}
+      <p>{l('数据在进入页面、切换筛选或手动刷新时更新，不自动更新。导出以下载时的数据为准。趋势标记 * 表示当前自然时间桶尚未结束；缺失数据在图中按 0 展示，不代表已确认零消耗。', 'Data loads when you open the page, change filters or refresh manually. It does not update automatically. Exports reflect data at download time. An asterisk (*) marks an ongoing calendar bucket; missing data is plotted as 0, not confirmed zero usage.')}</p>
+    </details>
+    <section className="efficiency-overview__panel efficiency-overview__panel--trend">
+      <PanelHeader title={metric === 'credits' ? l("消耗趋势", "Usage trend") : l(`${titles[metric]}趋势`, `${titles[metric]} trend`)} action={<Space><span className="efficiency-overview__note">{rangeLabel}</span><Button className="efficiency-overview__subtle-action" type="link" size="small" onClick={() => openDetails({ metric })}>{l("明细", "Details")}</Button></Space>} />
+      <Resource state={trend} retry={retry}>{(data) => <><EfficiencyCoverageNotice metas={[data.meta]} metric={metric} impact="metric" compact /><EfficiencyTrendChart data={data} /></>}</Resource>
+    </section>
+    <section className="efficiency-overview__panel efficiency-overview__panel--projects">
+      <PanelHeader title={metric === 'credits' ? l("项目消耗", "Project usage") : metric === 'duration' ? l("项目生成时长", "Generation time by project") : l("项目抽卡数", "Generations by project")} />
+      <Resource state={projects} retry={retry}>{(data) => <><EfficiencyCoverageNotice metas={[data.meta]} metric={metric} impact="attribution" compact /><RankList data={data} onDrill={(groupKey, name) => openDetails({ title: name, metric, drill: { groupBy: 'project', groupKey } })} /></>}</Resource>
+    </section>
+    <section className="efficiency-overview__panel efficiency-overview__panel--distribution">
+      <PanelHeader title={metric === 'credits' ? l("消耗分布", "Usage distribution") : metric === 'duration' ? l("生成时长分布", "Generation time distribution") : l("抽卡分布", "Generation distribution")} />
+      <div className="efficiency-overview__member-panel">
+        <h3>{metric === 'credits' ? l("成员消耗", "Member usage") : metric === 'duration' ? l("成员生成时长", "Generation time by member") : l("成员抽卡数", "Generations by member")}</h3>
+        <Resource state={members} retry={retry}>{(data) => <>
+          <EfficiencyCoverageNotice metas={[data.meta]} metric={metric} impact="attribution" compact />
+          <EfficiencyMemberChart data={data} onDrill={(groupKey, name) => openDetails({ title: name, metric, drill: { groupBy: 'member', groupKey } })} />
+          <div className="efficiency-overview__chart-footer"><span>{l("合计", "Total")} {formatMetric(data.totalValue, metric)} {units[metric]}{data.otherValue > 0 ? ` · ${l('榜外其他', 'Other entries')} ${formatMetric(data.otherValue, metric)} ${units[metric]}` : ''}</span>
+            {isAdmin && data.rows.some((row) => row.id !== null) && <Select size="small" className="efficiency-overview__member-filter" placeholder={l("筛选成员", "Filter members")} aria-label={l("筛选成员", "Filter members")} allowClear value={filters.memberId} options={data.rows.filter((row) => row.id !== null).map((row) => ({ value: row.id as number, label: row.name }))} onChange={(id: number | undefined) => id === undefined ? changeFilters({ ...filters, memberId: undefined }) : filterRanking('member', id, data.rows.find((row) => row.id === id)?.name ?? '')} />}
+          </div>
+        </>}</Resource>
       </div>
-      <div className="efficiency-overview__metric-orb">{icon}</div>
-    </article>
-  )
-}
-
-function PanelHeader({ title, suffix }: { title: string; suffix?: string }) {
-  return (
-    <header className="efficiency-overview__panel-header">
-      <h2>{title}</h2>
-      {suffix ? <span>{suffix}</span> : null}
-    </header>
-  )
-}
-
-function EmptyState() {
-  return (
-    <div className="efficiency-overview__empty">
-      <PackageOpen size={42} strokeWidth={1.5} />
-      <span>暂无内容</span>
-    </div>
-  )
-}
-
-function TrendChart({
-  items,
-  metric,
-  l,
-}: {
-  items: Array<{ label: string; value: number }>
-  metric: MetricKey
-  l: (zh: string, en: string) => string
-}) {
-  const max = Math.max(...items.map((item) => item.value), 1)
-  return (
-    <div className="efficiency-overview__trend">
-      {items.map((item) => (
-        <div key={item.label} className="efficiency-overview__trend-item">
-          <div className="efficiency-overview__trend-bar-wrap">
-            <div
-              className="efficiency-overview__trend-bar"
-              style={{ height: `${Math.max(6, (item.value / max) * 100)}%` }}
-              title={`${item.label}: ${formatMetricValue(item.value, metric)} ${getMetricUnit(metric, l)}`}
-            />
+      {metric === 'credits' && <>
+        <Resource state={models} retry={retry}>{(data) => <>
+          <EfficiencyCoverageNotice metas={[data.meta]} metric="credits" impact="attribution" compact />
+          <div className="efficiency-overview__model-grid">
+            {(['video', 'image', 'other'] as const).map((code) => {
+              const group = data.groups.find((value) => value.code === code)
+              const label = code === 'video' ? l('生视频模型', 'Video models') : code === 'image' ? l('生图模型', 'Image models') : l('其他消耗', 'Other usage')
+              return <section key={code} className={`efficiency-overview__model-panel efficiency-overview__model-panel--${code}`} aria-label={label}>
+                <h3>{label}</h3>
+                {group ? <EfficiencyModelChart group={group} onDrill={(modelKey, name) => openDetails({ title: name, metric: 'credits', drill: { modelGroup: code, ...(modelKey ? { modelKey } : {}) } })} /> : <Alert type="error" message={l('模型分组响应不完整，请重试。', 'The model group response is incomplete. Please retry.')} />}
+              </section>
+            })}
           </div>
-          <span>{item.label}</span>
-        </div>
-      ))}
-    </div>
-  )
+        </>}</Resource>
+        <details className="efficiency-overview__business-detail"><summary>{l("查看业务分类明细", "View usage by operation")}</summary>
+          <Resource state={distribution} retry={retry}>{(data) => <><p className="efficiency-overview__note">{l(`已结算总计 ${formatMetric(data.totalCredits, 'credits')} 积分。以下为业务分类，不代表模型消费分布。`, `Settled total: ${formatMetric(data.totalCredits, 'credits')} credits. The breakdown below is by operation, not by model.`)}</p>
+            <div className="efficiency-overview__categories">{data.categories.map((item) => <button type="button" key={item.code} onClick={() => openDetails({ title: item.name, metric: 'credits', drill: { operationCode: item.code } })}><span>{item.name}</span><strong>{formatMetric(item.credits, 'credits')}</strong><small>{finitePercent(item.sharePercent)}</small></button>)}</div>
+          </>}</Resource>
+        </details>
+      </>}
+    </section>
+    <Drawer title={`${details?.title ?? titles[details?.metric ?? metric]} · ${l('贡献明细', 'Contribution details')}`} open={details !== null} width="min(1120px, 100vw)" onClose={() => { setDetails(null); setPage(1) }} extra={<Button loading={exporting} icon={<Download size={15} />} onClick={() => void download(recordQuery)}>{l("导出全部匹配明细", "Export all matching records")}</Button>}>
+      {exportError !== undefined && <Alert type="error" message={efficiencyError(exportError, l)} showIcon />}
+      <Resource state={records} retry={retry}>{(data) => <><EfficiencyCoverageNotice metas={[data.meta]} metric={details?.metric ?? metric} /><p>{l(`共 ${data.total} 条 · 全部页总计 ${formatMetric(data.totalValue, data.metric)} ${units[data.metric]}`, `${data.total} records · Total across all pages: ${formatMetric(data.totalValue, data.metric)} ${units[data.metric]}`)}</p>
+        <Table<EfficiencyRecord> rowKey="recordKey" columns={columns} dataSource={data.items} scroll={{ x: 1570 }} pagination={{ current: page, pageSize, total: data.total, showSizeChanger: true, pageSizeOptions: [20, 50, 100], onChange: (nextPage, nextSize) => { setPage(nextSize !== pageSize ? 1 : nextPage); setPageSize(nextSize) } }} />
+      </>}</Resource>
+    </Drawer>
+  </main>
 }
 
-function RankList({
-  rows,
-  metric,
-  l,
-}: {
-  rows: GroupRow[]
-  metric: MetricKey
-  l: (zh: string, en: string) => string
-}) {
-  const max = Math.max(...rows.map((row) => row.value), 1)
-  return (
-    <div className="efficiency-overview__rank">
-      {rows.map((row) => (
-        <div key={row.key} className="efficiency-overview__rank-row">
-          <div className="efficiency-overview__rank-label">
-            <Activity size={14} strokeWidth={1.75} />
-            <span>{row.label}</span>
-          </div>
-          <div className="efficiency-overview__rank-track">
-            <div style={{ width: `${Math.max(4, (row.value / max) * 100)}%` }} />
-          </div>
-          <strong>{formatMetricValue(row.value, metric)} {getMetricUnit(metric, l)}</strong>
-        </div>
-      ))}
-    </div>
-  )
+/** Each region distinguishes a failed response from a successful zero-value result. */
+function Resource<T>({ state, retry, children }: { state: EfficiencyResource<T>; retry: () => void; children: (data: T) => ReactNode }) {
+  const { l } = useEfficiencyLabels()
+  const retryable = (state.cause as { body?: { data?: { readiness?: { retryable?: boolean } } } })?.body?.data?.readiness?.retryable !== false
+  if (state.loading) return <div className="efficiency-overview__panel-loading"><Spin /></div>
+  if (state.error) return <Alert type="error" showIcon message={efficiencyError(state.cause ?? { message: state.error }, l)} action={retryable ? <Button onClick={retry}>{l("重试", "Retry")}</Button> : undefined} />
+  return state.data ? <>{children(state.data)}</> : null
 }
 
-export default EfficiencyOverview
+/** Format timestamps in the contract timezone rather than the device timezone. */
+function shanghaiTime(value: string): string {
+  const date = new Date(value)
+  return Number.isFinite(date.valueOf()) ? new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(date) : '—'
+}
+
+/** Avoid displaying non-finite percentages, preserving the server's denominator. */
+function finitePercent(value: number): string { return Number.isFinite(value) ? `${value.toFixed(2)}%` : '—' }
+
+/** Current and previous values share the same units; changes are supplied by the server. */
+function MetricCard({ label, metric, comparison, icon, meta }: { meta: EfficiencyMeta; label: string; metric: EfficiencyMetric; comparison: EfficiencyComparison; icon: ReactNode }) {
+  const { l, units } = useEfficiencyLabels()
+  return <article className="efficiency-overview__metric-card" title={metric === 'draws' ? l('包含全部抽卡类型', 'Includes all generation types') : undefined}><div className="efficiency-overview__metric-label">{label}</div><div className="efficiency-overview__metric-value"><strong>{formatMetric(comparison.current, metric)}</strong><span>{units[metric]}</span></div><div className="efficiency-overview__metric-orb">{icon}</div><EfficiencyCoverageNotice metas={[meta]} metric={metric} impact="metric" compact /></article>
+}
+
+/** Shared heading for the existing dashboard panels. */
+function PanelHeader({ title, action }: { title: string; action?: ReactNode }) { return <div className="efficiency-overview__panel-heading"><h2>{title}</h2>{action}</div> }
+
+/** Rank shares and total/other amounts come from the full server result, not the visible Top N. */
+function RankList({ data, onDrill }: { data: EfficiencyRankings; onDrill: (key: string, name: string) => void }) {
+  const { l, units } = useEfficiencyLabels()
+  return <>
+    {!data.rows.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={l("暂无项目数据", "No project data")} /> : <div className="efficiency-overview__rank">{data.rows.map((row) => {
+      return <div key={row.groupKey} className="efficiency-overview__rank-row">
+        <div className="efficiency-overview__rank-top"><button type="button" className="efficiency-overview__text-button" onClick={() => onDrill(row.groupKey, row.name)}><span className="efficiency-overview__rank-number">{row.rank}</span>{row.name} ›</button><strong>{formatMetric(row.value, data.metric)} {units[data.metric]} <span>({finitePercent(row.sharePercent)})</span></strong></div>
+        <div className="efficiency-overview__rank-track"><div style={{ width: `${Number.isFinite(row.sharePercent) ? Math.max(0, Math.min(100, row.sharePercent)) : 0}%` }} /></div>
+      </div>
+    })}</div>}
+    {data.otherValue > 0 && <p className="efficiency-overview__note">{l("全部总计", "Overall total")} {formatMetric(data.totalValue, data.metric)} {units[data.metric]} {l("· 榜外其他", "· Other entries")} {formatMetric(data.otherValue, data.metric)} {units[data.metric]}</p>}
+  </>
+}

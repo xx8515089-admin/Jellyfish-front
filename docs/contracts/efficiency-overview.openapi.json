@@ -1,0 +1,2674 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Efficiency overview frontend contract",
+    "version": "efficiency-v2",
+    "description": "Transcribed from user-provided efficiency-overview-frontend-api (2).md, 2026-09-20. Companion backend OpenAPI was not supplied. This contract does not imply backend v2 is deployed."
+  },
+  "paths": {
+    "/api/v1/studio/efficiency/summary": {
+      "get": {
+        "tags": [
+          "Efficiency"
+        ],
+        "operationId": "getSummary",
+        "description": "Production statistics efficiency-v2; raw Authorization token; Asia/Shanghai; shared snapshot for all page regions.",
+        "parameters": [
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/EfficiencyRange"
+            }
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "memberId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "snapshotId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencySummaryResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/efficiency/trend": {
+      "get": {
+        "tags": [
+          "Efficiency"
+        ],
+        "operationId": "getTrend",
+        "description": "Production statistics efficiency-v2; raw Authorization token; Asia/Shanghai; shared snapshot for all page regions.",
+        "parameters": [
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/EfficiencyRange"
+            }
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "memberId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "metric",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/EfficiencyMetric"
+            }
+          },
+          {
+            "name": "drawScope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/EfficiencyDrawScope"
+            }
+          },
+          {
+            "name": "granularity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "hour",
+                "day"
+              ]
+            }
+          },
+          {
+            "name": "snapshotId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyTrendResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/efficiency/rankings": {
+      "get": {
+        "tags": [
+          "Efficiency"
+        ],
+        "operationId": "getRankings",
+        "description": "Production statistics efficiency-v2; raw Authorization token; Asia/Shanghai; shared snapshot for all page regions.",
+        "parameters": [
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/EfficiencyRange"
+            }
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "memberId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "metric",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/EfficiencyMetric"
+            }
+          },
+          {
+            "name": "drawScope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/EfficiencyDrawScope"
+            }
+          },
+          {
+            "name": "groupBy",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "project",
+                "member"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          },
+          {
+            "name": "snapshotId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyRankingsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/efficiency/distribution": {
+      "get": {
+        "tags": [
+          "Efficiency"
+        ],
+        "operationId": "getDistribution",
+        "description": "Production statistics efficiency-v2; raw Authorization token; Asia/Shanghai; shared snapshot for all page regions.",
+        "parameters": [
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/EfficiencyRange"
+            }
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "memberId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "snapshotId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyDistributionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/efficiency/records": {
+      "get": {
+        "tags": [
+          "Efficiency"
+        ],
+        "operationId": "getRecords",
+        "description": "Production statistics efficiency-v2; raw Authorization token; Asia/Shanghai; shared snapshot for all page regions.",
+        "parameters": [
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/EfficiencyRange"
+            }
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "memberId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "metric",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/EfficiencyMetric"
+            }
+          },
+          {
+            "name": "drawScope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/EfficiencyDrawScope"
+            }
+          },
+          {
+            "name": "groupBy",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "project",
+                "member"
+              ]
+            }
+          },
+          {
+            "name": "groupKey",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "operationCode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "taskId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "snapshotId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "modelGroup",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/EfficiencyModelGroupCode"
+            }
+          },
+          {
+            "name": "modelKey",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyRecordsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/efficiency/export": {
+      "get": {
+        "tags": [
+          "Efficiency"
+        ],
+        "operationId": "getExport",
+        "description": "Production statistics efficiency-v2; raw Authorization token; Asia/Shanghai; shared snapshot for all page regions.",
+        "parameters": [
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/EfficiencyRange"
+            }
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "memberId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "metric",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/EfficiencyMetric"
+            }
+          },
+          {
+            "name": "drawScope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/EfficiencyDrawScope"
+            }
+          },
+          {
+            "name": "groupBy",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "project",
+                "member"
+              ]
+            }
+          },
+          {
+            "name": "groupKey",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "operationCode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "taskId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "snapshotId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "modelGroup",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/EfficiencyModelGroupCode"
+            }
+          },
+          {
+            "name": "modelKey",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/studio/efficiency/model-distribution": {
+      "get": {
+        "tags": [
+          "Efficiency"
+        ],
+        "operationId": "getModelDistribution",
+        "parameters": [
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/EfficiencyRange"
+            }
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "memberId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "snapshotId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyModelDistributionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Production statistics efficiency-v2; raw Authorization token; Asia/Shanghai; shared snapshot for all page regions."
+      }
+    },
+    "/api/v1/studio/efficiency/snapshots": {
+      "post": {
+        "tags": [
+          "Efficiency"
+        ],
+        "operationId": "createSnapshot",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EfficiencySnapshotRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencySnapshotResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Statistics request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EfficiencyError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Production statistics efficiency-v2; raw Authorization token; Asia/Shanghai; shared snapshot for all page regions."
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "EfficiencyMetric": {
+        "type": "string",
+        "enum": [
+          "credits",
+          "duration",
+          "draws"
+        ]
+      },
+      "EfficiencyDrawScope": {
+        "type": "string",
+        "enum": [
+          "all",
+          "video",
+          "image",
+          "asset"
+        ]
+      },
+      "EfficiencyRange": {
+        "type": "string",
+        "enum": [
+          "today",
+          "yesterday",
+          "7d",
+          "30d",
+          "custom"
+        ]
+      },
+      "EfficiencyUnit": {
+        "type": "string",
+        "enum": [
+          "credits",
+          "ms",
+          "count"
+        ]
+      },
+      "EfficiencyMeta": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "production"
+            ]
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string"
+          },
+          "currentRange": {
+            "$ref": "#/components/schemas/EfficiencyTimeRange"
+          },
+          "previousRange": {
+            "$ref": "#/components/schemas/EfficiencyTimeRange"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/EfficiencyCoverage"
+          },
+          "readiness": {
+            "$ref": "#/components/schemas/EfficiencyReadiness"
+          },
+          "consistency": {
+            "$ref": "#/components/schemas/EfficiencyConsistency"
+          }
+        },
+        "required": [
+          "scope",
+          "timezone",
+          "generatedAt",
+          "currentRange",
+          "previousRange",
+          "coverage",
+          "readiness",
+          "consistency"
+        ]
+      },
+      "EfficiencyTimeRange": {
+        "type": "object",
+        "properties": {
+          "startAt": {
+            "type": "string"
+          },
+          "endAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "startAt",
+          "endAt"
+        ]
+      },
+      "EfficiencyCoverage": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "partial"
+            ]
+          },
+          "verifiedFrom": {
+            "type": "string",
+            "nullable": true
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "requiredMetrics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EfficiencyMetric"
+            }
+          },
+          "diagnosticScope": {
+            "type": "string",
+            "enum": [
+              "commonFilters"
+            ]
+          },
+          "current": {
+            "$ref": "#/components/schemas/EfficiencyPeriodCoverage"
+          },
+          "previous": {
+            "$ref": "#/components/schemas/EfficiencyPeriodCoverage"
+          },
+          "byMetric": {
+            "$ref": "#/components/schemas/EfficiencyCoverageByMetric"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EfficiencyCoverageReason"
+            }
+          }
+        },
+        "required": [
+          "status",
+          "verifiedFrom",
+          "warnings",
+          "requiredMetrics",
+          "diagnosticScope",
+          "current",
+          "previous",
+          "byMetric",
+          "reasons"
+        ]
+      },
+      "EfficiencyComparison": {
+        "type": "object",
+        "properties": {
+          "current": {
+            "type": "number"
+          },
+          "previous": {
+            "type": "number"
+          },
+          "changePercent": {
+            "type": "number",
+            "nullable": true
+          },
+          "changeState": {
+            "type": "string",
+            "enum": [
+              "increase",
+              "decrease",
+              "unchanged",
+              "new",
+              "noData",
+              "unavailable"
+            ]
+          }
+        },
+        "required": [
+          "current",
+          "previous",
+          "changePercent",
+          "changeState"
+        ]
+      },
+      "EfficiencySummary": {
+        "type": "object",
+        "properties": {
+          "credits": {
+            "$ref": "#/components/schemas/EfficiencyComparison"
+          },
+          "duration": {
+            "$ref": "#/components/schemas/EfficiencyComparison"
+          },
+          "draws": {
+            "$ref": "#/components/schemas/EfficiencyComparison"
+          },
+          "drawBreakdown": {
+            "type": "object",
+            "properties": {
+              "video": {
+                "type": "integer"
+              },
+              "image": {
+                "type": "integer"
+              },
+              "asset": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "video",
+              "image",
+              "asset"
+            ]
+          },
+          "quality": {
+            "type": "object",
+            "properties": {
+              "pendingBillingCount": {
+                "type": "integer"
+              },
+              "missingDurationCount": {
+                "type": "integer"
+              },
+              "estimatedDurationCount": {
+                "type": "integer"
+              },
+              "unknownProjectCount": {
+                "type": "integer"
+              },
+              "unknownMemberCount": {
+                "type": "integer"
+              },
+              "unknownModelCount": {
+                "type": "integer"
+              },
+              "missingBillingCount": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "pendingBillingCount",
+              "missingDurationCount",
+              "estimatedDurationCount",
+              "unknownProjectCount",
+              "unknownMemberCount",
+              "unknownModelCount",
+              "missingBillingCount"
+            ]
+          },
+          "meta": {
+            "$ref": "#/components/schemas/EfficiencyMeta"
+          }
+        },
+        "required": [
+          "credits",
+          "duration",
+          "draws",
+          "drawBreakdown",
+          "quality",
+          "meta"
+        ]
+      },
+      "EfficiencyBucket": {
+        "type": "object",
+        "properties": {
+          "startAt": {
+            "type": "string"
+          },
+          "endAt": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number"
+          },
+          "partial": {
+            "type": "boolean"
+          },
+          "plotValue": {
+            "type": "number",
+            "nullable": true
+          },
+          "coverageStatus": {
+            "$ref": "#/components/schemas/EfficiencyCoverageStatus"
+          }
+        },
+        "required": [
+          "startAt",
+          "endAt",
+          "label",
+          "value",
+          "partial",
+          "plotValue",
+          "coverageStatus"
+        ]
+      },
+      "EfficiencyTrend": {
+        "type": "object",
+        "properties": {
+          "metric": {
+            "$ref": "#/components/schemas/EfficiencyMetric"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/EfficiencyUnit"
+          },
+          "drawScope": {
+            "type": "string",
+            "enum": [
+              "all",
+              "video",
+              "image",
+              "asset"
+            ],
+            "nullable": true
+          },
+          "granularity": {
+            "type": "string",
+            "enum": [
+              "hour",
+              "day"
+            ]
+          },
+          "totalValue": {
+            "type": "number"
+          },
+          "buckets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EfficiencyBucket"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/EfficiencyMeta"
+          }
+        },
+        "required": [
+          "metric",
+          "unit",
+          "drawScope",
+          "granularity",
+          "totalValue",
+          "buckets",
+          "meta"
+        ]
+      },
+      "EfficiencyRankingRow": {
+        "type": "object",
+        "properties": {
+          "rank": {
+            "type": "integer"
+          },
+          "groupKey": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number"
+          },
+          "sharePercent": {
+            "type": "number"
+          },
+          "entityState": {
+            "type": "string",
+            "enum": [
+              "active",
+              "deleted",
+              "restricted",
+              "unknown"
+            ]
+          },
+          "canNavigate": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "rank",
+          "groupKey",
+          "id",
+          "name",
+          "value",
+          "sharePercent",
+          "entityState",
+          "canNavigate"
+        ]
+      },
+      "EfficiencyRankings": {
+        "type": "object",
+        "properties": {
+          "metric": {
+            "$ref": "#/components/schemas/EfficiencyMetric"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/EfficiencyUnit"
+          },
+          "drawScope": {
+            "type": "string",
+            "enum": [
+              "all",
+              "video",
+              "image",
+              "asset"
+            ],
+            "nullable": true
+          },
+          "groupBy": {
+            "type": "string",
+            "enum": [
+              "project",
+              "member"
+            ]
+          },
+          "totalValue": {
+            "type": "number"
+          },
+          "otherValue": {
+            "type": "number"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EfficiencyRankingRow"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/EfficiencyMeta"
+          }
+        },
+        "required": [
+          "metric",
+          "unit",
+          "drawScope",
+          "groupBy",
+          "totalValue",
+          "otherValue",
+          "rows",
+          "meta"
+        ]
+      },
+      "EfficiencyCategory": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "credits": {
+            "type": "number"
+          },
+          "sharePercent": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "credits",
+          "sharePercent"
+        ]
+      },
+      "EfficiencyDistribution": {
+        "type": "object",
+        "properties": {
+          "totalCredits": {
+            "type": "number"
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EfficiencyCategory"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/EfficiencyMeta"
+          }
+        },
+        "required": [
+          "totalCredits",
+          "categories",
+          "meta"
+        ]
+      },
+      "EfficiencyRecord": {
+        "type": "object",
+        "properties": {
+          "recordKey": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "integer"
+          },
+          "usageId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "taskKind": {
+            "type": "string"
+          },
+          "operationCode": {
+            "type": "string"
+          },
+          "drawScope": {
+            "type": "string",
+            "enum": [
+              "video",
+              "image",
+              "asset"
+            ],
+            "nullable": true
+          },
+          "projectId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "projectName": {
+            "type": "string",
+            "nullable": true
+          },
+          "memberId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "memberName": {
+            "type": "string",
+            "nullable": true
+          },
+          "entityState": {
+            "type": "string",
+            "enum": [
+              "active",
+              "deleted",
+              "restricted",
+              "unknown"
+            ]
+          },
+          "canNavigate": {
+            "type": "boolean"
+          },
+          "modelId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "modelName": {
+            "type": "string",
+            "nullable": true
+          },
+          "taskStatus": {
+            "type": "integer"
+          },
+          "billingStatus": {
+            "type": "integer",
+            "nullable": true
+          },
+          "metricValue": {
+            "type": "number"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/EfficiencyUnit"
+          },
+          "actualCredits": {
+            "type": "number",
+            "nullable": true
+          },
+          "durationMs": {
+            "type": "number",
+            "nullable": true
+          },
+          "durationQuality": {
+            "type": "string",
+            "enum": [
+              "exact",
+              "estimated",
+              "missing",
+              "pending"
+            ]
+          },
+          "eventAt": {
+            "type": "string"
+          },
+          "timeBasis": {
+            "type": "string",
+            "enum": [
+              "settledAt",
+              "finishedAt",
+              "createdAt"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "firstStartedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "ownPhaseFinishedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "finishedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "settledAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "modelGroup": {
+            "$ref": "#/components/schemas/EfficiencyModelGroupCode"
+          },
+          "modelKey": {
+            "type": "string"
+          },
+          "supplierId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "supplierName": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "recordKey",
+          "taskId",
+          "usageId",
+          "taskKind",
+          "operationCode",
+          "drawScope",
+          "projectId",
+          "projectName",
+          "memberId",
+          "memberName",
+          "entityState",
+          "canNavigate",
+          "modelId",
+          "modelName",
+          "taskStatus",
+          "billingStatus",
+          "metricValue",
+          "unit",
+          "actualCredits",
+          "durationMs",
+          "durationQuality",
+          "eventAt",
+          "timeBasis",
+          "createdAt",
+          "firstStartedAt",
+          "ownPhaseFinishedAt",
+          "finishedAt",
+          "settledAt",
+          "modelGroup",
+          "modelKey",
+          "supplierId",
+          "supplierName"
+        ]
+      },
+      "EfficiencyRecords": {
+        "type": "object",
+        "properties": {
+          "metric": {
+            "$ref": "#/components/schemas/EfficiencyMetric"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/EfficiencyUnit"
+          },
+          "drawScope": {
+            "type": "string",
+            "enum": [
+              "all",
+              "video",
+              "image",
+              "asset"
+            ],
+            "nullable": true
+          },
+          "totalValue": {
+            "type": "number"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "pageSize": {
+            "type": "integer"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EfficiencyRecord"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/EfficiencyMeta"
+          }
+        },
+        "required": [
+          "metric",
+          "unit",
+          "drawScope",
+          "totalValue",
+          "total",
+          "page",
+          "pageSize",
+          "items",
+          "meta"
+        ]
+      },
+      "EfficiencyError": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "errorCode": {
+                "type": "string"
+              },
+              "readiness": {
+                "$ref": "#/components/schemas/EfficiencyReadiness"
+              }
+            },
+            "required": [],
+            "nullable": true
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data"
+        ]
+      },
+      "EfficiencySummaryResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/EfficiencySummary"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data"
+        ]
+      },
+      "EfficiencyTrendResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/EfficiencyTrend"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data"
+        ]
+      },
+      "EfficiencyRankingsResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/EfficiencyRankings"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data"
+        ]
+      },
+      "EfficiencyDistributionResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/EfficiencyDistribution"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data"
+        ]
+      },
+      "EfficiencyRecordsResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/EfficiencyRecords"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data"
+        ]
+      },
+      "EfficiencyCoverageStatus": {
+        "type": "string",
+        "enum": [
+          "complete",
+          "partial",
+          "unverified"
+        ]
+      },
+      "EfficiencyModelGroupCode": {
+        "type": "string",
+        "enum": [
+          "video",
+          "image",
+          "other"
+        ]
+      },
+      "EfficiencyCoverageReason": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "certainty": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "unverified"
+            ]
+          },
+          "affectedMetrics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EfficiencyMetric"
+            }
+          },
+          "affectedCount": {
+            "type": "integer",
+            "nullable": true
+          },
+          "affectedRange": {
+            "$ref": "#/components/schemas/EfficiencyTimeRange"
+          },
+          "recoverability": {
+            "type": "string",
+            "enum": [
+              "backfillable",
+              "manualReview",
+              "notRecoverable",
+              "unknown"
+            ]
+          },
+          "impact": {
+            "type": "string",
+            "enum": [
+              "metric",
+              "attribution"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "certainty",
+          "affectedMetrics",
+          "affectedCount",
+          "affectedRange",
+          "recoverability",
+          "impact",
+          "message"
+        ]
+      },
+      "EfficiencyMetricCoverage": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/EfficiencyCoverageStatus"
+          },
+          "sourceDiscrepancyCount": {
+            "type": "integer"
+          },
+          "verifiedRanges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EfficiencyTimeRange"
+            }
+          }
+        },
+        "required": [
+          "status",
+          "sourceDiscrepancyCount",
+          "verifiedRanges"
+        ]
+      },
+      "EfficiencyCoverageByMetric": {
+        "type": "object",
+        "properties": {
+          "credits": {
+            "$ref": "#/components/schemas/EfficiencyMetricCoverage"
+          },
+          "duration": {
+            "$ref": "#/components/schemas/EfficiencyMetricCoverage"
+          },
+          "draws": {
+            "$ref": "#/components/schemas/EfficiencyMetricCoverage"
+          }
+        },
+        "required": [
+          "credits",
+          "duration",
+          "draws"
+        ]
+      },
+      "EfficiencyPeriodCoverage": {
+        "type": "object",
+        "properties": {
+          "range": {
+            "$ref": "#/components/schemas/EfficiencyTimeRange"
+          },
+          "byMetric": {
+            "$ref": "#/components/schemas/EfficiencyCoverageByMetric"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EfficiencyCoverageReason"
+            }
+          },
+          "reconciledAt": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "range",
+          "byMetric",
+          "reasons",
+          "reconciledAt"
+        ]
+      },
+      "EfficiencyReadiness": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "pending",
+              "running",
+              "failed",
+              "missingMigration"
+            ]
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "lastSuccessAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastTaskId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "failureCode": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "status",
+          "retryable"
+        ]
+      },
+      "EfficiencyConsistency": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "live",
+              "snapshot"
+            ]
+          },
+          "version": {
+            "type": "string",
+            "enum": [
+              "efficiency-v2"
+            ]
+          },
+          "snapshotId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "version"
+        ]
+      },
+      "EfficiencyModelSlice": {
+        "type": "object",
+        "properties": {
+          "modelKey": {
+            "type": "string"
+          },
+          "modelId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "supplierId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "supplierName": {
+            "type": "string",
+            "nullable": true
+          },
+          "modelName": {
+            "type": "string",
+            "nullable": true
+          },
+          "credits": {
+            "type": "number"
+          },
+          "sharePercent": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "modelKey",
+          "modelId",
+          "supplierId",
+          "supplierName",
+          "modelName",
+          "credits",
+          "sharePercent"
+        ]
+      },
+      "EfficiencyModelGroup": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/EfficiencyModelGroupCode"
+          },
+          "name": {
+            "type": "string"
+          },
+          "credits": {
+            "type": "number"
+          },
+          "shareOfTotalPercent": {
+            "type": "number"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EfficiencyModelSlice"
+            }
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "credits",
+          "shareOfTotalPercent",
+          "models"
+        ]
+      },
+      "EfficiencyModelDistribution": {
+        "type": "object",
+        "properties": {
+          "totalCredits": {
+            "type": "number"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EfficiencyModelGroup"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/EfficiencyMeta"
+          }
+        },
+        "required": [
+          "totalCredits",
+          "groups",
+          "meta"
+        ]
+      },
+      "EfficiencySnapshot": {
+        "type": "object",
+        "properties": {
+          "snapshotId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expiresAt": {
+            "type": "string"
+          },
+          "sourceRowCount": {
+            "type": "integer"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/EfficiencyMeta"
+          }
+        },
+        "required": [
+          "snapshotId",
+          "expiresAt",
+          "sourceRowCount",
+          "meta"
+        ]
+      },
+      "EfficiencySnapshotRequest": {
+        "type": "object",
+        "properties": {
+          "range": {
+            "$ref": "#/components/schemas/EfficiencyRange"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "projectId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "memberId": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "EfficiencySnapshotResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/EfficiencySnapshot"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data"
+        ]
+      },
+      "EfficiencyModelDistributionResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/EfficiencyModelDistribution"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data"
+        ]
+      }
+    },
+    "securitySchemes": {
+      "AccessToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization"
+      }
+    }
+  },
+  "security": [
+    {
+      "AccessToken": []
+    }
+  ]
+}

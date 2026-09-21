@@ -8,13 +8,15 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "typecheck": "tsc --noEmit",
+    "test:storyboard-video-batch": "node scripts/test-storyboard-video-batch.mjs",
     "lint": "eslint . --ext .ts,.tsx",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "audit:director-actions": "node ./scripts/audit-director-character-actions.mjs",
     "preview": "vite preview",
     "openapi:fetch": "node ./scripts/fetch-openapi.mjs",
-    "openapi:gen": "pnpm exec -- openapi --input ./openapi.json --output ./src/services/generated --client fetch --useOptions --useUnionTypes",
-    "openapi:update": "pnpm run openapi:fetch && pnpm run openapi:gen"
+    "openapi:gen": "pnpm exec -- openapi --input ./openapi.json --output ./src/services/generated --client fetch --useOptions --useUnionTypes && node ./scripts/patch-workflow-client.mjs",
+    "openapi:update": "node ./scripts/update-openapi.mjs",
+    "openapi:efficiency": "node ./scripts/generate-efficiency-client.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^5.2.6",
@@ -24,6 +26,7 @@
     "camera-controls": "2.9.0",
     "dayjs": "^1.11.21",
     "dompurify": "^3.0.8",
+    "echarts": "^6.1.0",
     "file-saver": "^2.0.5",
     "i18next": "^23.11.4",
     "i18next-browser-languagedetector": "^7.2.1",
