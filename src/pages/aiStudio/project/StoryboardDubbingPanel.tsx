@@ -1,3 +1,4 @@
+import { uiText, useUiLanguage } from '../../../i18n/uiText'
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Empty, Input, InputNumber, Modal, Slider, Space, Spin, Tag, message } from 'antd'
 import { StudioDubbingApi as api, type DubbingCharacter, type DubbingGeneration, type DubbingId, type DubbingLine, type DubbingLineFields, type DubbingPanel } from '../../../services/studioDubbing'
@@ -31,18 +32,22 @@ const VOICE_EMOTIONS = [
 
 
 const formatVoiceRate = (value: number) => `${value.toFixed(2)}x`
-const pending = (generation?: DubbingGeneration | null) => generation?.status === 1 || generation?.status === 2
-const statusNames: Record<number, string> = { 1: '待提交', 2: '生成中', 3: '生成成功', 4: '生成失败', 5: '已取消' }
+const pending = (generation?: DubbingGeneration | null) => !!generation && [1,2].includes(generation.status) && generation.shouldPoll !== false
+const outputReady = (generation?: DubbingGeneration | null) => generation?.status === 3 && generation.outputReady === true
+const statusNames: Record<number, string> = { get 1() { return uiText("待提交") }, get 2() { return uiText("生成中") }, get 3() { return uiText("生成成功") }, get 4() { return uiText("生成失败") }, get 5() { return uiText("已取消") }, get 6() { return uiText("结果待确认") }, get 7() { return uiText("输出不匹配") } }
 const fieldsOf = (line: DubbingLineFields): DubbingLineFields => ({ characterAssetId: line.characterAssetId, dialogueText: line.dialogueText, emotionPrompt: line.emotionPrompt, volume: line.volume, speechRate: line.speechRate })
 const emptyFields = (): DubbingLineFields => ({ characterAssetId: null, dialogueText: '', emotionPrompt: '', volume: null, speechRate: null })
 
 function AudioResult({ generation }: { generation: DubbingGeneration }) {
+  useUiLanguage()
+
   const [downloading, setDownloading] = useState(false)
   return <Space direction="vertical" style={{ width: '100%' }}>
-    <Space><Tag color={generation.status === 4 ? 'error' : generation.status === 3 ? 'success' : 'processing'}>{statusNames[generation.status] ?? '未知状态'}</Tag>{generation.createdAt}</Space>
+    <Space><Tag color={generation.status === 4 ? 'error' : generation.status === 3 ? 'success' : 'processing'}>{statusNames[generation.status] ?? uiText("未知状态")}</Tag>{generation.createdAt}</Space>
+    {generation.input && <div style={{color:'var(--text-secondary)',fontSize:12}}>{generation.input.dialogueText}<br />{uiText("音色 #")}{generation.input.voiceId} · {generation.input.languageCode} {uiText("· 音量") + " "}{generation.input.volume} {uiText("· 语速") + " "}{generation.input.speechRate}</div>}
     {generation.errorMessage && <Alert type="error" message={generation.errorMessage} />}
-    {generation.status === 3 && generation.outputUrl && <Space wrap>
-      <audio controls preload="none" src={resolveAssetUrl(generation.outputUrl)} onError={() => message.error('配音文件加载失败，请重试或下载音频')} />
+    {outputReady(generation) && generation.outputUrl && <Space wrap>
+      <audio controls preload="none" src={resolveAssetUrl(generation.outputUrl)} onError={() => message.error(uiText("配音文件加载失败，请重试或下载音频"))} />
       <Button loading={downloading} onClick={async () => {
         setDownloading(true)
         try { const response = await fetch(resolveAssetUrl(generation.outputUrl!)!)
@@ -56,13 +61,24 @@ function AudioResult({ generation }: { generation: DubbingGeneration }) {
           window.setTimeout(() => URL.revokeObjectURL(url), 1000) }
         catch (error) { message.error(getApiErrorMessage(error, '音频下载失败')) }
         finally { setDownloading(false) }
-      }}>下载音频</Button>
+      }}>{uiText("下载音频")}</Button>
     </Space>}
   </Space>
 }
 
 export default function StoryboardDubbingPanel({ segmentId }: { segmentId: DubbingId }) {
+  useUiLanguage()
+
   const [panel, setPanel] = useState<DubbingPanel>()
+  useEffect(() => {
+    const recovered = (event: Event) => {
+      const {record,current} = (event as CustomEvent).detail
+      if (record.operation !== 'dubbing') return
+      setPanel(value => value && ({...value,lines:value.lines.map(line => String(line.id) === String(record.body.lineId) && (!line.latestGeneration || String(line.latestGeneration.id) === String(current.id)) ? {...line,latestGeneration:current} : line)}))
+    }
+    window.addEventListener('workflow-recovered', recovered)
+    return () => window.removeEventListener('workflow-recovered', recovered)
+  },[segmentId])
   const [models, setModels] = useState<StudioGenerationModel[]>([])
   const [modelId, setModelId] = useState<number>()
   const [format, setFormat] = useState('mp3')
@@ -114,9 +130,10 @@ export default function StoryboardDubbingPanel({ segmentId }: { segmentId: Dubbi
         const result = results.find((item) => item.status === 'fulfilled' && String(item.value.lineId) === String(line.id))
         return result?.status === 'fulfilled' && String(line.latestGeneration?.id) === String(result.value.id) ? { ...line, latestGeneration: result.value.generation } : line
       }) }))
-      timer = setTimeout(poll, 3000)
+      const intervals = results.flatMap(value => value.status === 'fulfilled' && pending(value.value.generation) ? [Math.max(1, value.value.generation.pollAfterSeconds ?? 3) * 1000] : [])
+      if (intervals.length || failed) timer = setTimeout(poll, intervals.length ? Math.max(...intervals) : 3000)
     }
-    timer = setTimeout(poll, 2000)
+    timer = setTimeout(poll, 3000)
     return () => { active = false; clearTimeout(timer) }
   }, [jobsKey])
 
@@ -154,6 +171,9 @@ export default function StoryboardDubbingPanel({ segmentId }: { segmentId: Dubbi
     const voice = character.voiceConfig.voice
     if (cap?.voiceProviderCode && voice.providerCode && cap.voiceProviderCode !== voice.providerCode) return '当前音色供应商与模型不兼容'
     const language = voice.languages?.find((item) => item.primaryLanguage)?.code ?? voice.languages?.[0]?.code
+    if (!language) return '当前音色未提供可用语言'
+    if (Array.from(line.dialogueText).length > 5000) return '台词最长 5000 字符'
+    if ((line.emotionPrompt?.length || 0) > 255) return '情绪提示最长 255 字符'
     if (language && cap?.languages?.length && !cap.languages.includes(language)) return '模型不支持当前音色语言'
     const volume = line.volume ?? panel!.settings.volume
     const rate = line.speechRate ?? panel!.settings.speechRate
@@ -175,10 +195,10 @@ export default function StoryboardDubbingPanel({ segmentId }: { segmentId: Dubbi
   const [lineUi, setLineUi] = useState<Record<string, { expressionPanel?: 'pause' | 'interjection' | null; customPauseExpanded?: boolean; customPauseSeconds?: string; emotionExpanded?: boolean }>>({})
   const voiceLines = (panel?.lines ?? []).map((line) => {
     const character = panel?.characters.find((item) => String(item.assetId) === String(line.characterAssetId))
-    return { ...line, ...lineUi[String(line.id)], id: String(line.id), character: character?.characterName || line.characterName || '待选择角色', voice: character?.voiceConfig?.voice.name || '未配置音色', text: line.dialogueText, volume: line.volume ?? panel!.settings.volume, speed: line.speechRate ?? panel!.settings.speechRate, emotion: line.emotionPrompt || '自动', customPauseSeconds: lineUi[String(line.id)]?.customPauseSeconds || '', audioUrl: line.latestGeneration?.status === 3 ? line.latestGeneration.outputUrl : null }
+    return { ...line, ...lineUi[String(line.id)], id: String(line.id), character: character?.characterName || line.characterName || '待选择角色', voice: character?.voiceConfig?.voice.name || '未配置音色', text: line.dialogueText, volume: line.volume ?? panel!.settings.volume, speed: line.speechRate ?? panel!.settings.speechRate, emotion: line.emotionPrompt || '自动', customPauseSeconds: lineUi[String(line.id)]?.customPauseSeconds || '', audioUrl: outputReady(line.latestGeneration) ? line.latestGeneration?.outputUrl : null }
   })
   type VoiceLineDraft = typeof voiceLines[number]
-  const voiceRoleOptions = (panel?.characters ?? []).map((character) => ({ value: String(character.assetId), label: <span className="project-clip-editor__voice-option-label"><span><strong>{character.characterName}</strong><i />{l('音色', 'Voice')}：{character.voiceConfig?.voice.name || '未配置音色'}</span></span> }))
+  const voiceRoleOptions = (panel?.characters ?? []).map((character) => ({ value: String(character.assetId), label: <span className="project-clip-editor__voice-option-label"><span><strong>{character.characterName}</strong><i />{l('音色', 'Voice')}：{character.voiceConfig?.voice.name || uiText("未配置音色")}</span></span> }))
   const updateVoiceLine = (id: string, patch: Partial<VoiceLineDraft>) => {
     setLineUi((current) => ({ ...current, [id]: { ...current[id], ...patch } }))
     setPanel((current) => current && ({ ...current, lines: current.lines.map((line) => String(line.id) !== id ? line : { ...line,
@@ -193,12 +213,12 @@ export default function StoryboardDubbingPanel({ segmentId }: { segmentId: Dubbi
   useEffect(() => () => { voicePreviewAudioRef.current?.pause() }, [])
   const previewVoiceLine = (line: VoiceLineDraft) => {
     if (playingVoiceLineId === line.id) { stopVoicePreview(); return }
-    if (!line.audioUrl) { message.warning('当前台词还没有可试听的配音文件'); return }
+    if (!line.audioUrl) { message.warning(uiText("当前台词还没有可试听的配音文件")); return }
     stopVoicePreview()
     const audio = new Audio(resolveAssetUrl(line.audioUrl)); voicePreviewAudioRef.current = audio; setPlayingVoiceLineId(line.id)
     audio.onended = stopVoicePreview
-    audio.onerror = () => { stopVoicePreview(); message.error('配音文件加载失败') }
-    void audio.play().catch(() => { stopVoicePreview(); message.error('配音文件播放失败') })
+    audio.onerror = () => { stopVoicePreview(); message.error(uiText("配音文件加载失败")) }
+    void audio.play().catch(() => { stopVoicePreview(); message.error(uiText("配音文件播放失败")) })
   }
   const downloadVoiceLine = (line: VoiceLineDraft, index: number) => void act(async () => {
     if (!line.audioUrl) throw new Error('当前台词还没有可下载的配音文件')
@@ -227,7 +247,7 @@ export default function StoryboardDubbingPanel({ segmentId }: { segmentId: Dubbi
   const voiceSpeed = panel?.settings.speechRate ?? 1
 
   if (loading) return <Spin style={{ padding: 40 }} />
-  if (error || !panel) return <Alert type="error" message={error || '配音数据为空'} action={<Button onClick={() => setRetry((value) => value + 1)}>重试</Button>} />
+  if (error || !panel) return <Alert type="error" message={error || uiText("配音数据为空")} action={<Button onClick={() => setRetry((value) => value + 1)}>{uiText("重试")}</Button>} />
   const settings = panel.settings
   return <>
           <div className="project-clip-editor__voice-panel">
@@ -259,11 +279,11 @@ export default function StoryboardDubbingPanel({ segmentId }: { segmentId: Dubbi
               </button>
               {voiceConfigExpanded && (
                 <div className="project-clip-editor__voice-binding-list">
-                  {!panel.characters.length && <Empty description="本集暂无角色" />}
+                  {!panel.characters.length && <Empty description={uiText("本集暂无角色")} />}
                   {panel.characters.map((character) => (
                     <button key={character.assetId} type="button" onClick={() => setVoiceCharacter(character)}>
                       <span>{character.characterName}：</span>
-                      <strong>{character.voiceConfig?.voice.name || '未配置音色'}</strong>
+                      <strong>{character.voiceConfig?.voice.name || uiText("未配置音色")}</strong>
                       <DownOutlined />
                     </button>
                   ))}
@@ -298,10 +318,10 @@ export default function StoryboardDubbingPanel({ segmentId }: { segmentId: Dubbi
                     </div>
                   </label>
             <div className="project-clip-editor__voice-model-controls">
-              <div className="project-clip-editor__voice-model-field"><span>语音模型</span><StudioSelect aria-label="语音模型" appearance="dark" value={modelId} allowClear placeholder="默认语音模型" options={models.map((item) => ({ value: item.id, label: item.name }))} onChange={(value) => { const id = value === undefined ? undefined : Number(value); setModelId(id); const cap = models.find((item) => item.id === id)?.speechCapabilities; setFormat(cap?.defaultFormat || cap?.formats?.[0] || 'mp3') }} /></div>
-              <div className="project-clip-editor__voice-model-field"><span>输出格式</span><StudioSelect aria-label="输出格式" appearance="dark" value={format} options={formats.map((value) => ({ value, label: value.toUpperCase() }))} onChange={(value) => setFormat(String(value))} /></div>
-              <div className="project-clip-editor__voice-settings-footer"><Button loading={busy} onClick={() => void act(async () => { await api.updateSettings(settings); if (alive.current) message.success('本集设置已保存') })}>保存设置</Button></div>
-              {modelError && <Alert type="error" message={modelError} action={<Button onClick={() => setRetry((value) => value + 1)}>重试</Button>} />}
+              <div className="project-clip-editor__voice-model-field"><span>{uiText("语音模型")}</span><StudioSelect aria-label={uiText("语音模型")} appearance="dark" value={modelId} allowClear placeholder={uiText("默认语音模型")} options={models.map((item) => ({ value: item.id, label: item.name }))} onChange={(value) => { const id = value === undefined ? undefined : Number(value); setModelId(id); const cap = models.find((item) => item.id === id)?.speechCapabilities; setFormat(cap?.defaultFormat || cap?.formats?.[0] || 'mp3') }} /></div>
+              <div className="project-clip-editor__voice-model-field"><span>{uiText("输出格式")}</span><StudioSelect aria-label={uiText("输出格式")} appearance="dark" value={format} options={formats.map((value) => ({ value, label: value.toUpperCase() }))} onChange={(value) => setFormat(String(value))} /></div>
+              <div className="project-clip-editor__voice-settings-footer"><Button loading={busy} onClick={() => void act(async () => { await api.updateSettings(settings); if (alive.current) message.success(uiText("本集设置已保存")) })}>{uiText("保存设置")}</Button></div>
+              {modelError && <Alert type="error" message={modelError} action={<Button onClick={() => setRetry((value) => value + 1)}>{uiText("重试")}</Button>} />}
             </div>
                 </div>
               )}
@@ -313,7 +333,7 @@ export default function StoryboardDubbingPanel({ segmentId }: { segmentId: Dubbi
                 <span>{voiceLines.length} {l('条', 'lines')}</span>
               </div>
               {pollError && <Alert type="warning" message={pollError} />}
-              {!voiceLines.length && <Empty description="当前片段暂无台词" />}
+              {!voiceLines.length && <Empty description={uiText("当前片段暂无台词")} />}
               <div className="project-clip-editor__voice-line-list">
                 {voiceLines.map((line, index) => {
                   const adjustableVoice = panel.characters.some((character) => String(character.assetId) === String(line.characterAssetId) && character.voiceConfig?.voice.emotionAdjustable)
@@ -524,8 +544,8 @@ export default function StoryboardDubbingPanel({ segmentId }: { segmentId: Dubbi
                     )}
                     {expandedVoiceLineId === line.id && (
                       <div className="project-clip-editor__voice-line-settings">
-                        <Input aria-label="演绎提示" placeholder="演绎提示" value={line.emotionPrompt || ''} onChange={(event) => updateVoiceLine(line.id, { emotion: event.target.value })} />
-                        <Button size="small" type="text" onClick={() => setPanel((current) => current && ({ ...current, lines: current.lines.map((item) => String(item.id) === line.id ? { ...item, volume: null, speechRate: null } : item) }))}>恢复继承本集设置</Button>
+                        <Input aria-label={uiText("演绎提示")} placeholder={uiText("演绎提示")} value={line.emotionPrompt || ''} onChange={(event) => updateVoiceLine(line.id, { emotion: event.target.value })} />
+                        <Button size="small" type="text" onClick={() => setPanel((current) => current && ({ ...current, lines: current.lines.map((item) => String(item.id) === line.id ? { ...item, volume: null, speechRate: null } : item) }))}>{uiText("恢复继承本集设置")}</Button>
                         <label>
                           <span>{l('音量', 'Volume')}</span>
                           <div className="project-clip-editor__voice-slider-control">
@@ -559,15 +579,19 @@ export default function StoryboardDubbingPanel({ segmentId }: { segmentId: Dubbi
                     <div className="project-clip-editor__voice-actions">
                       <div className="project-clip-editor__voice-actions-row">
                         <div className="project-clip-editor__voice-secondary-actions">
-                        <Button disabled={busy} onClick={() => void act(async () => { const source = panel.lines.find((item) => String(item.id) === line.id)!; await api.updateLine(source.id, fieldsOf(source)); if (alive.current) message.success('台词已保存') })}>保存</Button>
-                        <Button onClick={() => void loadHistory(line.id)}>历史</Button>
+                        <Button disabled={busy} onClick={() => void act(async () => { const source = panel.lines.find((item) => String(item.id) === line.id)!; await api.updateLine(source.id, fieldsOf(source)); if (alive.current) message.success(uiText("台词已保存")) })}>{uiText("保存")}</Button>
+                        <Button onClick={() => void loadHistory(line.id)}>{uiText("历史")}</Button>
+                        {line.latestGeneration?.status === 6 && <Button disabled={busy} onClick={() => void act(async () => { const id=line.latestGeneration!.id;const current=await api.detail(id);if(alive.current)setPanel(value=>value&&({...value,lines:value.lines.map(item=>String(item.latestGeneration?.id)===String(id)?{...item,latestGeneration:current}:item)})) })}>{uiText("查询原记录")}</Button>}
                         </div>
                         <Button className="project-clip-editor__voice-generate" type="primary" loading={pending(line.latestGeneration)} disabled={busy || !!generationError(line) || pending(line.latestGeneration)} title={generationError(line) || undefined} onClick={() => void act(async () => {
                           const source = panel.lines.find((item) => String(item.id) === line.id)!
-                          await api.updateLine(source.id, fieldsOf(source)); await api.updateSettings(settings)
-                          const generation = await api.generate(source.id, format, modelId)
+                          const character = panel.characters.find(item => String(item.assetId) === String(source.characterAssetId))!
+                          const voice = character.voiceConfig!.voice
+                          const languageCode = voice.languages?.find(item => item.primaryLanguage)?.code ?? voice.languages?.[0]?.code
+                          if (!languageCode) throw new Error('当前音色未提供可用语言，请重新选择音色')
+                          const generation = await api.generate(source.id, { characterAssetId: source.characterAssetId!, voiceId: voice.id, languageCode, dialogueText: source.dialogueText, emotionPrompt: source.emotionPrompt, volume: source.volume ?? settings.volume, speechRate: source.speechRate ?? settings.speechRate }, format, modelId)
                           if (alive.current) setPanel((current) => current && ({ ...current, lines: current.lines.map((item) => String(item.id) === line.id ? { ...item, latestGeneration: { ...generation, status: generation.status ?? 1 } } : item) }))
-                        })}>{line.latestGeneration ? '重新生成' : '生成配音'}</Button>
+                        })}>{line.latestGeneration ? uiText("重新生成") : uiText("生成配音")}</Button>
                       </div>
                       {line.latestGeneration && <small className="project-clip-editor__voice-generation-status">{statusNames[line.latestGeneration.status]} {line.latestGeneration.errorMessage}</small>}
                     </div>
@@ -582,7 +606,7 @@ export default function StoryboardDubbingPanel({ segmentId }: { segmentId: Dubbi
             </section>
           </div>
     <VoiceLibraryModal open={!!voiceCharacter} currentVoiceId={voiceCharacter?.voiceConfig?.voice.id ?? voiceCharacter?.voiceConfig?.voiceId} onCancel={() => setVoiceCharacter(undefined)} onApply={(voice) => saveVoice(voice.id)} onUnbind={voiceCharacter?.voiceConfigured ? () => saveVoice(null) : undefined} />
-    <Modal title={editing?.id === undefined ? '添加台词' : '编辑台词'} open={!!editing} onCancel={() => !busy && setEditing(undefined)} confirmLoading={busy} onOk={() => void act(async () => {
+    <Modal title={editing?.id === undefined ? uiText("添加台词") : uiText("编辑台词")} open={!!editing} onCancel={() => !busy && setEditing(undefined)} confirmLoading={busy} onOk={() => void act(async () => {
       if (!editing) return
       if ((editing.id === undefined && !editing.fields.characterAssetId) || !editing.fields.dialogueText.trim()) throw new Error('请选择本集角色并填写台词')
       const saved = editing.id === undefined ? await api.addLine(segmentId, editing.fields) : await api.updateLine(editing.id, editing.fields)
@@ -591,14 +615,14 @@ export default function StoryboardDubbingPanel({ segmentId }: { segmentId: Dubbi
       setEditing(undefined)
     })}>
       {editing && <Space direction="vertical" style={{ width: '100%' }}>
-        <StudioSelect appearance="dark" aria-label="台词角色" placeholder="选择本集角色" style={{ width: '100%' }} value={editing.fields.characterAssetId === null ? undefined : String(editing.fields.characterAssetId)} options={panel.characters.map((item) => ({ value: String(item.assetId), label: item.characterName }))} onChange={(value) => setEditing({ ...editing, fields: { ...editing.fields, characterAssetId: panel.characters.find((item) => String(item.assetId) === value)!.assetId } })} />
-        <Input.TextArea aria-label="台词文本" placeholder="输入台词" rows={4} value={editing.fields.dialogueText} onChange={(event) => setEditing({ ...editing, fields: { ...editing.fields, dialogueText: event.target.value } })} />
-        <Input.TextArea aria-label="演绎提示" placeholder="演绎提示，如：克制、低声、短暂停顿" value={editing.fields.emotionPrompt ?? ''} onChange={(event) => setEditing({ ...editing, fields: { ...editing.fields, emotionPrompt: event.target.value } })} />
-        <Space wrap>{(['volume', 'speechRate'] as const).map((key) => <label key={key}>{key === 'volume' ? '音量' : '语速'} <InputNumber aria-label={key === 'volume' ? '台词音量' : '台词语速'} placeholder="继承本集" min={0.5} max={2} step={0.05} precision={2} value={editing.fields[key]} onChange={(value) => setEditing({ ...editing, fields: { ...editing.fields, [key]: value } })} /><Button type="link" onClick={() => setEditing({ ...editing, fields: { ...editing.fields, [key]: null } })}>继承本集</Button></label>)}</Space>
+        <StudioSelect appearance="dark" aria-label={uiText("台词角色")} placeholder={uiText("选择本集角色")} style={{ width: '100%' }} value={editing.fields.characterAssetId === null ? undefined : String(editing.fields.characterAssetId)} options={panel.characters.map((item) => ({ value: String(item.assetId), label: item.characterName }))} onChange={(value) => setEditing({ ...editing, fields: { ...editing.fields, characterAssetId: panel.characters.find((item) => String(item.assetId) === value)!.assetId } })} />
+        <Input.TextArea aria-label={uiText("台词文本")} placeholder={uiText("输入台词")} rows={4} value={editing.fields.dialogueText} onChange={(event) => setEditing({ ...editing, fields: { ...editing.fields, dialogueText: event.target.value } })} />
+        <Input.TextArea aria-label={uiText("演绎提示")} placeholder={uiText("演绎提示，如：克制、低声、短暂停顿")} value={editing.fields.emotionPrompt ?? ''} onChange={(event) => setEditing({ ...editing, fields: { ...editing.fields, emotionPrompt: event.target.value } })} />
+        <Space wrap>{(['volume', 'speechRate'] as const).map((key) => <label key={key}>{key === 'volume' ? uiText("音量") : uiText("语速")} <InputNumber aria-label={key === 'volume' ? uiText("台词音量") : uiText("台词语速")} placeholder={uiText("继承本集")} min={0.5} max={2} step={0.05} precision={2} value={editing.fields[key]} onChange={(value) => setEditing({ ...editing, fields: { ...editing.fields, [key]: value } })} /><Button type="link" onClick={() => setEditing({ ...editing, fields: { ...editing.fields, [key]: null } })}>{uiText("继承本集")}</Button></label>)}</Space>
       </Space>}
     </Modal>
-    <Modal title="台词生成历史" open={!!history} footer={null} onCancel={() => setHistory(undefined)}>
-      {history?.loading ? <Spin /> : history?.error ? <Alert type="error" message={history.error} action={<Button onClick={() => void loadHistory(history.lineId)}>重试</Button>} /> : history?.items.length ? history.items.map((item) => <div style={{ padding: '12px 0' }} key={item.id}><AudioResult generation={item} /></div>) : <Empty description="暂无生成历史" />}
+    <Modal title={uiText("台词生成历史")} open={!!history} footer={null} onCancel={() => setHistory(undefined)}>
+      {history?.loading ? <Spin /> : history?.error ? <Alert type="error" message={history.error} action={<Button onClick={() => void loadHistory(history.lineId)}>{uiText("重试")}</Button>} /> : history?.items.length ? history.items.map((item) => <div style={{ padding: '12px 0' }} key={item.id}><AudioResult generation={item} /></div>) : <Empty description={uiText("暂无生成历史")} />}
     </Modal>
   </>
 }

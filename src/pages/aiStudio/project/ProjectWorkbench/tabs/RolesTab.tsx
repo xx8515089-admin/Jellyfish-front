@@ -1,3 +1,4 @@
+import { uiText, useUiLanguage } from '../../../../../i18n/uiText'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Card, Button, Empty, Modal, Input, message, Space, Pagination, Tag } from 'antd'
 import { EditOutlined, PlusOutlined, UserOutlined } from '@ant-design/icons'
@@ -87,6 +88,8 @@ function notifyShotAssetCreatedAndLinked(payload: {
 }
 
 export function RolesTab() {
+  useUiLanguage()
+
   const { options: projectStyleOptions, defaultVisualStyle, getDefaultStyle } = useProjectStyleOptions()
   const navigate = useNavigate()
   const l = useBilingualText()
@@ -449,7 +452,7 @@ export function RolesTab() {
                     <div className="space-y-2">
                       <div className="flex flex-wrap gap-1">
                         <Tag color={linkedShotCount > 0 ? 'blue' : 'default'} className="m-0">
-                          {linkedShotCount > 0 ? `${linkedShotCount} 个镜头` : '未关联镜头'}
+                          {linkedShotCount > 0 ? uiText("{0} 个镜头", linkedShotCount) : uiText("未关联镜头")}
                         </Tag>
                         {wardrobe ? <Tag color="gold" className="m-0">text-only wardrobe</Tag> : null}
                         {!c.costume_id && !wardrobe ? <Tag color="warning" className="m-0">missing costume</Tag> : null}

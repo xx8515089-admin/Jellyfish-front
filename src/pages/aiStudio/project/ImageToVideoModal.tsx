@@ -1,3 +1,5 @@
+import { uiText, useUiLanguage } from '../../../i18n/uiText'
+import { workflowAcceptance } from '../../../services/workflowSubmissions'
 import CreditIcon from '../../../components/CreditIcon'
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Input, Modal, Progress } from 'antd'
@@ -29,6 +31,8 @@ function expired(value: ImageToVideoEstimate) {
 }
 /** Independent first-frame generation; never modifies multi-reference selections. */
 export default function ImageToVideoModal(props: Props) {
+  useUiLanguage()
+
   const l = useBilingualText()
   const [prompt, setPrompt] = useState('')
   const [panelImage, setPanelImage] = useState<StoryboardPanelImage>()
@@ -53,6 +57,14 @@ export default function ImageToVideoModal(props: Props) {
   const [busy, setBusy] = useState(false)
   const [uncertain, setUncertain] = useState(false)
   const [record, setRecord] = useState<ImageToVideoDetail>()
+  useEffect(() => {
+    const recovered = (event: Event) => {
+      const {record: receipt,current} = (event as CustomEvent).detail
+      if (receipt.operation === 'image_to_video' && String(receipt.body.imageGenerationId) === String(props.imageGenerationId)) {setRecord(previous=>!previous || previous.id===current.id?current:previous);setUncertain(false);setSubmitError('')}
+    }
+    window.addEventListener('workflow-recovered',recovered)
+    return ()=>window.removeEventListener('workflow-recovered',recovered)
+  },[props.imageGenerationId])
   const [retry, setRetry] = useState(0)
   const [pollRetry, setPollRetry] = useState(0)
   const [pollError, setPollError] = useState('')
@@ -155,18 +167,18 @@ export default function ImageToVideoModal(props: Props) {
   }, [modelId, model, models, resolution, duration, quoteKey, retry, locked, l])
   useEffect(() => {
     if (!record || busy) return
-    if (record.status === 3) {
+    if (record.status === 3 && record.outputReady === true) {
       if (completed.current !== record.id) { completed.current = record.id; onCompleted.current(record.segmentId) }
       return
     }
-    if (record.status !== 1 && record.status !== 2) return
+    if (![1,2].includes(record.status) || record.shouldPoll === false) return
     let active = true
     let request: ReturnType<typeof api.getDetail> | undefined
     const cancel = schedulePollWhenVisible(() => {
       request = api.getDetail({ id: record.id })
       void request.then(unwrap).then((value) => { if (active) { setRecord(value); setPollError('') } })
         .catch((reason) => { if (active) setPollError(getApiErrorMessage(reason)) })
-    }, 3000)
+    }, Math.max(1, record.pollAfterSeconds ?? 3) * 1000)
     return () => { active = false; cancel(); request?.cancel() }
   }, [record, pollRetry, busy])
   /** A single POST per action; ambiguous failures require task-center verification. */
@@ -182,10 +194,9 @@ export default function ImageToVideoModal(props: Props) {
       const detail = unwrap(response)
       if (alive.current) setRecord(detail)
     } catch (reason) {
-      const body = (reason as { body?: { code?: number } })?.body
       if (alive.current) {
-        if (body?.code && body.code !== 200 && (reason as { status?: number }).status !== 500) { setSubmitError(getApiErrorMessage(reason)); setPanelReload((n) => n + 1) }
-        else { setUncertain(true); setSubmitError(`${getApiErrorMessage(reason)}。${l('提交状态待确认，请到任务中心或联系后台核查，请勿重复生成。', 'Submission uncertain. Verify in the task center before generating again.')}`) }
+        if (workflowAcceptance(reason) === 'rejected') { setSubmitError(getApiErrorMessage(reason)); setPanelReload((n) => n + 1) }
+        else { setUncertain(true); setSubmitError(`${getApiErrorMessage(reason)}。${l('提交状态待确认，请在操作记录中查询原提交，请勿重复生成。', 'Submission uncertain. Verify in the task center before generating again.')}`) }
       }
     } finally { lock.current = false; if (alive.current) setBusy(false) }
   }
@@ -205,25 +216,25 @@ export default function ImageToVideoModal(props: Props) {
       {submitError && <Alert type="error" showIcon message={submitError} />}
       {panelError && <Alert type="error" message={panelError} />}
       {orderedPanels.length > 0 && <div className="image-to-video-modal__panel-controls">
-        <StudioSelect appearance="dark" aria-label="分镜范围" value={scope} disabled={locked} options={[{ value: 'whole_image', label: '整张图片' }, { value: 'single_panel', label: '单个分镜' }, { value: 'all_panels', label: '全部分镜 · 一个视频' }]} onChange={(value) => { setScope(value); setPanelId(undefined) }} />
-        <Button disabled={locked} onClick={() => setPanelReload((n) => n + 1)}>刷新标注</Button>
+        <StudioSelect appearance="dark" aria-label={uiText("分镜范围")} value={scope} disabled={locked} options={[{ value: 'whole_image', label: uiText("整张图片") }, { value: 'single_panel', label: uiText("单个分镜") }, { value: 'all_panels', label: uiText("全部分镜 · 一个视频") }]} onChange={(value) => { setScope(value); setPanelId(undefined) }} />
+        <Button disabled={locked} onClick={() => setPanelReload((n) => n + 1)}>{uiText("刷新标注")}</Button>
       </div>}
-      {!imageReady && <Alert type="info" message={!panelImage ? '正在读取图片信息…' : '图片尚未生成成功，请稍后重试'} />}
-      {panelError && !panelImage && <Button onClick={() => setPanelReload((n) => n + 1)}>重新读取图片</Button>}
+      {!imageReady && <Alert type="info" message={!panelImage ? uiText("正在读取图片信息…") : uiText("图片尚未生成成功，请稍后重试")} />}
+      {panelError && !panelImage && <Button onClick={() => setPanelReload((n) => n + 1)}>{uiText("重新读取图片")}</Button>}
       {scope !== 'whole_image' && <div className="image-to-video-modal__panels">
-        {orderedPanels.map((panel) => <button type="button" key={panel.panelId} disabled={locked || !imageReady || scope === 'all_panels'} className={scope === 'all_panels' || panelId === panel.panelId ? 'is-selected' : ''} onClick={() => setPanelId(panel.panelId)}><strong>镜头 {panel.sourceShotNumber ?? panel.panelIndex}</strong><span>{panel.description}</span></button>)}
+        {orderedPanels.map((panel) => <button type="button" key={panel.panelId} disabled={locked || !imageReady || scope === 'all_panels'} className={scope === 'all_panels' || panelId === panel.panelId ? 'is-selected' : ''} onClick={() => setPanelId(panel.panelId)}><strong>{uiText("镜头") + " "}{panel.sourceShotNumber ?? panel.panelIndex}</strong><span>{panel.description}</span></button>)}
       </div>}
-      {scope === 'all_panels' && <small>以第一格作为首帧，按全部分镜描述生成一个视频，不保证逐格精确复现。</small>}
-      <Button loading={promptBusy} disabled={locked || promptBusy || !canGeneratePrompt || !modelId || !resolution} onClick={() => void generatePrompt()}>生成视频提示词</Button>
-      <small>{scope === 'whole_image' ? '识图生成提示词，按文本模型用量计费；生成后可编辑正文。' : currentSnapshot?.generationMethod === 'panel_template' ? '模板编排，不额外扣积分；生成后可编辑正文。' : '根据已保存的分镜描述生成提示词。'}</small>
-      {promptBusy && scope === 'whole_image' && <small>正在识别图片，请耐心等待。网络中断后请先核查任务，避免重复计费。</small>}
-      {currentSnapshot && !canSubmitFrame && <Alert type="warning" message="首帧坐标缺失或无效，请先校准对应分镜，再刷新并重新生成提示词。" />}
-      {scope === 'all_panels' && orderedPanels.length > duration && <small>视频秒数不能少于分镜数量，请增加时长。</small>}
+      {scope === 'all_panels' && <small>{uiText("以第一格作为首帧，按全部分镜描述生成一个视频，不保证逐格精确复现。")}</small>}
+      <Button loading={promptBusy} disabled={locked || promptBusy || !canGeneratePrompt || !modelId || !resolution} onClick={() => void generatePrompt()}>{uiText("生成视频提示词")}</Button>
+      <small>{scope === 'whole_image' ? uiText("识图生成提示词，按文本模型用量计费；生成后可编辑正文。") : currentSnapshot?.generationMethod === 'panel_template' ? uiText("模板编排，不额外扣积分；生成后可编辑正文。") : uiText("根据已保存的分镜描述生成提示词。")}</small>
+      {promptBusy && scope === 'whole_image' && <small>{uiText("正在识别图片，请耐心等待。网络中断后请先核查任务，避免重复计费。")}</small>}
+      {currentSnapshot && !canSubmitFrame && <Alert type="warning" message={uiText("首帧坐标缺失或无效，请先校准对应分镜，再刷新并重新生成提示词。")} />}
+      {scope === 'all_panels' && orderedPanels.length > duration && <small>{uiText("视频秒数不能少于分镜数量，请增加时长。")}</small>}
       <label htmlFor="image-to-video-prompt">{l('提示词', 'Prompt')}</label>
       <div className="image-to-video-modal__editor">
         <div className="image-to-video-modal__reference">
-          {scope === 'whole_image' ? <img src={props.imageUrl} alt="整张图片首帧" style={{ width: 72, height: 72, objectFit: 'contain' }} /> : cropBounds && <div className="image-to-video-modal__crop" style={{ aspectRatio: sourceRatio * cropBounds.width / cropBounds.height }}><img src={props.imageUrl} alt="首帧裁剪预览" onLoad={(event) => { const image = event.currentTarget; if (image.naturalHeight) setSourceRatio(image.naturalWidth / image.naturalHeight) }} style={{ width: `${100 / cropBounds.width}%`, height: `${100 / cropBounds.height}%`, maxWidth: 'none', position: 'absolute', left: `${-100 * cropBounds.x / cropBounds.width}%`, top: `${-100 * cropBounds.y / cropBounds.height}%` }} /></div>}
-          <span>{scope === 'whole_image' ? '首帧 · 整张图片' : currentSnapshot?.firstFramePanel ? `首帧 · 镜头 ${currentSnapshot.firstFramePanel.panelIndex}` : '选择分镜后生成提示词'}</span>
+          {scope === 'whole_image' ? <img src={props.imageUrl} alt={uiText("整张图片首帧")} style={{ width: 72, height: 72, objectFit: 'contain' }} /> : cropBounds && <div className="image-to-video-modal__crop" style={{ aspectRatio: sourceRatio * cropBounds.width / cropBounds.height }}><img src={props.imageUrl} alt={uiText("首帧裁剪预览")} onLoad={(event) => { const image = event.currentTarget; if (image.naturalHeight) setSourceRatio(image.naturalWidth / image.naturalHeight) }} style={{ width: `${100 / cropBounds.width}%`, height: `${100 / cropBounds.height}%`, maxWidth: 'none', position: 'absolute', left: `${-100 * cropBounds.x / cropBounds.width}%`, top: `${-100 * cropBounds.y / cropBounds.height}%` }} /></div>}
+          <span>{scope === 'whole_image' ? uiText("首帧 · 整张图片") : currentSnapshot?.firstFramePanel ? uiText("首帧 · 镜头 {0}", currentSnapshot.firstFramePanel.panelIndex) : uiText("选择分镜后生成提示词")}</span>
         </div>
         <Input.TextArea id="image-to-video-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} disabled={locked || !currentSnapshot} placeholder={l('先生成视频提示词，再编辑动作和镜头运动…', 'Generate a prompt first, then edit the action and camera movement…')} />
         <div className="image-to-video-modal__styles">
@@ -242,7 +253,7 @@ export default function ImageToVideoModal(props: Props) {
       {record && <>
         <div>{l('视频记录', 'Video record')} #{record.id} · {record.statusName || record.status}</div>
         <Progress percent={record.progress ?? 0} status={record.status === 4 ? 'exception' : record.status === 3 ? 'success' : 'active'} />
-        {record.status === 3 && record.outputUrl && <video src={record.outputUrl} controls playsInline style={{ width: '100%', maxHeight: 260 }} />}
+        {record.status === 3 && record.outputReady === true && record.outputUrl && <video src={record.outputUrl} controls playsInline style={{ width: '100%', maxHeight: 260 }} />}
         {record.status === 4 && <Alert type="error" message={record.error || l('生成失败', 'Generation failed')} />}
         {record.providerTaskId && <Button loading={busy} onClick={() => void sync()}>{l('同步结果', 'Sync result')}</Button>}
         <small>{l('关闭窗口不会取消后台任务。', 'Closing this dialog does not cancel the task.')}</small>

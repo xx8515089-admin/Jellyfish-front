@@ -21,8 +21,13 @@ export function shouldRefreshWorkflowHistory(previous: Task[] | undefined, next:
 
 /** Only explicit pre-acceptance rejections release an idempotency key; server failures remain uncertain. */
 export function isDefiniteSubmissionRejection(reason: unknown): boolean {
-  const failure = reason as { status?: number; body?: { code?: number; data?: { errorCode?: string } } }
-  return (failure?.status === 422 || failure?.status === 502)
-    && failure.body?.code === 502
-    && failure.body.data?.errorCode !== 'IDEMPOTENCY_CONFLICT'
+  const failure = reason as { status?: number; body?: { code?: number; data?: { errorCode?: string; acceptance?: string } } }
+  const data = failure?.body?.data
+  return failure?.status !== 401 && failure?.body?.code !== 401 && data?.acceptance === 'rejected'
+    && ['WORKFLOW_INVALID_REQUEST', 'WORKFLOW_REQUEST_REJECTED', 'WORKFLOW_STORAGE_NOT_READY'].includes(data.errorCode || '')
 }
+
+/** Only queued/running media may fall back to polling on old servers. */
+export const workflowShouldPoll = (item: {status:number;shouldPoll?:boolean;terminal?:boolean}) => [1,2].includes(item.status) && item.shouldPoll !== false && item.terminal !== true
+export const workflowPollDelay = (item: {pollAfterSeconds?:number}) => Number.isFinite(item.pollAfterSeconds) && item.pollAfterSeconds! > 0 ? Math.max(1000,item.pollAfterSeconds!*1000) : 3000
+export const workflowOutputReady = (item: {status:number;outputReady?:boolean;outputFileId?:unknown;outputUrl?:string|null}) => item.status===3 && item.outputReady===true && item.outputFileId!=null && !!item.outputUrl

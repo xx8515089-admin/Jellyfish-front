@@ -1,3 +1,4 @@
+import { uiText, useUiLanguage } from '../../../i18n/uiText'
 ﻿import { useEffect, useMemo, useRef } from 'react'
 import { Button, Space, notification } from 'antd'
 import type { ReactNode } from 'react'
@@ -79,6 +80,8 @@ export function useRelationTaskNotification({
   onCancel,
   onNavigate,
 }: RelationTaskNotificationOptions) {
+  useUiLanguage()
+
   const l = useBilingualText()
   const previousTaskIdRef = useRef<string | null>(null)
   const previousSettledKeyRef = useRef<string | null>(null)
@@ -134,13 +137,11 @@ export function useRelationTaskNotification({
           <Space size={8}>
             {onNavigate ? (
               <Button size="small" onClick={onNavigate}>
-                查看
-              </Button>
+                {uiText("查看")}</Button>
             ) : null}
             {onCancel && !task.cancelRequested ? (
               <Button size="small" danger onClick={onCancel}>
-                取消任务
-              </Button>
+                {uiText("取消任务")}</Button>
             ) : null}
           </Space>
         ) : undefined,

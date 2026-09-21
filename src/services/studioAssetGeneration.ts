@@ -10,6 +10,7 @@ type ApiEnvelope<T> = {
 }
 
 export type StudioAssetImageGenerateRequest = {
+  clientRequestId?: string
   id: number
   lookId: number | null
   prompt: string
@@ -514,6 +515,7 @@ export type StudioAssetLookUploadRequest = {
 }
 
 export type StudioAssetLookGenerateRequest = {
+  clientRequestId?: string
   assetId: number
   name: string
   prompt: string
@@ -2277,6 +2279,14 @@ export function parseStudioAssetImageTaskResult(
 }
 
 export const StudioAssetGenerationApi = {
+  requestDeOil(requestBody: { assetId: number; versionId: number; clientRequestId?: string }): StudioAssetImageTaskRequest<string> {
+    const request = __request<ApiEnvelope<StudioAssetImageTaskDetail>>(OpenAPI, { method: 'POST', url: '/api/v1/studio/assets/images/de-oil', body: requestBody, mediaType: 'application/json' })
+    return { cancel: () => request.cancel(), promise: request.then(response => {
+      const data=unwrapApiData<StudioAssetImageTaskDetail>(response, '图片去油提交失败')
+      if(data.id == null)throw new Error('图片去油未返回任务 ID，请查询原操作')
+      return String(data.id)
+    }) }
+  },
   requestGenerateEstimate(
     requestBody: StudioAssetGenerateEstimateRequest,
   ): StudioAssetImageTaskRequest<StudioAssetGenerateEstimateResult> {

@@ -1,3 +1,4 @@
+import { uiText } from '../../../../i18n/uiText'
 import React from 'react'
 import {
   HomeOutlined,
@@ -43,16 +44,16 @@ export function isTabKey(s: string): s is TabKey {
 export const DEFAULT_TAB: TabKey = 'dashboard'
 
 export const TAB_CONFIG: { key: TabKey; label: string; icon: React.ReactNode }[] = [
-  { key: 'dashboard', label: '仪表盘', icon: <HomeOutlined /> },
-  { key: 'chapters', label: '章节', icon: <UnorderedListOutlined /> },
-  { key: 'actors', label: '演员', icon: <UserOutlined /> },
-  { key: 'roles', label: '角色', icon: <UserOutlined /> },
-  { key: 'scenes', label: '场景', icon: <PictureOutlined /> },
-  { key: 'props', label: '道具', icon: <ScissorOutlined /> },
-  { key: 'costumes', label: '服装', icon: <ScissorOutlined /> },
-  { key: 'files', label: '文件', icon: <FileImageOutlined /> },
-  { key: 'edit', label: '剪辑', icon: <VideoCameraOutlined /> },
-  { key: 'settings', label: '设置', icon: <SettingOutlined /> },
+  { key: 'dashboard', get label() { return uiText("仪表盘") }, icon: <HomeOutlined /> },
+  { key: 'chapters', get label() { return uiText("章节") }, icon: <UnorderedListOutlined /> },
+  { key: 'actors', get label() { return uiText("演员") }, icon: <UserOutlined /> },
+  { key: 'roles', get label() { return uiText("角色") }, icon: <UserOutlined /> },
+  { key: 'scenes', get label() { return uiText("场景") }, icon: <PictureOutlined /> },
+  { key: 'props', get label() { return uiText("道具") }, icon: <ScissorOutlined /> },
+  { key: 'costumes', get label() { return uiText("服装") }, icon: <ScissorOutlined /> },
+  { key: 'files', get label() { return uiText("文件") }, icon: <FileImageOutlined /> },
+  { key: 'edit', get label() { return uiText("剪辑") }, icon: <VideoCameraOutlined /> },
+  { key: 'settings', get label() { return uiText("设置") }, icon: <SettingOutlined /> },
 ]
 
 export const chapterStatusMap: Record<ChapterStatus, { color: string; text: string }> = {

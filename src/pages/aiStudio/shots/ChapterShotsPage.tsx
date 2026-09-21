@@ -1,3 +1,4 @@
+import { uiText, useUiLanguage } from '../../../i18n/uiText'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Button,
@@ -123,6 +124,8 @@ function getShotPreparationState(shot: ShotRead, runtime?: ShotRuntimeState): Sh
 }
 
 export function ChapterShotsPage() {
+  useUiLanguage()
+
   const l = useBilingualText()
   const taskCopy = TASK_COPY.chapterDivision
   const navigate = useNavigate()
@@ -954,7 +957,7 @@ export function ChapterShotsPage() {
                     key: 'matched',
                     render: (_, row) => (
                       <div className="text-xs text-gray-600">
-                        <div>角色：{row.matched_characters.join(bilingualText('、', ', ')) || '—'}</div>
+                        <div>{uiText("角色：")}{row.matched_characters.join(bilingualText('、', ', ')) || '—'}</div>
                         <div>{l('场景：', 'Scene: ')}{row.matched_scene || '—'}</div>
                         <div>{l('服装：', 'Costumes: ')}{row.matched_costumes.join(l('、', ', ')) || '—'}</div>
                         <div>{l('道具：', 'Props: ')}{row.matched_props.join(l('、', ', ')) || '—'}</div>

@@ -49,21 +49,47 @@ test('failed preview never downloads and retains detailed business problems', as
   assert.equal(calls.length, 1); assert.equal(saved.length, 0)
 })
 test('freezes both explicitly selected image and default video before downloading UTF-8 ZIP', async () => {
-  const preview = { canExport: true, totalBytes: 5, fileName: 'fallback.zip', items: [{ segmentId: 11, generationId: 112, mediaType: 'image' }, { segmentId: 12, generationId: 112, mediaType: 'video' }, { segmentId: 12, generationId: 99, mediaType: 'audio' }] }
-  const { api, calls, saved } = setup([json({ code: 200, data: preview }), new Response('zip', { headers: { 'Content-Type': 'application/zip', 'Content-Disposition': "attachment; filename*=UTF-8''%E7%B4%A0%E6%9D%90.zip" } })])
+  const preview = { canExport: true, snapshotToken: 'snapshot-original', totalBytes: 5, fileName: 'fallback.zip', items: [{ segmentId: 11, generationId: 112, mediaType: 'image' }, { segmentId: 12, generationId: 112, mediaType: 'video' }, { segmentId: 12, generationId: 99, mediaType: 'audio' }] }
+  const { api, calls, saved } = setup([json({ code: 200, data: preview }), new Response('PK\u0003\u0004zip', { headers: { 'Content-Type': 'application/zip', 'Content-Disposition': "attachment; filename*=UTF-8''%E7%B4%A0%E6%9D%90.zip" } })])
   await api.downloadStoryboardZip({ ...base, content: 'mixed' }, new AbortController().signal, () => {})
-  assert.deepEqual(plain(calls[1].body.mediaSelections), preview.items.slice(0, 2))
+  assert.equal(calls[1].body.mediaSelections, undefined)
+  assert.deepEqual(calls[1].body, {...calls[0].body, snapshotToken: 'snapshot-original'})
   assert.equal(calls[0].url, '/jellyfish/api/v1/studio/storyboards/exports/preview')
   assert.equal(calls[0].headers.Authorization, 'token')
   assert.deepEqual(saved, ['素材.zip'])
 })
 test('ZIP business JSON is never saved as a file', async () => {
-  const { api, saved } = setup([json({ code: 200, data: { canExport: true, totalBytes: 5, items: [] } }), json({ code: 502, message: '所选图片失效' }, 502)])
+  const { api, saved } = setup([json({ code: 200, data: { canExport: true, snapshotToken: 'snapshot-original', totalBytes: 5, items: [] } }), json({ code: 502, message: '所选图片失效' }, 502)])
   await assert.rejects(api.downloadStoryboardZip(base, new AbortController().signal, () => {}), /所选图片失效/)
   assert.equal(saved.length, 0)
 })
 test('oversized export stops before requesting ZIP', async () => {
-  const { api, calls } = setup([json({ code: 200, data: { canExport: true, totalBytes: 300 * 1024 * 1024 } })])
+  const { api, calls } = setup([json({ code: 200, data: { canExport: true, snapshotToken: 'snapshot-original', totalBytes: 300 * 1024 * 1024 } })])
   await assert.rejects(api.downloadStoryboardZip(base, new AbortController().signal, () => {}), /256 MiB/)
   assert.equal(calls.length, 1)
+})
+
+test('missing snapshot token stops download without silently using current versions', async () => {
+ const { api, calls, saved }=setup([json({code:200,data:{canExport:true,totalBytes:5,items:[]}})])
+ await assert.rejects(api.downloadStoryboardZip(base,new AbortController().signal,()=>{}),/快照/)
+ assert.equal(calls.length,1);assert.equal(saved.length,0)
+})
+test('UI edits during preview cannot alter the frozen selection order or original parameters', async () => {
+ const original={...base,mediaSelections:[{segmentId:12,generationId:88,mediaType:'video'},{segmentId:11,generationId:77,mediaType:'image'}]}
+ const frozen=structuredClone(original)
+ const {api,calls}=setup([json({code:200,data:{canExport:true,snapshotToken:'original-token',totalBytes:6,items:[{segmentId:999,generationId:999}]}}),new Response('PK\u0003\u0004ok',{headers:{'Content-Type':'application/zip'}})])
+ await api.downloadStoryboardZip(original,new AbortController().signal,()=>{original.mediaSelections.reverse();original.content='audio'})
+ assert.deepEqual(calls[1].body,{...frozen,snapshotToken:'original-token'})
+})
+test('truncated or invalid ZIP is never saved', async () => {
+ for(const [body,headers] of [['PK\u0003\u0004short',{'Content-Length':'99'}],['<html>bad</html>',{}]]) {
+  const {api,saved}=setup([json({code:200,data:{canExport:true,snapshotToken:'token',totalBytes:5}}),new Response(body,{headers:{'Content-Type':'application/zip',...headers}})])
+  await assert.rejects(api.downloadStoryboardZip(base,new AbortController().signal,()=>{}),/不完整|无效/)
+  assert.equal(saved.length,0)
+ }
+})
+test('snapshot conflict preserves structured error and does not retry without a token', async () => {
+ const {api,calls,saved}=setup([json({code:200,data:{canExport:true,snapshotToken:'token',totalBytes:5}}),json({code:502,message:'快照参数不一致',data:{errorCode:'EXPORT_SNAPSHOT_CONFLICT'}},409)])
+ await assert.rejects(api.downloadStoryboardZip(base,new AbortController().signal,()=>{}),error=>error.errorCode==='EXPORT_SNAPSHOT_CONFLICT')
+ assert.equal(calls.length,2);assert.equal(saved.length,0)
 })

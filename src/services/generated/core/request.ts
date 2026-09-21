@@ -1,3 +1,4 @@
+import { submitWorkflow, workflowOperations, workflowAccount } from '../../workflowSubmissions';
 /* generated using openapi-typescript-codegen -- do not edit */
 /* istanbul ignore file */
 /* tslint:disable */
@@ -291,7 +292,7 @@ export const catchErrorCodes = (options: ApiRequestOptions, result: ApiResult): 
  * @returns CancelablePromise<T>
  * @throws ApiError
  */
-export const request = <T>(config: OpenAPIConfig, options: ApiRequestOptions): CancelablePromise<T> => {
+export const rawRequest = <T>(config: OpenAPIConfig, options: ApiRequestOptions): CancelablePromise<T> => {
     return new CancelablePromise(async (resolve, reject, onCancel) => {
         try {
             const url = getUrl(config, options);
@@ -321,3 +322,24 @@ export const request = <T>(config: OpenAPIConfig, options: ApiRequestOptions): C
         }
     });
 };
+
+/** The eight reliability operations persist identity before sending; ordinary media keeps its own protocol. */
+export const request = <T>(config: OpenAPIConfig, options: ApiRequestOptions): CancelablePromise<T> => {
+ if(options.method !== 'POST' || !workflowOperations[options.url]) return rawRequest<T>(config, options)
+ return new CancelablePromise(async (resolve,reject,onCancel)=>{
+  let pending: CancelablePromise<T> | undefined
+  onCancel(()=>pending?.cancel())
+  try {
+   const owner=workflowAccount()
+   options={...options,body:JSON.parse(JSON.stringify(options.body))}
+   const headers=await getHeaders(config,options)
+   if(owner!==workflowAccount())throw new Error('账号已变化，已停止提交')
+   if(onCancel.isCancelled)return
+   const result=await submitWorkflow(options,headers.get('language') || 'en',next=>{
+    if(onCancel.isCancelled)throw new Error('已取消等待，原操作记录已保留')
+    pending=rawRequest<T>(config,next);return pending
+   })
+   resolve(result)
+  }catch(error){reject(error)}
+ })
+}

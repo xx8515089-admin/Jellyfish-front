@@ -2,7 +2,9 @@ import { OpenAPI } from './generated'
 import { request } from './generated/core/request'
 
 export type DubbingId = string | number
+export type DubbingInput = { characterAssetId: DubbingId; voiceId: number; languageCode: string; dialogueText: string; emotionPrompt: string | null; volume: number; speechRate: number }
 export type DubbingGeneration = {
+  taskId?: DubbingId; outputFileId?: DubbingId | null; terminal?: boolean; shouldPoll?: boolean; pollAfterSeconds?: number; outputReady?: boolean; input?: DubbingInput
   id: DubbingId
   status: number
   outputUrl?: string | null
@@ -48,7 +50,7 @@ export const StudioDubbingApi = {
   addLine: (segmentId: DubbingId, fields: DubbingLineFields) => call<DubbingLine>('lines', 'POST', { segmentId, ...fields }),
   updateLine: (id: DubbingId, fields: DubbingLineFields) => call<DubbingLine>('lines/update', 'POST', { id, ...fields }),
   deleteLine: (id: DubbingId) => call<unknown>('lines/delete', 'POST', { id }),
-  generate: (lineId: DubbingId, outputFormat = 'mp3', modelId?: number) => call<DubbingGeneration>('generate', 'POST', { lineId, outputFormat, ...(modelId === undefined ? {} : { modelId }) }),
+  generate: (lineId: DubbingId, input: DubbingInput, outputFormat = 'mp3', modelId?: number) => call<DubbingGeneration>('generate', 'POST', { lineId, input, outputFormat, ...(modelId === undefined ? {} : { modelId }) }),
   detail: (id: DubbingId) => call<DubbingGeneration>('detail', 'GET', { id }),
   history: (lineId: DubbingId) => call<DubbingGeneration[]>('history', 'GET', { lineId }),
 }

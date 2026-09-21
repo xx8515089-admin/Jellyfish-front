@@ -63,6 +63,8 @@ import WorkflowThumbnail from './WorkflowThumbnail'
 import ImageToVideoModal from './ImageToVideoModal'
 import StudioSelect from './StudioSelect'
 import StoryboardDubbingPanel from './StoryboardDubbingPanel'
+import StoryboardVideoBatchModal from './StoryboardVideoBatchModal'
+import { videoBatchErrorMessage } from '../../../services/storyboardVideoBatchErrors'
 import { schedulePollWhenVisible, type PollTimerCancel } from './assetBatchGenerationPolling'
 import { downloadMediaFile, normalizeMediaFileId, resolveAssetUrl } from '../assets/utils'
 import {
@@ -80,6 +82,8 @@ type EpisodeDraft = {
 }
 
 type ProjectClipEditingStepProps = {
+  scriptImportId?: string | number | null
+  episodeId?: string | number | null
   episodes: EpisodeDraft[]
   ratio: string
   styleName: string
@@ -1112,6 +1116,8 @@ const splitIntoClips = (episodes: EpisodeDraft[]): ClipDraft[] => {
 }
 
 export default function ProjectClipEditingStep({
+  scriptImportId,
+  episodeId,
   episodes,
   ratio,
   styleName,
@@ -1189,6 +1195,7 @@ export default function ProjectClipEditingStep({
   )
   const [videoDuration, setVideoDuration] = useState(DEFAULT_VIDEO_DURATION)
   const [videoSpecOpen, setVideoSpecOpen] = useState(false)
+  const [videoBatchOpen, setVideoBatchOpen] = useState(false)
   const [videoVoiceTipVisible, setVideoVoiceTipVisible] = useState(true)
   const [referenceAddMenuOpen, setReferenceAddMenuOpen] = useState(false)
   const [characterReferenceModalOpen, setCharacterReferenceModalOpen] = useState(false)
@@ -1393,7 +1400,7 @@ export default function ProjectClipEditingStep({
     .map((item) => Number(item.fileId)).filter((id) => Number.isSafeInteger(id) && id > 0))], [activeSegmentDetail])
   const activeMediaHistoryState = activeClip ? mediaHistoryByClipId[activeClip.id] : undefined
   const generatingTask = (activeClip ? workflow.tasks[activeClip.id] ?? [] : [])
-    .filter((item) => item.mediaType === mode && (item.status === 1 || item.status === 2 || (item.status === 3 && (!item.outputFileId || !item.outputUrl))))
+    .filter((item) => item.mediaType === mode && ([1,2].includes(item.status) && item.shouldPoll !== false))
     .sort((a, b) => b.id - a.id)[0]
   const generationProgress = typeof generatingTask?.progress === 'number' && Number.isFinite(generatingTask.progress)
     ? Math.max(0, Math.min(100, Math.round(generatingTask.progress))) : undefined
@@ -1465,7 +1472,7 @@ export default function ProjectClipEditingStep({
       ?? activeClip.prompt
     : ''
   const activeHistoryItems = useMemo(() => (activeMediaHistoryState?.items ?? [])
-    .filter((item) => item.status === 3 && item.outputReady !== false && item.outputFileId != null && getStoryboardMediaOutputUrl(item)), [activeMediaHistoryState?.items])
+    .filter((item) => item.status === 3 && item.outputReady === true && item.outputFileId != null && getStoryboardMediaOutputUrl(item)), [activeMediaHistoryState?.items])
   const storedHistoryIndex = activeClip ? historyIndexByClip[activeClip.id] ?? 0 : 0
   const activeHistoryIndex = Math.min(Math.max(storedHistoryIndex, 0), Math.max(0, activeHistoryItems.length - 1))
   const activeHistoryItem = activeHistoryItems[activeHistoryIndex]
@@ -2441,8 +2448,8 @@ export default function ProjectClipEditingStep({
     if (!activeClip || !workflow.page) return
     const clipId = activeClip.id
     const items = workflow.page.items.map((item) => workflowHistoryItem(item))
-    const previousItems = (mediaHistoryByClipIdRef.current[clipId]?.items ?? []).filter((item) => item.status === 3 && item.outputReady !== false && item.outputFileId != null && getStoryboardMediaOutputUrl(item))
-    const visibleItems = items.filter((item) => item.status === 3 && item.outputReady !== false && item.outputFileId != null && getStoryboardMediaOutputUrl(item))
+    const previousItems = (mediaHistoryByClipIdRef.current[clipId]?.items ?? []).filter((item) => item.status === 3 && item.outputReady === true && item.outputFileId != null && getStoryboardMediaOutputUrl(item))
+    const visibleItems = items.filter((item) => item.status === 3 && item.outputReady === true && item.outputFileId != null && getStoryboardMediaOutputUrl(item))
     const completed = workflow.completedMedia?.segmentId === clipId && appliedCompletion.current !== workflow.completedMedia
       && !historyPreviewTasksRef.current[clipId]?.includes(workflow.completedMedia.itemKey) ? workflow.completedMedia : undefined
     setHistoryIndexByClip((current) => {
@@ -3337,7 +3344,7 @@ export default function ProjectClipEditingStep({
       })
       .catch((error) => {
         if (segmentDeleteRequestRefs.current.get(clip.id) !== request) return
-        message.error(getApiErrorMessage(error, l('片段删除失败，请重试', 'Failed to delete clip; retry')))
+        message.error(videoBatchErrorMessage(error, l('片段删除失败，请重试', 'Failed to delete clip; retry')))
       })
       .finally(() => {
         if (segmentDeleteRequestRefs.current.get(clip.id) !== request) return
@@ -3477,7 +3484,7 @@ export default function ProjectClipEditingStep({
         if (segmentMergeRequestRef.current !== request) return
         setSegmentDetailRefreshToken((current) => current + 1)
         onStoryboardEditorRefresh?.()
-        message.error(getApiErrorMessage(error, l('片段向上合并失败，请重试', 'Failed to merge segment upward; retry')))
+        message.error(videoBatchErrorMessage(error, l('片段向上合并失败，请重试', 'Failed to merge segment upward; retry')))
       })
       .finally(() => {
         if (segmentMergeRequestRef.current !== request) return
@@ -3569,7 +3576,7 @@ export default function ProjectClipEditingStep({
         } catch (error) {
           if (segmentInsertRequestRef.current !== request) return
           onStoryboardEditorRefresh?.()
-          message.error(getApiErrorMessage(error, l('片段添加失败，请重试', 'Failed to add clip; retry')))
+          message.error(videoBatchErrorMessage(error, l('片段添加失败，请重试', 'Failed to add clip; retry')))
         } finally {
           if (segmentInsertRequestRef.current === request) {
             segmentInsertRequestRef.current = null
@@ -3735,9 +3742,6 @@ export default function ProjectClipEditingStep({
           <div>
             <MenuUnfoldOutlined />
             <strong>{episodes[0]?.title || l('第1集', 'Episode 1')}</strong>
-            <span>{l('本集已消耗', 'Episode cost')}</span>
-            <QuestionCircleFilled className="project-clip-editor__help-icon" />
-            <span className="project-clip-editor__episode-cost"><CreditIcon />{clips.length * 6}</span>
           </div>
         </header>
         <div className="project-clip-editor__clip-list">
@@ -3862,8 +3866,9 @@ export default function ProjectClipEditingStep({
           </div>
         </div>
         <footer className="project-clip-editor__batch-footer">
-          <button type="button" onClick={() => message.info(l('批量生成功能待接入', 'Batch generation is not connected yet'))}>
-            <CreditIcon />
+          <button type="button" disabled={!hasRemoteInitialClips || !scriptImportId || !episodeId || Boolean(referenceAddingSource) || deletingReferenceKeys.length > 0 || referenceDropBusy}
+            title={referenceAddingSource || deletingReferenceKeys.length > 0 || referenceDropBusy ? l('请等待参考素材保存完成', 'Wait for references to finish saving') : undefined}
+            onClick={() => setVideoBatchOpen(true)}>
             <span>{l('批量生成', 'Batch generate')}</span>
           </button>
         </footer>
@@ -4048,7 +4053,7 @@ export default function ProjectClipEditingStep({
                           onHistorySelect?.(activeClip.id, item)
                         }}
                       >
-                        <WorkflowThumbnail mediaType={item.mediaType} id={item.id} ready={item.status === 3} />
+                        <WorkflowThumbnail mediaType={item.mediaType} id={item.id} ready={item.status === 3 && item.outputReady === true} />
                       </button>
                     )
                   })
@@ -5032,6 +5037,27 @@ export default function ProjectClipEditingStep({
     <Modal open={Boolean(referenceVideoPreview)} title={referenceVideoPreview?.name} footer={null} centered width={800} destroyOnClose onCancel={() => setReferenceVideoPreview(null)}>
       {referenceVideoPreview && <video key={referenceVideoPreview.url} src={referenceVideoPreview.url} controls autoPlay playsInline style={{ width: '100%', maxHeight: '75vh', display: 'block', background: '#111', borderRadius: 8 }} />}
     </Modal>
+    {scriptImportId !== null && scriptImportId !== undefined && episodeId !== null && episodeId !== undefined && <StoryboardVideoBatchModal
+      key={`${scriptImportId}:${episodeId}`}
+      open={videoBatchOpen}
+      onClose={() => setVideoBatchOpen(false)}
+      scriptImportId={scriptImportId}
+      episodeId={episodeId}
+      ratio={ratio}
+      promptDrafts={promptByClip}
+      onPromptChange={(segmentId, value) => {
+        manuallyEditedPromptClipIdsRef.current.add(segmentId)
+        setPromptByClip((current) => ({ ...current, [segmentId]: value }))
+      }}
+      visualStyleOptions={visualStyleOptions}
+      toneStyleOptions={toneStyleOptions}
+      onBatchChange={(batch) => {
+        if (batch.items?.some((item) => String(item.segmentId) === activeClip.id)) {
+          setMediaHistoryRefreshToken((value) => value + 1)
+          setSegmentDetailRefreshToken((value) => value + 1)
+        }
+      }}
+    />}
     <ImageViewer
       open={imageViewerOpen && hasActiveImage}
       imageUrl={activeImageUrl}

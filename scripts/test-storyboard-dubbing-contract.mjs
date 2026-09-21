@@ -42,12 +42,14 @@ test('line edits preserve inherited values, and deleting the final line does not
   assert.equal(calls.length, 2)
 })
 
-test('generation sends only line/model/format and reads detail and history separately', async () => {
+const input = {characterAssetId: 102, voiceId: 1901, languageCode: 'en-US', dialogueText: 'confirmed text', emotionPrompt: null, volume: 1, speechRate: 1}
+
+test('generation sends complete frozen input/model/format and reads detail and history separately', async () => {
   const { api, calls } = setup({ id: 72, status: 1 })
-  const generation = await api.generate('8', 'wav', 4)
+  const generation = await api.generate('8', input, 'wav', 4)
   await api.detail(generation.id)
   await api.history('8')
-  assert.deepEqual(calls[0].body, { lineId: '8', modelId: 4, outputFormat: 'wav' })
+  assert.deepEqual(calls[0].body, { lineId: '8', input, modelId: 4, outputFormat: 'wav' })
   assert.deepEqual(calls[1].query, { id: 72 })
   assert.deepEqual(calls[2].query, { lineId: '8' })
 })
@@ -59,8 +61,8 @@ test('business errors reject instead of presenting a successful mutation', async
 
 test('default voice generation omits modelId and polls the returned generation ID', async () => {
   const { api, calls } = setup({ id: 456, status: 1 })
-  const generation = await api.generate(123)
+  const generation = await api.generate(123, input)
   await api.detail(generation.id)
-  assert.deepEqual(calls[0].body, { lineId: 123, outputFormat: 'mp3' })
+  assert.deepEqual(calls[0].body, { lineId: 123, input, outputFormat: 'mp3' })
   assert.deepEqual(calls[1].query, { id: 456 })
 })

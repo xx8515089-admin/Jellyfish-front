@@ -1,39 +1,40 @@
+import { uiText } from '../../../../i18n/uiText'
 import { Button, Input, InputNumber, Select, Tag } from 'antd'
 import { SaveOutlined } from '@ant-design/icons'
 import type { ActionBeatPhaseRead, CameraAngle, CameraMovement, CameraShotType } from '../../../../services/generated'
 import { useBilingualText } from '../../../../i18n/useBilingualText'
 
 const CAMERA_SHOT_OPTIONS: Array<{ value: CameraShotType; label: string; labelEn: string }> = [
-  { value: 'ECU', label: '大特写', labelEn: 'Extreme close-up' },
-  { value: 'CU', label: '特写', labelEn: 'Close-up' },
-  { value: 'MCU', label: '中近景', labelEn: 'Medium close-up' },
-  { value: 'MS', label: '中景', labelEn: 'Medium shot' },
-  { value: 'MLS', label: '中远景', labelEn: 'Medium long shot' },
-  { value: 'LS', label: '远景', labelEn: 'Long shot' },
-  { value: 'ELS', label: '大远景', labelEn: 'Extreme long shot' },
+  { value: 'ECU', get label() { return uiText("大特写") }, labelEn: 'Extreme close-up' },
+  { value: 'CU', get label() { return uiText("特写") }, labelEn: 'Close-up' },
+  { value: 'MCU', get label() { return uiText("中近景") }, labelEn: 'Medium close-up' },
+  { value: 'MS', get label() { return uiText("中景") }, labelEn: 'Medium shot' },
+  { value: 'MLS', get label() { return uiText("中远景") }, labelEn: 'Medium long shot' },
+  { value: 'LS', get label() { return uiText("远景") }, labelEn: 'Long shot' },
+  { value: 'ELS', get label() { return uiText("大远景") }, labelEn: 'Extreme long shot' },
 ]
 
 const CAMERA_ANGLE_OPTIONS: Array<{ value: CameraAngle; label: string; labelEn: string }> = [
-  { value: 'EYE_LEVEL', label: '平视', labelEn: 'Eye level' },
-  { value: 'HIGH_ANGLE', label: '高角度', labelEn: 'High angle' },
-  { value: 'LOW_ANGLE', label: '低角度', labelEn: 'Low angle' },
-  { value: 'BIRD_EYE', label: '鸟瞰', labelEn: 'Birds-eye view' },
-  { value: 'DUTCH', label: '荷兰式', labelEn: 'Dutch angle' },
-  { value: 'OVER_SHOULDER', label: '过肩', labelEn: 'Over-the-shoulder' },
+  { value: 'EYE_LEVEL', get label() { return uiText("平视") }, labelEn: 'Eye level' },
+  { value: 'HIGH_ANGLE', get label() { return uiText("高角度") }, labelEn: 'High angle' },
+  { value: 'LOW_ANGLE', get label() { return uiText("低角度") }, labelEn: 'Low angle' },
+  { value: 'BIRD_EYE', get label() { return uiText("鸟瞰") }, labelEn: 'Birds-eye view' },
+  { value: 'DUTCH', get label() { return uiText("荷兰式") }, labelEn: 'Dutch angle' },
+  { value: 'OVER_SHOULDER', get label() { return uiText("过肩") }, labelEn: 'Over-the-shoulder' },
 ]
 
 const CAMERA_MOVEMENT_OPTIONS: Array<{ value: CameraMovement; label: string; labelEn: string }> = [
-  { value: 'STATIC', label: '固定镜头', labelEn: 'Static' },
-  { value: 'PAN', label: '平移', labelEn: 'Pan' },
-  { value: 'TILT', label: '俯仰', labelEn: 'Tilt' },
-  { value: 'DOLLY_IN', label: '推近', labelEn: 'Dolly in' },
-  { value: 'DOLLY_OUT', label: '拉远', labelEn: 'Dolly out' },
-  { value: 'TRACK', label: '跟拍', labelEn: 'Tracking' },
-  { value: 'CRANE', label: '摇臂', labelEn: 'Crane' },
-  { value: 'HANDHELD', label: '手持', labelEn: 'Handheld' },
-  { value: 'STEADICAM', label: '稳定器', labelEn: 'Steadicam' },
-  { value: 'ZOOM_IN', label: '变焦推近', labelEn: 'Zoom in' },
-  { value: 'ZOOM_OUT', label: '变焦拉远', labelEn: 'Zoom out' },
+  { value: 'STATIC', get label() { return uiText("固定镜头") }, labelEn: 'Static' },
+  { value: 'PAN', get label() { return uiText("平移") }, labelEn: 'Pan' },
+  { value: 'TILT', get label() { return uiText("俯仰") }, labelEn: 'Tilt' },
+  { value: 'DOLLY_IN', get label() { return uiText("推近") }, labelEn: 'Dolly in' },
+  { value: 'DOLLY_OUT', get label() { return uiText("拉远") }, labelEn: 'Dolly out' },
+  { value: 'TRACK', get label() { return uiText("跟拍") }, labelEn: 'Tracking' },
+  { value: 'CRANE', get label() { return uiText("摇臂") }, labelEn: 'Crane' },
+  { value: 'HANDHELD', get label() { return uiText("手持") }, labelEn: 'Handheld' },
+  { value: 'STEADICAM', get label() { return uiText("稳定器") }, labelEn: 'Steadicam' },
+  { value: 'ZOOM_IN', get label() { return uiText("变焦推近") }, labelEn: 'Zoom in' },
+  { value: 'ZOOM_OUT', get label() { return uiText("变焦拉远") }, labelEn: 'Zoom out' },
 ]
 
 type ShotSemanticDraft = {

@@ -1,3 +1,4 @@
+import { uiText, useUiLanguage } from '../../../i18n/uiText'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Badge,
@@ -423,36 +424,36 @@ function toUIChapter(c: ChapterRead): Chapter {
 }
 
 const CAMERA_SHOT_OPTIONS: { value: CameraShotType; label: string; labelEn: string }[] = [
-  { value: 'ECU', label: '极特写', labelEn: 'Extreme close-up' },
-  { value: 'CU', label: '特写', labelEn: 'Close-up' },
-  { value: 'MCU', label: '中近景', labelEn: 'Medium close-up' },
-  { value: 'MS', label: '中景', labelEn: 'Medium shot' },
-  { value: 'MLS', label: '中远景', labelEn: 'Medium long shot' },
-  { value: 'LS', label: '远景', labelEn: 'Long shot' },
-  { value: 'ELS', label: '大全景', labelEn: 'Extreme long shot' },
+  { value: 'ECU', get label() { return uiText("极特写") }, labelEn: 'Extreme close-up' },
+  { value: 'CU', get label() { return uiText("特写") }, labelEn: 'Close-up' },
+  { value: 'MCU', get label() { return uiText("中近景") }, labelEn: 'Medium close-up' },
+  { value: 'MS', get label() { return uiText("中景") }, labelEn: 'Medium shot' },
+  { value: 'MLS', get label() { return uiText("中远景") }, labelEn: 'Medium long shot' },
+  { value: 'LS', get label() { return uiText("远景") }, labelEn: 'Long shot' },
+  { value: 'ELS', get label() { return uiText("大全景") }, labelEn: 'Extreme long shot' },
 ]
 
 const CAMERA_ANGLE_OPTIONS: { value: CameraAngle; label: string; labelEn: string }[] = [
-  { value: 'EYE_LEVEL', label: '平视', labelEn: 'Eye level' },
-  { value: 'HIGH_ANGLE', label: '俯视', labelEn: 'High angle' },
-  { value: 'LOW_ANGLE', label: '仰视', labelEn: 'Low angle' },
-  { value: 'BIRD_EYE', label: '鸟瞰', labelEn: "Bird's-eye view" },
-  { value: 'DUTCH', label: '倾斜', labelEn: 'Dutch angle' },
-  { value: 'OVER_SHOULDER', label: '越肩', labelEn: 'Over-the-shoulder' },
+  { value: 'EYE_LEVEL', get label() { return uiText("平视") }, labelEn: 'Eye level' },
+  { value: 'HIGH_ANGLE', get label() { return uiText("俯视") }, labelEn: 'High angle' },
+  { value: 'LOW_ANGLE', get label() { return uiText("仰视") }, labelEn: 'Low angle' },
+  { value: 'BIRD_EYE', get label() { return uiText("鸟瞰") }, labelEn: "Bird's-eye view" },
+  { value: 'DUTCH', get label() { return uiText("倾斜") }, labelEn: 'Dutch angle' },
+  { value: 'OVER_SHOULDER', get label() { return uiText("越肩") }, labelEn: 'Over-the-shoulder' },
 ]
 
 const CAMERA_MOVEMENT_OPTIONS: { value: CameraMovement; label: string; labelEn: string }[] = [
-  { value: 'STATIC', label: '固定', labelEn: 'Static' },
-  { value: 'PAN', label: '摇镜', labelEn: 'Pan' },
-  { value: 'TILT', label: '俯仰', labelEn: 'Tilt' },
-  { value: 'DOLLY_IN', label: '推进', labelEn: 'Dolly in' },
-  { value: 'DOLLY_OUT', label: '拉出', labelEn: 'Dolly out' },
-  { value: 'TRACK', label: '跟拍', labelEn: 'Tracking' },
-  { value: 'CRANE', label: '升降', labelEn: 'Crane' },
-  { value: 'HANDHELD', label: '手持', labelEn: 'Handheld' },
-  { value: 'STEADICAM', label: '稳定器', labelEn: 'Steadicam' },
-  { value: 'ZOOM_IN', label: '变焦推', labelEn: 'Zoom in' },
-  { value: 'ZOOM_OUT', label: '变焦拉', labelEn: 'Zoom out' },
+  { value: 'STATIC', get label() { return uiText("固定") }, labelEn: 'Static' },
+  { value: 'PAN', get label() { return uiText("摇镜") }, labelEn: 'Pan' },
+  { value: 'TILT', get label() { return uiText("俯仰") }, labelEn: 'Tilt' },
+  { value: 'DOLLY_IN', get label() { return uiText("推进") }, labelEn: 'Dolly in' },
+  { value: 'DOLLY_OUT', get label() { return uiText("拉出") }, labelEn: 'Dolly out' },
+  { value: 'TRACK', get label() { return uiText("跟拍") }, labelEn: 'Tracking' },
+  { value: 'CRANE', get label() { return uiText("升降") }, labelEn: 'Crane' },
+  { value: 'HANDHELD', get label() { return uiText("手持") }, labelEn: 'Handheld' },
+  { value: 'STEADICAM', get label() { return uiText("稳定器") }, labelEn: 'Steadicam' },
+  { value: 'ZOOM_IN', get label() { return uiText("变焦推") }, labelEn: 'Zoom in' },
+  { value: 'ZOOM_OUT', get label() { return uiText("变焦拉") }, labelEn: 'Zoom out' },
 ]
 
 function useLocalStoragePrefs() {
@@ -2961,6 +2962,8 @@ function Inspector(props: {
   /** 下拉展开时拉取最新分镜帧图，用于「参考」关键帧类型选项动态更新 */
   onRefreshShotFrameImages?: () => Promise<void>
 }) {
+  useUiLanguage()
+
   const l = useBilingualText()
   const {
     projectId,
@@ -5466,7 +5469,7 @@ function Inspector(props: {
                           onChange={(e) => setAudioMode(e.target.value)}
                           options={[
                             { value: 'none', label: l('无', 'None') },
-                            { value: 'prompt', label: '提示词' },
+                            { value: 'prompt', label: uiText("提示词") },
                             { value: 'upload', label: l('上传音频', 'Upload audio') },
                           ]}
                         />
@@ -5649,7 +5652,7 @@ function Inspector(props: {
         />
 
         <Modal
-          title={`${frameLabel[keyframePromptPreviewFrameType]}图片生成提示词预览`}
+          title={uiText("{0}图片生成提示词预览", frameLabel[keyframePromptPreviewFrameType])}
           open={keyframePromptPreviewOpen}
           onCancel={() => {
             if (keyframePromptActionLoading) return
@@ -5817,7 +5820,7 @@ function Inspector(props: {
                     </div>
                   </div>
                   <Space size="small">
-                    <Tag color={hasBasePrompt ? 'blue' : 'default'}>{hasBasePrompt ? '可编辑' : '未生成'}</Tag>
+                    <Tag color={hasBasePrompt ? 'blue' : 'default'}>{hasBasePrompt ? uiText("可编辑") : uiText("未生成")}</Tag>
                     <Button
                       size="small"
                       type={hasBasePrompt ? 'default' : 'primary'}
@@ -5986,7 +5989,7 @@ function Inspector(props: {
                             type="text"
                             onClick={() => setKeyframePromptDebugCollapsed((prev) => !prev)}
                           >
-                            {keyframePromptDebugCollapsed ? '展开细节' : '收起细节'}
+                            {keyframePromptDebugCollapsed ? uiText("展开细节") : uiText("收起细节")}
                           </Button>
                         </Space>
                       </div>
@@ -6205,15 +6208,15 @@ function Inspector(props: {
                           </div>
                         </div>
                         <Space size="small" wrap>
-                          <Tag color="green">{`保留 ${keyframePromptSelectedGuidance.length}`}</Tag>
-                          <Tag color="gold">{`压缩 ${keyframePromptDroppedGuidance.length}`}</Tag>
+                          <Tag color="green">{uiText("保留 {0}", keyframePromptSelectedGuidance.length)}</Tag>
+                          <Tag color="gold">{uiText("压缩 {0}", keyframePromptDroppedGuidance.length)}</Tag>
                           {(keyframePromptSelectedGuidance.length > 2 || keyframePromptDroppedGuidance.length > 0) ? (
                             <Button
                               size="small"
                               type="text"
                               onClick={() => setKeyframePromptDecisionCollapsed((prev) => !prev)}
                             >
-                              {keyframePromptDecisionCollapsed ? '查看取舍' : '收起取舍'}
+                              {keyframePromptDecisionCollapsed ? uiText("查看取舍") : uiText("收起取舍")}
                             </Button>
                           ) : null}
                         </Space>
@@ -6244,7 +6247,7 @@ function Inspector(props: {
                                 </Tooltip>
                               ))}
                               {keyframePromptDecisionCollapsed && keyframePromptSelectedGuidanceDetails.length > 2 ? (
-                                <Tag>{`+${keyframePromptSelectedGuidanceDetails.length - 2} 条`}</Tag>
+                                <Tag>{uiText("+{0} 条", keyframePromptSelectedGuidanceDetails.length - 2)}</Tag>
                               ) : null}
                             </div>
                           ) : (
@@ -6256,8 +6259,7 @@ function Inspector(props: {
                           {keyframePromptDroppedGuidance.length > 0 ? (
                             keyframePromptDecisionCollapsed ? (
                               <div className="mt-2 text-amber-700">
-                                当前有 {keyframePromptDroppedGuidance.length} 条 guidance 被压缩，展开后可查看具体取舍原因。
-                              </div>
+                                {uiText("当前有") + " "}{keyframePromptDroppedGuidance.length} {uiText("条 guidance 被压缩，展开后可查看具体取舍原因。")}</div>
                             ) : (
                               <div className="mt-2 flex flex-wrap gap-2">
                                 {keyframePromptVisibleDroppedGuidanceDetails.map((item) => (

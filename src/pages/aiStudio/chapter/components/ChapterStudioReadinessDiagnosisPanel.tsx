@@ -1,3 +1,4 @@
+import { uiText, useUiLanguage } from '../../../../i18n/uiText'
 import { Button, Progress, Tag, Tooltip } from 'antd'
 import { useBilingualText } from '../../../../i18n/useBilingualText'
 import { CheckCircleOutlined, EditOutlined } from '@ant-design/icons'
@@ -56,6 +57,8 @@ export function ChapterStudioReadinessDiagnosisPanel({
   onHandleMissingAction,
   getReadinessExistenceLabel,
 }: ChapterStudioReadinessDiagnosisPanelProps) {
+  useUiLanguage()
+
   const l = useBilingualText()
   return (
     <div className="cs-group cs-readiness-card">
@@ -134,7 +137,7 @@ export function ChapterStudioReadinessDiagnosisPanel({
                 <div className="cs-readiness-item__header">
                   <span className="cs-readiness-item__label">{item.label}</span>
                   <Tag color={item.ready ? 'success' : item.expectedCount === 0 ? 'default' : 'warning'}>
-                    {item.expectedCount === 0 ? '无候选' : item.ready ? '已就绪' : `待处理 ${item.missing.length}`}
+                    {item.expectedCount === 0 ? uiText("无候选") : item.ready ? uiText("已就绪") : uiText("待处理 {0}", item.missing.length)}
                   </Tag>
                 </div>
                 <div className="cs-readiness-item__meta">
@@ -154,7 +157,7 @@ export function ChapterStudioReadinessDiagnosisPanel({
                             className={missing ? 'cs-readiness-tag-action' : undefined}
                             onClick={missing ? () => onHandleMissingAction(item.key, entry.name) : undefined}
                           >
-                            {missing ? `待处理：${entry.name}` : ignored ? `已忽略：${entry.name}` : entry.name}
+                            {missing ? uiText("待处理：{0}", entry.name) : ignored ? uiText("已忽略：{0}", entry.name) : entry.name}
                           </Tag>
                           {missing && existenceLabel ? (
                             <span className="cs-readiness-chip-meta">{existenceLabel}</span>

@@ -1,3 +1,4 @@
+import { uiText, useUiLanguage } from '../../../i18n/uiText'
 import type React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -16,7 +17,6 @@ import type { InputRef } from 'antd'
 import {
   FileText,
   FolderOpen,
-  Image as ImageIcon,
   Info,
   MoreHorizontal,
   Search,
@@ -29,6 +29,7 @@ import type { StudioScriptImportId, StudioScriptImportListItem } from '../../../
 import { useBilingualText } from '../../../i18n/useBilingualText'
 import { useAppStore } from '../../../store/useAppStore'
 import { clearProjectCreationDrafts } from './projectCreationDraft'
+import ProjectCover from './ProjectCover'
 import { loadScriptImportChapters, loadScriptImportDetail } from './scriptImportResumeCache'
 import {
   createCanvasWorkspace,
@@ -60,7 +61,11 @@ type ProjectView = {
   }
   updatedAt: string
   defaultVideoRatio?: string | null
-  coverUrl?: string
+  coverAssetId?: number | null
+  coverContentUrl?: string | null
+  coverFileId?: number | null
+  coverUrl?: string | null
+  coverType?: 'image' | 'video' | null
   wordCount?: number
   episodeCount?: number
   segmentCount?: number
@@ -97,6 +102,9 @@ const toUIImportProject = (item: StudioScriptImportListItem): ProjectView => ({
   },
   updatedAt: item.updatedAt ?? item.createdAt ?? '',
   defaultVideoRatio: item.videoRatio ?? null,
+  coverFileId: item.coverFileId,
+  coverUrl: item.coverUrl,
+  coverType: item.coverType,
   wordCount: item.characterCount ?? 0,
   episodeCount: item.chapterCount ?? 0,
   creatorName: item.ownerName?.trim() || undefined,
@@ -132,6 +140,8 @@ const formatProjectDate = (value: string | undefined, language: 'zh-CN' | 'en-US
 }
 
 const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' }) => {
+  useUiLanguage()
+
   const l = useBilingualText()
   const language = useAppStore((state) => state.language)
   const navigate = useNavigate()
@@ -205,7 +215,7 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
         const items = await listCanvasWorkspaces()
         if (active) setCanvasWorkspaces(items)
       } catch (error) {
-        if (active) { setCanvasWorkspaces(listLegacyCanvasWorkspaces()); message.error(error instanceof Error ? error.message : '画布加载失败') }
+        if (active) { setCanvasWorkspaces(listLegacyCanvasWorkspaces()); message.error(error instanceof Error ? error.message : uiText("画布加载失败")) }
       } finally { if (active) setLoading(false) }
     }
     void reloadCanvasWorkspaces()
@@ -231,6 +241,11 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
       stats: { chapters: 0, roles: 0, scenes: 0, props: 0 },
       updatedAt: workspace.updatedAt,
       createdAt: workspace.createdAt,
+      coverAssetId: workspace.coverAssetId,
+      coverFileId: workspace.coverFileId,
+      coverUrl: workspace.coverUrl,
+      coverType: workspace.coverType,
+      coverContentUrl: workspace.coverContentUrl,
       creatorName: workspace.revisionNo ? l('云端画布', 'Cloud canvas') : l('本地画布', 'Local canvas'),
     }))
   ), [canvasWorkspaces, l])
@@ -261,7 +276,7 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
       try {
         const workspace = await createCanvasWorkspace(l('未命名画布', 'Untitled canvas'))
         navigate(`/canvas/${workspace.id}`)
-      } catch (error) { message.error(error instanceof Error ? error.message : '创建画布失败') }
+      } catch (error) { message.error(error instanceof Error ? error.message : uiText("创建画布失败")) }
       return
     }
     const draftsCleared = await clearProjectCreationDrafts()
@@ -386,20 +401,15 @@ const ProjectLobby: React.FC<ProjectLobbyProps> = ({ workspaceView = 'workflow' 
               {p.parseStatusName ?? statusText}
             </span>
           )}
-          {p.coverUrl ? (
-            <img
-              className="project-lobby-card__image"
-              src={p.coverUrl}
-              alt=""
-              loading="lazy"
-              decoding="async"
-            />
-          ) : (
-            <div className="project-lobby-card__placeholder" aria-hidden="true">
-              <ImageIcon size={28} strokeWidth={1.6} />
-              <span>{l('暂无图片', 'No image')}</span>
-            </div>
-          )}
+          <ProjectCover
+            key={JSON.stringify([workspaceView, p.id, p.coverAssetId, p.coverFileId, p.coverType, p.coverUrl, p.coverContentUrl])}
+            coverUrl={p.coverUrl}
+            coverType={p.coverType}
+            canvasId={isCanvasView ? p.id : undefined}
+            coverAssetId={p.coverAssetId}
+            coverContentUrl={p.coverContentUrl}
+            placeholder={l('暂无图片', 'No image')}
+          />
           <div
             className="project-lobby-card__info-panel"
             role="tooltip"

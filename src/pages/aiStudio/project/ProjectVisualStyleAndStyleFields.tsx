@@ -1,3 +1,4 @@
+import { uiText } from '../../../i18n/uiText'
 import { Form } from 'antd'
 import { useBilingualText } from '../../../i18n/useBilingualText'
 import StudioSelect from './StudioSelect'
@@ -14,20 +15,20 @@ export type ProjectStyleFieldOptions = {
 
 export const PROJECT_STYLE_OPTIONS_BY_VISUAL: ProjectStyleOptionsByVisual = {
   现实: [
-    { value: '真人都市', label: '真人都市' },
-    { value: '真人科幻', label: '真人科幻' },
-    { value: '真人古装', label: '真人古装' },
+    { value: '真人都市', get label() { return uiText("真人都市") } },
+    { value: '真人科幻', get label() { return uiText("真人科幻") } },
+    { value: '真人古装', get label() { return uiText("真人古装") } },
   ],
   动漫: [
-    { value: '动漫科幻', label: '动漫科幻' },
-    { value: '动漫3D', label: '动漫3D' },
-    { value: '国漫', label: '国漫' },
-    { value: '水墨画', label: '水墨画' },
+    { value: '动漫科幻', get label() { return uiText("动漫科幻") } },
+    { value: '动漫3D', get label() { return uiText("动漫3D") } },
+    { value: '国漫', get label() { return uiText("国漫") } },
+    { value: '水墨画', get label() { return uiText("水墨画") } },
   ],
 }
 const DEFAULT_VISUAL_STYLE_OPTIONS: OptionItem[] = [
-  { value: '现实', label: '现实' },
-  { value: '动漫', label: '动漫' },
+  { value: '现实', get label() { return uiText("现实") } },
+  { value: '动漫', get label() { return uiText("动漫") } },
 ]
 const DEFAULT_STYLE_BY_VISUAL: Record<string, string> = {
   现实: PROJECT_STYLE_OPTIONS_BY_VISUAL['现实']?.[0]?.value ?? '',

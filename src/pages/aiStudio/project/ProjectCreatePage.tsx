@@ -1,3 +1,4 @@
+import { uiText, useUiLanguage } from '../../../i18n/uiText'
 import StoryboardExportModal from './StoryboardExportModal'
 import { exportInteger, readExportSelections, writeExportSelections } from '../../../services/storyboardExport'
 import CreditIcon from '../../../components/CreditIcon'
@@ -661,6 +662,8 @@ const storyboardSegmentsToClipDrafts = (result: StudioEpisodeStoryboardEditorRes
 }
 
 const ProjectCreatePage: React.FC = () => {
+  useUiLanguage()
+
   const [exportOpen, setExportOpen] = useState(false)
   const l = useBilingualText()
   const navigate = useNavigate()
@@ -3081,11 +3084,14 @@ const ProjectCreatePage: React.FC = () => {
       </div>
     )
   }
+  // Lazy steps need a full content-area placeholder before their own layouts load.
   const workflowChunkFallback = (
-    <div className="project-create-page__restore-state" role="status">
-      <Spin />
-      <span>{l('正在加载当前步骤...', 'Loading this step...')}</span>
-    </div>
+    <main className="project-create-page__step-loading" aria-busy="true">
+      <div className="project-create-page__step-loading-status" role="status">
+        <Spin size="large" />
+        <span>{l('正在加载当前步骤...', 'Loading this step...')}</span>
+      </div>
+    </main>
   )
 
   return (
@@ -3546,11 +3552,13 @@ const ProjectCreatePage: React.FC = () => {
       ) : (
         <Suspense fallback={workflowChunkFallback}>
           <ProjectClipEditingStep
+            scriptImportId={scriptImportId}
+            episodeId={storyboardTargetEpisodeId}
             onHistorySelect={(segmentId, item) => {
               if (scriptImportId === null || !storyboardTargetEpisodeId) return
               const segment = storyboardEditor?.segments.find((value) => String(value.id) === segmentId)
               const episodeIndex = storyboardEditor?.episodeIndex ?? assetStepEpisodes.find((value) => value.id === String(storyboardTargetEpisodeId))?.index
-              if (!segment || !episodeIndex) { message.warning('片段序号尚未就绪，请刷新后重新选择'); return }
+              if (!segment || !episodeIndex) { message.warning(uiText("片段序号尚未就绪，请刷新后重新选择")); return }
               try {
                 const selection = { segmentId: exportInteger(segmentId), generationId: exportInteger(item.generationRecordId ?? item.id), mediaType: item.mediaType, episodeId: exportInteger(storyboardTargetEpisodeId), episodeIndex, segmentIndex: segment.segmentIndex }
                 writeExportSelections(scriptImportId, [...readExportSelections(scriptImportId).filter((value) => value.segmentId !== selection.segmentId), selection])

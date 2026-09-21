@@ -3,6 +3,10 @@
 /* tslint:disable */
 /* eslint-disable */
 export type ImageToVideoDetail = {
+    terminal?: boolean;
+    shouldPoll?: boolean;
+    pollAfterSeconds?: number;
+    outputReady?: boolean;
     id: number;
     segmentId: number;
     generationRecordId?: number;

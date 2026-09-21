@@ -40,7 +40,7 @@ for (const mediaType of ['image', 'video']) test(`${mediaType} generation expose
       }
       if (name.endsWith('/WorkflowService')) return { WorkflowService: {
         [mediaType === 'image' ? 'generateImage' : 'generateVideo']: async () => ({ code: 200, data: { id: 1, taskId: 276, segmentId: 10, status: 1 } }),
-        [mediaType === 'image' ? 'imageDetail' : 'videoDetail']: ({ id }) => { ids.push(id); return Promise.resolve({ code: 200, data: ++count < 3 ? { id: 1, segmentId: 10, status: count === 1 ? 2 : 3, progress: 100 } : { id: 1, segmentId: 10, status: 3, outputFileId: 90, outputUrl: 'https://example.invalid/media' } }) },
+        [mediaType === 'image' ? 'imageDetail' : 'videoDetail']: ({ id }) => { ids.push(id); return Promise.resolve({ code: 200, data: ++count < 3 ? { id: 1, segmentId: 10, status: 2, shouldPoll: true, pollAfterSeconds: 3, progress: 100 } : { id: 1, segmentId: 10, status: 3, shouldPoll: false, outputReady: true, outputFileId: 90, outputUrl: 'https://example.invalid/media' } }) },
       } }
       if (name.endsWith('/auth')) return { getAuthToken: () => 'token', getStoredAuthUser: () => ({ id: 1 }) }
       if (name.endsWith('/OpenAPI')) return { OpenAPI: {} }
@@ -58,7 +58,7 @@ for (const mediaType of ['image', 'video']) test(`${mediaType} generation expose
   timers.shift()()
   await new Promise((resolve) => setImmediate(resolve))
   assert.deepEqual(ids, [1, 1])
-  assert.equal(states[1]['10'][0].status, 3)
+  assert.equal(states[1]['10'][0].status, 2)
   assert.equal(states[1]['10'][0].outputFileId, undefined)
   assert.equal(states[0]['10'], undefined)
   timers.shift()()
@@ -80,7 +80,7 @@ test('ambiguous server failures retain the original submission identity', () => 
   assert.equal(policy.isDefiniteSubmissionRejection(new Error('timeout')), false)
   assert.equal(policy.isDefiniteSubmissionRejection({ status: 500, body: { code: 502 } }), false)
   assert.equal(policy.isDefiniteSubmissionRejection({ status: 502, body: { code: 502, data: { errorCode: 'IDEMPOTENCY_CONFLICT' } } }), false)
-  assert.equal(policy.isDefiniteSubmissionRejection({ status: 422, body: { code: 502 } }), true)
+  assert.equal(policy.isDefiniteSubmissionRejection({ status: 422, body: { code: 502 } }), false)
 })
 test('authenticated conditional reads reuse 304 data and isolate accounts', async () => {
   let token = 'account-a'
@@ -114,4 +114,15 @@ test('thumbnail processing and unavailable responses carry retry delays', async 
     })
     await assert.rejects(transport.workflowMediaRead('/thumbnail', new AbortController().signal, true), (error) => error.retryAfter === delay)
   }
+})
+
+test('media unknown/mismatch/success without output stops polling; readiness is explicit', () => {
+ for(const status of [3,4,5,6,7])assert.equal(policy.workflowShouldPoll({status,shouldPoll:true}),false)
+ assert.equal(policy.workflowShouldPoll({status:2,shouldPoll:false}),false)
+ assert.equal(policy.workflowShouldPoll({status:2,terminal:true}),false)
+ assert.equal(policy.workflowShouldPoll({status:2}),true)
+ assert.equal(policy.workflowPollDelay({pollAfterSeconds:9}),9000)
+ assert.equal(policy.workflowPollDelay({}),3000)
+ assert.equal(policy.workflowOutputReady({status:3,outputFileId:4,outputUrl:'url'}),false)
+ assert.equal(policy.workflowOutputReady({status:3,outputReady:true,outputFileId:4,outputUrl:'url'}),true)
 })

@@ -1,7 +1,8 @@
+import { uiText } from './i18n/uiText'
+import WorkflowRecovery from './components/WorkflowRecovery'
 import { lazy, Suspense } from 'react'
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import RequireAuth from './components/RequireAuth'
-import GlobalAiChat from './components/GlobalAiChat'
 import './App.css'
 import './theme/dark.css'
 
@@ -44,7 +45,7 @@ const EfficiencyOverview = lazy(() => import('./pages/aiStudio/efficiency/Effici
 const RoleManagement = lazy(() => import('./pages/system/RoleManagement'))
 const MenuManagement = lazy(() => import('./pages/system/MenuManagement'))
 
-const routeFallback = <div className="app-route-loading" aria-label="页面加载中" aria-live="polite" />
+const routeFallback = <div className="app-route-loading" aria-label={uiText("页面加载中")} aria-live="polite" />
 
 const App = () => {
   return (
@@ -90,7 +91,8 @@ const App = () => {
           </Route>
         </Routes>
       </Suspense>
-      <GlobalAiChat />
+      <WorkflowRecovery />
+      {/* 暂时隐藏全局 AI 助手；保留 GlobalAiChat 组件以便恢复。 */}
     </BrowserRouter>
   )
 }

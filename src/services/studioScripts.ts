@@ -18,6 +18,10 @@ export type StudioScriptImportId = string | number
 
 export type StudioScriptImportListItem = {
   id: StudioScriptImportId
+  /** 最新成功媒体，由后端跨资产图片和分镜图片／视频统一选取。 */
+  coverFileId?: number | null
+  coverUrl?: string | null
+  coverType?: 'image' | 'video' | null
   ownerName?: string | null
   title: string
   sourceFileName?: string | null
@@ -217,6 +221,7 @@ export type StudioScriptAssetExtractEstimate = {
 }
 
 export type StudioScriptAssetExtractRequest = {
+  clientRequestId?: string
   scriptImportId: StudioScriptImportId
 }
 
@@ -650,6 +655,11 @@ export const StudioScriptsApi = {
     const cacheKey = String(scriptImportId)
     assetExtractEstimateRequests.delete(cacheKey)
     assetExtractEstimateCache.delete(cacheKey)
+  },
+
+  async retryAssetExtraction(requestBody: { assetSetId: StudioScriptImportId; assetType?: StudioScriptAssetType; clientRequestId?: string }) {
+    const response=await __request<ApiEnvelope<{ assetSetId: StudioScriptImportId; taskIds: Array<string | number>; status?: number; statusName?: string; modelId?: number }>>(OpenAPI, { method: 'POST', url: '/api/v1/studio/scripts/imports/assets/extract/retry', body: requestBody, mediaType: 'application/json' })
+    return unwrapApiData(response, '资产提取重试失败')
   },
 
   async extractAssets(requestBody: StudioScriptAssetExtractRequest): Promise<void> {

@@ -9,7 +9,7 @@ import { OpenAPI } from '../../../services/generated/core/OpenAPI'
 import { getHeaders } from '../../../services/generated/core/request'
 import type { StudioStoryboardMediaHistoryItem } from '../../../services/studioAssetGeneration'
 import { workflowMediaRead } from './workflowMediaTransport'
-import { createWorkflowRequestId, isDefiniteSubmissionRejection, shouldRefreshWorkflowHistory } from './workflowMediaPolicy'
+import { createWorkflowRequestId, isDefiniteSubmissionRejection, shouldRefreshWorkflowHistory, workflowShouldPoll, workflowPollDelay, workflowOutputReady } from './workflowMediaPolicy'
 import { schedulePollWhenVisible, type PollTimerCancel } from './assetBatchGenerationPolling'
 
 /** Unwrap the generated response envelope without treating missing data as success. */
@@ -78,15 +78,15 @@ export function useWorkflowMedia(segmentId: string | undefined) {
         const item: WorkflowMedia = { ...detail, mediaType: type, itemKey: `${type}:${detail.id}` }
         const ownerId = String(owner)
         setTasks((current) => ({ ...current, [ownerId]: [...(current[ownerId] ?? []).filter((entry) => !(entry.mediaType === type && entry.id === generationId)), ...[item]] }))
-        if (item.status === 1 || item.status === 2 || (item.status === 3 && (!item.outputFileId || !item.outputUrl))) {
-          timer = schedulePollWhenVisible(() => void poll(), 3000)
+        if (workflowShouldPoll(item)) {
+          timer = schedulePollWhenVisible(() => void poll(), workflowPollDelay(item))
           return
         }
         await refresh(ownerId)
         if (!active) return
         // Detail is authoritative even if the history list has not caught up yet.
         setPages((current) => ({ ...current, [ownerId]: { ...(current[ownerId] ?? { hasMore: false }), items: [item, ...(current[ownerId]?.items ?? []).filter((entry) => !(entry.mediaType === type && entry.id === generationId))] } }))
-        if (item.status === 3) setCompletedMedia({ segmentId: ownerId, itemKey: taskKey })
+        if (workflowOutputReady(item)) setCompletedMedia({ segmentId: ownerId, itemKey: taskKey })
         setTasks((current) => ({ ...current, [ownerId]: (current[ownerId] ?? []).filter((entry) => !(entry.mediaType === type && entry.id === generationId)) }))
         if (item.status !== 3) setError(item.errorMessage || item.error || item.statusName || '生成未成功')
         mediaLanes.current.delete(taskKey)
@@ -115,7 +115,7 @@ export function useWorkflowMedia(segmentId: string | undefined) {
         if (!active) return
         failures = 0
         setTasks((current) => current[id] === result ? current : { ...current, [id]: result })
-        result.filter((item) => item.status === 1 || item.status === 2).forEach((item) => watchMedia(item.id, item.segmentId, item.mediaType ?? 'video'))
+        result.filter(workflowShouldPoll).forEach((item) => watchMedia(item.id, item.segmentId, item.mediaType ?? 'video'))
         if (shouldRefreshWorkflowHistory(previous, result)) void refresh(id)
         previous = result
         lanes.current.delete(id)
