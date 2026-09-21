@@ -1,3 +1,4 @@
+import { useRuntimePoseSample } from "./useRuntimePoseSample";
 import { directorLoader } from '../loaders/cloudAssetRuntime';
 /* eslint-disable react/no-unknown-property -- React Three Fiber 使用 Three.js 对象属性扩展了 JSX。 */
 import { useFrame, useLoader } from "@react-three/fiber";
@@ -681,6 +682,7 @@ function MixamoAnimationPlayer({
 }) {
   const mixer = useMemo(() => new AnimationMixer(scene), [scene]);
   const lastClipTimeRef = useRef<number | null>(null);
+  const shouldSamplePose = useRuntimePoseSample();
 
   useLayoutEffect(() => {
     if (!clip) return;
@@ -715,9 +717,11 @@ function MixamoAnimationPlayer({
 
   useFrame(() => {
     if (!runtimeMotion || clip.duration <= 0) return;
+    const progress = getRuntimePlaybackProgress();
+    if (!shouldSamplePose(progress)) return;
     const animationTime = getCharacterRuntimeActionSample(
       runtimeMotion,
-      getRuntimePlaybackProgress(),
+      progress,
     ).animationTimeSeconds;
     lastClipTimeRef.current = applyMixamoAnimationSample({
       animationTimeSeconds: animationTime,
@@ -728,7 +732,7 @@ function MixamoAnimationPlayer({
       restPose,
       scene,
     });
-  });
+  }, -1);
 
   return null;
 }
@@ -759,6 +763,7 @@ function ProceduralCharacterPosePlayer({
     [boneMap, restPose, scene],
   );
   const lastActionPresetIdRef = useRef<string | null>(null);
+  const shouldSamplePose = useRuntimePoseSample();
 
   const applySample = useCallback((sampleActionPresetId: string | null | undefined, sampleTimeSeconds: number) => {
     const controls = sampleActionPresetId
@@ -778,10 +783,12 @@ function ProceduralCharacterPosePlayer({
 
   useFrame(() => {
     if (!runtimeMotion) return;
-    const sample = getCharacterRuntimeActionSample(runtimeMotion, getRuntimePlaybackProgress());
+    const progress = getRuntimePlaybackProgress();
+    if (!shouldSamplePose(progress)) return;
+    const sample = getCharacterRuntimeActionSample(runtimeMotion, progress);
     if (!sample.actionPresetId && !lastActionPresetIdRef.current) return;
     applySample(sample.actionPresetId, sample.animationTimeSeconds);
-  });
+  }, -1);
 
   return null;
 }

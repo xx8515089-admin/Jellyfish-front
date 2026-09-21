@@ -1,3 +1,4 @@
+import { useRuntimePoseSample } from "./useRuntimePoseSample";
 import { useFrame, useLoader } from "@react-three/fiber";
 import { useLayoutEffect, useMemo } from "react";
 import {
@@ -140,6 +141,7 @@ export function UE4MannequinModel({
   const scene = useMemo(() => cloneSkeleton(gltf.scene) as Group, [gltf.scene]);
   const restPose = useMemo(() => captureUE4RestPose(scene), [scene]);
   const modelScale = getUE4ModelScale(bodyType);
+  const shouldSamplePose = useRuntimePoseSample();
 
   useLayoutEffect(() => {
     isolateAndTintUE4MannequinMaterials(scene, color);
@@ -163,6 +165,7 @@ export function UE4MannequinModel({
   useFrame(() => {
     if (!runtimeMotion) return;
     const progress = getRuntimePlaybackProgress();
+    if (!shouldSamplePose(progress)) return;
     const actionSample = getCharacterRuntimeActionSample(runtimeMotion, progress);
     const routeAction = actionSample.actionPresetId;
     const isMoving = !actionSample.previewing
@@ -173,7 +176,7 @@ export function UE4MannequinModel({
       : rigState?.controls ?? {};
     applyUE4RestPoseAndRig(scene, { bodyType, controls, restPose });
     scene.updateMatrixWorld(true);
-  });
+  }, -1);
 
   return (
     <group name={`ue-retopology-mannequin-${bodyType}`} scale={modelScale}>

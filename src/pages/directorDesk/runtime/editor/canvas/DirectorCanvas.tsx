@@ -1,3 +1,6 @@
+import { DirectorViewCameraSync } from "./DirectorViewCameraSync";
+import { DirectorInteractionResolution } from "./DirectorInteractionResolution";
+import DirectorDemandFrames from "./DirectorDemandFrames";
 import { GizmoHelper, GizmoViewport, Grid, OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Move } from "lucide-react";
@@ -6,6 +9,7 @@ import { createPortal } from "react-dom";
 import { getDirectorDeskPortalTarget, getDirectorDeskThemeElement } from "../io/directorDeskDom";
 import {
   Suspense,
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -87,7 +91,10 @@ export {
   shouldRenderViewportGrid,
 } from "./viewportGizmo";
 
+const MemoizedSceneRoot = memo(SceneRoot);
+
 export const DEFAULT_DIRECTOR_VIEW_SNAPSHOT: CameraShotSnapshot = DEFAULT_DIRECTOR_CAMERA_VIEW_SNAPSHOT;
+const INITIAL_DIRECTOR_CAMERA = { position: DEFAULT_DIRECTOR_VIEW_SNAPSHOT.position, fov: DEFAULT_DIRECTOR_VIEW_SNAPSHOT.fov };
 const VIEWPORT_FRAME_PADDING = 40;
 const VIEWPORT_TOOLBAR_BOTTOM_OFFSET = 40;
 const DEFAULT_VIEWPORT_TOOLBAR_HEIGHT = 44;
@@ -495,34 +502,6 @@ function CanvasCaptureBridge({
   return null;
 }
 
-function DirectorViewCameraSync({
-  controlsRef,
-  disabled,
-  snapshot,
-  viewMode,
-}: {
-  controlsRef: MutableRefObject<OrbitControlsImpl | null>;
-  disabled?: boolean;
-  snapshot: CameraShotSnapshot;
-  viewMode: "director" | "camera";
-}) {
-  const { camera } = useThree();
-
-  useLayoutEffect(() => {
-    if (viewMode !== "director" || disabled) return;
-
-    const perspectiveCamera = camera as ThreePerspectiveCamera;
-    applySnapshotToCamera(perspectiveCamera, snapshot);
-
-    if (controlsRef.current) {
-      controlsRef.current.target.set(...snapshot.target);
-      controlsRef.current.update();
-    }
-  }, [camera, controlsRef, disabled, snapshot, viewMode]);
-
-  return null;
-}
-
 function CameraViewCameraSync({
   snapshot,
   viewMode,
@@ -671,6 +650,7 @@ function ViewportGizmoOverlay({
   return (
     <div className="viewport-gizmo-overlay" aria-label={text("3D 视口原生坐标控件", "3D viewport axis controls")} style={{ right: `${rightOffset}px` }}>
       <Canvas
+        frameloop="demand"
         key={`gizmo-${antialias ? "aa" : "no-aa"}`}
         className="viewport-gizmo-canvas"
         camera={{ fov: snapshot.fov, position: [0, 0, 1] }}
@@ -719,6 +699,8 @@ function MotionMonitor({
   renderDpr: number | [number, number];
 }) {
   const text = useDirectorDeskText();
+  const monitorPlaying = useDirectorStore((state) => state.cameraMotionPlaying);
+  const monitorPiloting = useDirectorStore((state) => state.cameraPilotMode !== "idle");
   const finishedShotFovInteraction = useDirectorInteractionBatch();
   const monitorFovInteraction = useDirectorInteractionBatch();
   const monitorScene = useDirectorStore((state) => state.project.scene);
@@ -779,11 +761,13 @@ function MotionMonitor({
       </header>
       <div className="motion-monitor-canvas-wrap" style={{ aspectRatio }}>
         <Canvas
+          frameloop={monitorPlaying || monitorPiloting || getPerformanceBenchmarkMode(window.location.search) ? "always" : "demand"}
           key={`monitor-${antialias ? "aa" : "no-aa"}`}
           camera={{ fov: monitorCamera.fov, position: monitorCamera.position }}
           dpr={renderDpr}
           gl={{ antialias }}
         >
+          <DirectorDemandFrames />
           <ViewportBackground
             backgroundColor={monitorScene.backgroundColor}
             backgroundBrightness={monitorScene.backgroundBrightness}
@@ -806,7 +790,7 @@ function MotionMonitor({
             />
           ) : null}
           <Suspense fallback={null}>
-            <SceneRoot renderMode={mainViewMode === "director" ? "clean-camera" : "director-monitor"} />
+            <MemoizedSceneRoot renderMode={mainViewMode === "director" ? "clean-camera" : "director-monitor"} />
           </Suspense>
         </Canvas>
       </div>
@@ -868,11 +852,13 @@ function getReferenceVideoDimensions(quality: "720p" | "1080p", ratio: number | 
 
 function AutomaticPerformanceController({
   active,
+  continuous,
   initialProfile,
   onProfileChange,
   onSample,
 }: {
   active: boolean;
+  continuous: boolean;
   initialProfile: EffectivePerformanceProfileId;
   onProfileChange: (profile: EffectivePerformanceProfileId) => void;
   onSample: (summary: AdaptiveFrameSummary, profile: EffectivePerformanceProfileId) => void;
@@ -900,7 +886,7 @@ function AutomaticPerformanceController({
 
   useFrame((state, deltaSeconds) => {
     const frameMs = deltaSeconds * 1_000;
-    if (!active || document.hidden || !Number.isFinite(frameMs) || frameMs <= 0 || frameMs > 250) {
+    if (!active || (!continuous && state.performance.current === 1) || document.hidden || !Number.isFinite(frameMs) || frameMs <= 0 || frameMs > 250) {
       resetSampleWindow();
       return;
     }
@@ -996,6 +982,7 @@ export function DirectorCanvas() {
   const pendingDirectorViewSnapshotRef = useRef<CameraShotSnapshot>(DEFAULT_DIRECTOR_VIEW_SNAPSHOT);
   const directorSnapshotTimerRef = useRef<number | null>(null);
   const lastDirectorSnapshotCommitAtRef = useRef(0);
+  const [directorCameraRevision, setDirectorCameraRevision] = useState(0);
   const [directorViewSnapshot, setDirectorViewSnapshot] = useState(DEFAULT_DIRECTOR_VIEW_SNAPSHOT);
   const [toolbarHeight, setToolbarHeight] = useState(DEFAULT_VIEWPORT_TOOLBAR_HEIGHT);
   const [referenceVideoQuality, setReferenceVideoQuality] = useState<"720p" | "1080p">("720p");
@@ -1334,6 +1321,7 @@ export function DirectorCanvas() {
   function updateDirectorViewSnapshot(snapshot: CameraShotSnapshot, immediate = false) {
     viewportCameraSnapshotRef.current = snapshot;
     pendingDirectorViewSnapshotRef.current = snapshot;
+    if (immediate) setDirectorCameraRevision((value) => value + 1);
     const now = typeof performance === "undefined" ? Date.now() : performance.now();
     const elapsed = now - lastDirectorSnapshotCommitAtRef.current;
     if (immediate || elapsed >= DIRECTOR_SNAPSHOT_UI_INTERVAL_MS) {
@@ -1395,8 +1383,10 @@ export function DirectorCanvas() {
     <div className="canvas-frame" data-benchmark-mode={benchmarkMode ?? "off"}>
       <div className="director-canvas" data-testid="director-canvas" ref={viewportContainerRef}>
         <Canvas
+          frameloop={cameraMotionPlaying || isCameraPiloting || benchmarkMode ? "always" : "demand"}
           key={`main-${contextPerformanceConfig.antialias ? "aa" : "no-aa"}-${contextPerformanceConfig.preserveDrawingBuffer ? "capture" : "standard"}`}
-          camera={{ position: directorViewSnapshot.position, fov: directorViewSnapshot.fov }}
+          camera={INITIAL_DIRECTOR_CAMERA}
+          performance={{ min: 0.75, debounce: 200 }}
           dpr={performanceConfig.mainDpr}
           gl={{
             antialias: contextPerformanceConfig.antialias,
@@ -1408,11 +1398,12 @@ export function DirectorCanvas() {
           onCreated={({ camera, gl }) => {
             const perspectiveCamera = camera as ThreePerspectiveCamera;
             viewportCanvasRef.current = gl.domElement;
-            perspectiveCamera.lookAt(...directorViewSnapshot.target);
+            const initialSnapshot = viewportCameraSnapshotRef.current;
+            applySnapshotToCamera(perspectiveCamera, initialSnapshot);
             viewportCameraSnapshotRef.current = {
               fov: perspectiveCamera.fov,
               position: [perspectiveCamera.position.x, perspectiveCamera.position.y, perspectiveCamera.position.z],
-              target: directorViewSnapshot.target,
+              target: initialSnapshot.target,
             };
             setDirectorViewSnapshot(viewportCameraSnapshotRef.current);
             if (benchmarkMode) {
@@ -1421,8 +1412,11 @@ export function DirectorCanvas() {
             }
           }}
         >
+          <DirectorDemandFrames />
+          <DirectorInteractionResolution baseDpr={performanceConfig.mainDpr} enabled={performanceProfile === "auto" && !benchmarkMode && !referenceVideoRendering} />
           <AutomaticPerformanceController
             active={performanceProfile === "auto" && !benchmarkMode && !referenceVideoRendering}
+            continuous={cameraMotionPlaying || isCameraPiloting}
             initialProfile={detectedPerformanceProfile}
             onProfileChange={setAutomaticPerformanceProfile}
             onSample={handleAutomaticPerformanceSample}
@@ -1449,6 +1443,7 @@ export function DirectorCanvas() {
           {viewMode === "director" ? (
             <OrbitControls
               ref={controlsRef}
+              regress={performanceProfile === "auto" && !benchmarkMode && !referenceVideoRendering}
               enableDamping
               enabled={!isCameraPiloting}
               makeDefault
@@ -1474,7 +1469,8 @@ export function DirectorCanvas() {
           <DirectorViewCameraSync
             controlsRef={controlsRef}
             disabled={isCameraPiloting}
-            snapshot={directorViewSnapshot}
+            snapshotRef={viewportCameraSnapshotRef}
+            revision={directorCameraRevision}
             viewMode={viewMode}
           />
           <CameraViewCameraSync snapshot={activeCameraView} viewMode={viewMode} />
@@ -1494,7 +1490,7 @@ export function DirectorCanvas() {
             onToggleActionPlayback={toggleSceneActionPlayback}
           />
           <Suspense fallback={null}>
-            <SceneRoot />
+            <MemoizedSceneRoot />
           </Suspense>
         </Canvas>
       </div>
@@ -1568,7 +1564,7 @@ export function DirectorCanvas() {
               <ambientLight intensity={1.15} />
               <directionalLight intensity={1.2} position={[8, 10, 6]} />
               <PlaybackCameraSync fovOverride={finishedShotFov} snapshot={activeCameraView} />
-              <Suspense fallback={null}><SceneRoot renderMode="clean-camera" /></Suspense>
+              <Suspense fallback={null}><MemoizedSceneRoot renderMode="clean-camera" /></Suspense>
             </Canvas>
           </div>
         );

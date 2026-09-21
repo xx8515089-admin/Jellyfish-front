@@ -18,7 +18,7 @@ export function registerCloudPackage(key: string, files: { id: number; path: str
   const base = `https://director-cloud.invalid/${key}/`
   const resources = new Map<string, string>()
   for (const file of files) {
-    const url = base + file.path
+    const url = base + file.path.split('/').map(encodeURIComponent).join('/')
     resources.set(url, URL.createObjectURL(file.blob))
     assets.set(file.id, url)
   }

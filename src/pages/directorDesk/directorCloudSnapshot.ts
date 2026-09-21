@@ -1,13 +1,13 @@
-import type { DirectorDesk, DirectorSnapshot } from '../../services/studioDirectorDesks'
+import type { DirectorBinding, DirectorDesk, DirectorSnapshot } from '../../services/studioDirectorDesks'
 import { useDirectorStore } from './runtime/editor/store/directorStore'
 import { getRuntimePlaybackProgress } from './runtime/editor/runtime/playbackRuntime'
 import { parseDirectorProjectDocument } from './runtime/editor/io/projectDocument'
 import { requestCleanFrameExport } from './runtime/editor/io/cleanFrameExport'
 import { requestReferenceVideoExport } from './runtime/editor/io/referenceVideoExport'
 
-export function readDirectorSnapshot(): DirectorSnapshot {
+function currentDirectorSnapshot(): DirectorSnapshot {
   const state = useDirectorStore.getState()
-  return structuredClone({
+  return {
     projectSchemaVersion: 1,
     project: state.project,
     viewSettings: {
@@ -15,7 +15,16 @@ export function readDirectorSnapshot(): DirectorSnapshot {
       finishedShotFov: state.finishedShotFov,
       cameraMotionProgress: getRuntimePlaybackProgress(),
     },
-  })
+  }
+}
+
+/** Saving/export owns a copy; comparisons only serialize the current immutable store data. */
+export function readDirectorSnapshot(): DirectorSnapshot {
+  return structuredClone(currentDirectorSnapshot())
+}
+
+export function fingerprintDirectorSnapshot(bindings: DirectorBinding[]) {
+  return JSON.stringify({ ...currentDirectorSnapshot(), characterBindings: bindings })
 }
 
 export function restoreDirectorSnapshot(desk: DirectorDesk) {

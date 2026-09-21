@@ -1,3 +1,4 @@
+import { uiText, useUiLanguage } from '../../i18n/uiText'
 import LazyDirectorImage from './LazyDirectorImage'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button, Modal, Select, Typography, message } from 'antd'
@@ -22,9 +23,9 @@ import {
 const { Text } = Typography
 
 const frameOptions: Array<{ value: ShotFrameType; label: string }> = [
-  { value: 'first', label: '首帧' },
-  { value: 'key', label: '关键帧' },
-  { value: 'last', label: '尾帧' },
+  { value: 'first', get label() { return uiText("首帧") } },
+  { value: 'key', get label() { return uiText("关键帧") } },
+  { value: 'last', get label() { return uiText("尾帧") } },
 ]
 
 async function captureToFile(capture: DirectorDeskCaptureItem) {
@@ -66,6 +67,8 @@ export default function DirectorDeskCaptureBridge({
   chapterId,
   initialShotId,
 }: DirectorDeskCaptureBridgeProps) {
+  useUiLanguage()
+
   const [open, setOpen] = useState(false)
   const [captures, setCaptures] = useState<DirectorDeskCaptureItem[]>([])
   const [activeCaptureIndex, setActiveCaptureIndex] = useState(0)
@@ -114,7 +117,7 @@ export default function DirectorDeskCaptureBridge({
         return items[0]?.id ?? ''
       })
     }).catch((error) => {
-      if (active) message.error(`加载分镜失败：${getApiErrorMessage(error)}`)
+      if (active) message.error(uiText("加载分镜失败：{0}", getApiErrorMessage(error)))
     }).finally(() => {
       if (active) setShotsLoading(false)
     })
@@ -149,7 +152,7 @@ export default function DirectorDeskCaptureBridge({
 
   const writeCaptureToFrame = useCallback(async () => {
     if (!activeCapture || !projectId || !chapterId || !shotId) {
-      message.warning('请选择要写入的分镜')
+      message.warning(uiText("请选择要写入的分镜"))
       return
     }
 
@@ -175,10 +178,10 @@ export default function DirectorDeskCaptureBridge({
         imageId: slot.id,
         requestBody: { file_id: fileId, format: 'png' },
       })
-      message.success(`已写入${frameOptions.find((item) => item.value === frameType)?.label ?? '分镜帧'}`)
+      message.success(uiText("已写入{0}", frameOptions.find((item) => item.value === frameType)?.label ?? uiText("分镜帧")))
       setOpen(false)
     } catch (error) {
-      message.error(`写入分镜帧失败：${getApiErrorMessage(error)}`)
+      message.error(uiText("写入分镜帧失败：{0}", getApiErrorMessage(error)))
     } finally {
       setWriting(false)
     }
@@ -190,7 +193,7 @@ export default function DirectorDeskCaptureBridge({
       destroyOnClose
       footer={null}
       open={open}
-      title="导演台截图"
+      title={uiText("导演台截图")}
       width={760}
       onCancel={() => setOpen(false)}
     >
@@ -221,7 +224,7 @@ export default function DirectorDeskCaptureBridge({
           {chapterId ? (
             <>
               <div>
-                <div className="mb-1 text-xs text-white/60">写入分镜</div>
+                <div className="mb-1 text-xs text-white/60">{uiText("写入分镜")}</div>
                 <Select
                   className="w-full"
                   loading={shotsLoading}
@@ -230,7 +233,7 @@ export default function DirectorDeskCaptureBridge({
                     value: shot.id,
                     label: `${String(shot.index).padStart(2, '0')} · ${shot.title}`,
                   }))}
-                  placeholder="选择分镜"
+                  placeholder={uiText("选择分镜")}
                   showSearch
                   value={shotId || undefined}
                   onChange={setShotId}
@@ -242,18 +245,17 @@ export default function DirectorDeskCaptureBridge({
                 </Text>
               ) : null}
               <div>
-                <div className="mb-1 text-xs text-white/60">帧类型</div>
+                <div className="mb-1 text-xs text-white/60">{uiText("帧类型")}</div>
                 <Select className="w-full" options={frameOptions} value={frameType} onChange={setFrameType} />
               </div>
             </>
           ) : (
-            <Text type="secondary">当前是独立导演台，截图可直接下载；从项目章节进入后还可写入分镜帧。</Text>
+            <Text type="secondary">{uiText("当前是独立导演台，截图可直接下载；从项目章节进入后还可写入分镜帧。")}</Text>
           )}
 
           <div className="mt-auto flex justify-end gap-2">
             <Button disabled={!activeCapture} onClick={() => activeCapture && downloadCapture(activeCapture)}>
-              下载截图
-            </Button>
+              {uiText("下载截图")}</Button>
             {chapterId ? (
               <Button
                 disabled={!activeCapture || !shotId}
@@ -261,8 +263,7 @@ export default function DirectorDeskCaptureBridge({
                 type="primary"
                 onClick={() => void writeCaptureToFrame()}
               >
-                写入分镜帧
-              </Button>
+                {uiText("写入分镜帧")}</Button>
             ) : null}
           </div>
         </div>

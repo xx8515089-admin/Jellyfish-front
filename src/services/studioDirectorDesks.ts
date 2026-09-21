@@ -90,7 +90,7 @@ export interface DirectorOrigin {
   deleted: boolean
 }
 export interface DirectorAssetFile {
-  id: number; relativePath: string; sha256: string; byteSize: number; contentType: string; dependencies: string[]
+  id: number; packageId?: string | null; dependenciesVerified?: boolean; dependencyParserVersion?: number; relativePath: string; sha256: string; byteSize: number; contentType: string; dependencies: string[]
 }
 
 export interface DirectorCharacterReferenceOption {
@@ -129,10 +129,46 @@ export function buildDirectorImageReferences(reference: DirectorReference, bindi
   }]
 }
 
+export interface DirectorFailure { errorCode?: string; fieldPath?: string | null; currentRevisionNo?: number | null }
+export class DirectorApiError extends Error {
+  readonly errorCode?: string
+  readonly fieldPath?: string | null
+  readonly currentRevisionNo?: number | null
+  constructor(message: string, public status?: number, public data?: DirectorFailure, public code?: number) {
+    super(message); this.name = 'DirectorApiError'
+    this.errorCode = data?.errorCode; this.fieldPath = data?.fieldPath; this.currentRevisionNo = data?.currentRevisionNo
+  }
+}
+export function directorErrorMessage(error: unknown) {
+  const value = error as DirectorApiError
+  const hints: Record<string, string> = {
+    DIRECTOR_DRAFT_REVISION_CONFLICT: '本地内容已保留，请核对云草稿版本',
+    DIRECTOR_BASE_REVISION_CONFLICT: '本地内容已保留，请核对最新正式版本或另存副本',
+    DIRECTOR_REVISION_CONFLICT: '请核对最新正式工程版本',
+    DIRECTOR_APPLICATION_REVISION_CONFLICT: '请刷新片段应用版本后重新确认',
+    DIRECTOR_REFERENCE_REVISION_CONFLICT: '请刷新视频参考列表后重新确认',
+    DIRECTOR_FBX_INVALID: '请修复模型媒体路径或重新导出 FBX',
+    DIRECTOR_UPLOAD_TOO_LARGE: '单个素材文件不能超过 100 MiB',
+    DIRECTOR_PACKAGE_PATH_CONFLICT: '素材内容已变化，请作为新素材包上传',
+    DIRECTOR_FORBIDDEN: '当前账户无权操作此工程',
+    DIRECTOR_STORAGE_NOT_READY: '存储尚未就绪，原请求已保留',
+    DIRECTOR_STORAGE_UNAVAILABLE: '存储暂不可用，原请求已保留',
+    DIRECTOR_PUBLICATION_NOT_FOUND: '尚未查到发布凭据，请保留原请求继续查询或原样重试',
+    DIRECTOR_IDEMPOTENCY_CONFLICT: '发布标识与原版本不一致，请核对原发布记录',
+  }
+  return [value?.message || '导演台请求失败', hints[value?.errorCode || ''], value?.fieldPath && ('字段：' + value.fieldPath), value?.currentRevisionNo != null && ('当前版本：' + value.currentRevisionNo)].filter(Boolean).join('；')
+}
 async function call<T>(options: ApiRequestOptions): Promise<T> {
-  const response = await request<{ code: number; message?: string; data: T }>(OpenAPI, options)
-  if (response.code !== 200) throw new Error(response.message || '导演台请求失败')
-  return response.data
+  try {
+    const response = await request<{ code: number; message?: string; data: T & DirectorFailure }>(OpenAPI, options)
+    if (response.code !== 200) throw new DirectorApiError(response.message || '导演台请求失败', 200, response.data, response.code)
+    return response.data
+  } catch (error) {
+    if (error instanceof DirectorApiError) throw error
+    const value = error as { status?: number; body?: { code?: number; message?: string; data?: DirectorFailure } }
+    if (value.body) throw new DirectorApiError(value.body.message || '导演台请求失败', value.status, value.body.data, value.body.code)
+    throw error
+  }
 }
 const get = <T>(path: string, query: Record<string, unknown>) => call<T>({ method: 'GET', url: `/api/v1/studio/${path}`, query })
 const post = <T>(path: string, body: unknown) => call<T>({ method: 'POST', url: `/api/v1/studio/${path}`, body, mediaType: 'application/json' })
@@ -144,7 +180,7 @@ export const StudioDirectorDesks = {
     const response = await fetch(`${OpenAPI.BASE}${url}`, { headers, credentials: OpenAPI.WITH_CREDENTIALS ? OpenAPI.CREDENTIALS : 'same-origin' })
     if (!response.ok) {
       const result = await response.json().catch(() => null)
-      throw new Error(result?.message || `素材下载失败（${response.status}）`)
+      throw new DirectorApiError(result?.message || `素材下载失败（${response.status}）`, response.status, result?.data, result?.code)
     }
     return response.blob()
   },
@@ -152,14 +188,15 @@ export const StudioDirectorDesks = {
   draft: (id: DirectorId) => get<DirectorDraft>('directorDesks/draft', { id }),
   saveDraft: (body: DirectorSnapshot & { id: DirectorId; baseRevisionNo: number; expectedDraftRevisionNo: number; characterBindings: DirectorBinding[] }) => post<DirectorDraft>('directorDesks/saveDraft', body),
   discardDraft: (id: DirectorId, expectedDraftRevisionNo: number) => post<DirectorDraft>('directorDesks/discardDraft', { id, expectedDraftRevisionNo }),
-  publishDraft: (id: DirectorId, expectedDraftRevisionNo: number, expectedRevisionNo: number) => post<{ desk: DirectorDesk; draft: DirectorDraft }>('directorDesks/publishDraft', { id, expectedDraftRevisionNo, expectedRevisionNo }),
+  publication: (id: DirectorId, clientRequestId: string) => get<{ desk: DirectorDesk; draft: DirectorDraft }>('directorDesks/publication', { id, clientRequestId }),
+  publishDraft: (id: DirectorId, expectedDraftRevisionNo: number, expectedRevisionNo: number, clientRequestId?: string) => post<{ desk: DirectorDesk; draft: DirectorDraft }>('directorDesks/publishDraft', { id, expectedDraftRevisionNo, expectedRevisionNo, clientRequestId }),
   revisions: (id: DirectorId, page = 1) => get<{ items: { revisionNo: number; createdAt: string }[]; total: number }>('directorDesks/revisions', { id, page, pageSize: 20 }),
   bindingStatus: (id: DirectorId, revisionNo?: number) => get<{ items: { objectId: string; status: string; message: string }[] }>('directorDesks/bindingStatus', { id, revisionNo }),
   segmentApplications: (segmentId: DirectorId) => get<{ image: DirectorApplication; video: DirectorApplication }>('directorDesks/segmentApplications', { segmentId }),
   applyCapture: (body: { fileId: DirectorId; segmentId: DirectorId; target: 'image' | 'video'; expectedApplicationRevisionNo: number; expectedReferenceRevisionNo?: number; modelId?: DirectorId; includeCharacters: boolean }) => post<DirectorApplication>('directorDesks/applyCapture', body),
   generationOrigins: (generationType: 'image' | 'video', generationId: DirectorId) => get<{ origins: DirectorOrigin[] }>('directorDesks/generationOrigins', { generationType, generationId }),
   forkRevision: (directorDeskId: DirectorId, revisionNo: number, segmentId?: DirectorId) => post<DirectorDesk>('directorDesks/forkRevision', { directorDeskId, revisionNo, segmentId }),
-  uploadAsset: (directorDeskId: DirectorId, file: File, relativePath: string) => call<DirectorAssetFile>({ method: 'POST', url: '/api/v1/studio/directorDesks/assets/upload', formData: { directorDeskId, file, relativePath } }),
+  uploadAsset: (directorDeskId: DirectorId, file: File, relativePath: string, packageId?: string) => call<DirectorAssetFile>({ method: 'POST', url: '/api/v1/studio/directorDesks/assets/upload', formData: { directorDeskId, file, relativePath, packageId } }),
   assets: (directorDeskId: DirectorId) => get<DirectorAssetFile[]>('directorDesks/assets/list', { directorDeskId }),
   validateAssets: (directorDeskId: DirectorId, files: { assetFileId: number; sha256: string }[]) => post<{ valid: boolean; files: { assetFileId: number; status: string; message: string }[] }>('directorDesks/assets/validate', { directorDeskId, files }),
   list: (query: { page: number; pageSize: number; keyword?: string; segmentId?: DirectorId }) =>

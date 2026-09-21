@@ -194,6 +194,7 @@ export default function DirectorDeskApp({ initialInstanceId, initialInstanceName
       ? { records: [{ id: cloudDesk.instanceId, name: cloudDesk.name, createdAt: cloudDesk.createdAt, updatedAt: cloudDesk.updatedAt }], activeDeskId: cloudDesk.instanceId, screen: 'editor' as AppScreen }
       : createInitialDirectorDeskViewState(initialInstanceId, initialInstanceName, language)
   ));
+  const [sceneReady, setSceneReady] = useState(false);
   const [deleteDeskCandidate, setDeleteDeskCandidate] = useState<DirectorDeskRecord | null>(null);
   const [homePage, setHomePage] = useState(1);
   const [deskSwitcherOpen, setDeskSwitcherOpen] = useState(false);
@@ -272,6 +273,7 @@ export default function DirectorDeskApp({ initialInstanceId, initialInstanceName
       });
     }
 
+    setSceneReady(true);
     postDirectorDeskMessageToHost({ type: "storyai:director-desk-ready" });
 
     return clearDirectorDeskHostBridge;
@@ -653,6 +655,8 @@ export default function DirectorDeskApp({ initialInstanceId, initialInstanceName
       </>
     );
   }
+
+  if (!sceneReady) return <div role="status">{text("正在准备场景…", "Preparing scene…")}</div>;
 
   return (
     <div className="app-shell">

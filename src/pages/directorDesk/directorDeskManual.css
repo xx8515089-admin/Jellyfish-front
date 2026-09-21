@@ -5,7 +5,7 @@
 .director-manual nav { position: sticky; top: 24px; align-self: start; max-height: calc(100dvh - 48px); overflow: auto; font-size: 13px; }
 .director-manual nav a { display: block; padding: 7px 0; color: #aaa; }
 .director-manual nav a:hover { color: #8fc9e8; }
-.director-manual article { min-width: 0; line-height: 1.85; overflow-wrap: anywhere; }
+.director-manual article { min-width: 0; line-height: 1.85; overflow-wrap: anywhere; user-select: text; }
 .director-manual article h1 { font-size: 28px; margin-top: 0; }
 .director-manual article h2 { font-size: 22px; margin-top: 36px; scroll-margin-top: 24px; }
 .director-manual article h3 { font-size: 17px; margin-top: 24px; }
@@ -20,3 +20,9 @@
 .director-manual article hr { border: 0; border-top: 1px solid #333; margin: 32px 0; }
 .director-manual article code { background: #292929; padding: 2px 5px; border-radius: 4px; }
 @media (max-width: 760px) { .director-manual__layout { grid-template-columns: 1fr; padding: 20px; gap: 24px; } .director-manual nav { position: static; max-height: 240px; } }
+.director-manual__header a { color: #8fc9e8; font-size: 13px; }
+.director-manual :focus-visible { outline: 2px solid #8fc9e8; outline-offset: 3px; }
+.director-manual article h1, .director-manual article h2, .director-manual article h3 { font-weight: 600; line-height: 1.5; }
+.director-manual article pre { margin: 16px 0; padding: 14px 16px; border: 1px solid #3b3b3b; border-radius: 8px; background: #202124; white-space: pre-wrap; }
+.director-manual article pre code { padding: 0; background: transparent; }
+.director-manual__header select { margin-left: auto; padding: 4px 8px; color: #dedede; background: #242424; border: 1px solid #444; border-radius: 6px; }

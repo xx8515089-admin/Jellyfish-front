@@ -103,7 +103,7 @@ export function DirectorKeyboardController({
   controlsRef,
   moveSpeed = DEFAULT_MOVE_SPEED,
 }: DirectorKeyboardControllerProps) {
-  const { camera } = useThree();
+  const { camera, invalidate } = useThree();
   const pressedCodesRef = useRef(new Set<string>());
   const cameraForwardRef = useRef(new Vector3());
   const lastHorizontalForwardRef = useRef(new Vector3(0, 0, -1));
@@ -130,6 +130,7 @@ export function DirectorKeyboardController({
 
       event.preventDefault();
       pressedCodes.add(event.code);
+      invalidate();
     }
 
     function handleKeyUp(event: KeyboardEvent) {
@@ -150,7 +151,7 @@ export function DirectorKeyboardController({
       window.removeEventListener("keyup", handleKeyUp, true);
       window.removeEventListener("blur", clearPressedCodes);
     };
-  }, [active]);
+  }, [active, invalidate]);
 
   useFrame((_state, delta) => {
     if (!active) return;
@@ -187,6 +188,7 @@ export function DirectorKeyboardController({
     controls.target.add(movement);
     camera.updateMatrixWorld();
     controls.update();
+    invalidate();
   });
 
   return null;

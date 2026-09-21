@@ -129,6 +129,7 @@ test('cloud restoration rejects invalid manifests and corrupted downloads before
     '../../services/studioDirectorDesks': { StudioDirectorDesks: {
       validateAssets: async () => ({ valid, files: [{ assetFileId: 3, status: valid ? 'available' : 'missingDependency', message: 'missing dependency' }] }),
       downloadAsset: async () => { downloads++; return blob },
+      assets: async () => [{ id: 3, relativePath: 'test.bin', byteSize: 5, sha256: hash }],
     } },
     './runtime/editor/loaders/cloudAssetRuntime': { registerCloudPackage: () => { registered++ } },
     './runtime/editor/loaders/localAssetBinaryStorage': {},

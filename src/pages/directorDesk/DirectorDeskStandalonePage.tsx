@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { uiText, useUiLanguage } from '../../i18n/uiText'
+import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import DirectorDeskCaptureBridge from './DirectorDeskCaptureBridge'
@@ -18,6 +19,8 @@ interface DirectorDeskStandalonePageProps {
 }
 
 export default function DirectorDeskStandalonePage({ embeddedHome = false }: DirectorDeskStandalonePageProps) {
+  useUiLanguage()
+
   const navigate = useNavigate()
   const { projectId, chapterId, deskId } = useParams()
   const [searchParams] = useSearchParams()
@@ -25,11 +28,13 @@ export default function DirectorDeskStandalonePage({ embeddedHome = false }: Dir
   const initialVisualStyleId = Number.isSafeInteger(styleParam) && styleParam > 0 ? styleParam : null
   const hostRef = useRef<HTMLDivElement>(null)
   const [mountNode, setMountNode] = useState<HTMLDivElement | null>(null)
+  const [initialCloudPending, setInitialCloudPending] = useState(() => Boolean(searchParams.get('cloudDeskId') || searchParams.get('segmentId')))
   const [cloudDesk, setCloudDesk] = useState<DirectorDesk>()
   const [cloudLoad, setCloudLoad] = useState(0)
   const [cloudReady, setCloudReady] = useState(0)
   const [panelKey, setPanelKey] = useState(0)
   const dirtyRef = useRef(false)
+  const handleDirtyChange = useCallback((value: boolean) => { dirtyRef.current = value }, [])
   const initialInstanceId = projectId && chapterId
     ? `project:${projectId}:chapter:${chapterId}`
     : deskId
@@ -63,7 +68,7 @@ export default function DirectorDeskStandalonePage({ embeddedHome = false }: Dir
 
   const handleClose = () => {
     if (dirtyRef.current) {
-      Modal.confirm({ title: '当前云工程有未保存修改', content: '离开前请确认已保存需要的修改。', okText: '离开', cancelText: '继续编辑', onOk: leave })
+      Modal.confirm({ title: uiText("当前云工程有未保存修改"), content: '离开前请确认已保存需要的修改。', okText: uiText("离开"), cancelText: uiText("继续编辑"), onOk: leave })
       return
     }
     leave()
@@ -92,13 +97,14 @@ export default function DirectorDeskStandalonePage({ embeddedHome = false }: Dir
         initialVisualStyleId={initialVisualStyleId}
         initialSegmentLabel={searchParams.get('segmentLabel') || undefined}
         cloudReady={cloudReady}
-        onDirtyChange={(value) => { dirtyRef.current = value }}
-        onOpen={(detail) => { setCloudDesk(detail); setCloudLoad((value) => value + 1) }}
+        onInitialLoadSettled={() => setInitialCloudPending(false)}
+        onDirtyChange={handleDirtyChange}
+        onOpen={(detail) => { setInitialCloudPending(false); setCloudDesk(detail); setCloudLoad((value) => value + 1) }}
       />
       <div
         ref={hostRef}
         className="director-desk-host"
-        aria-label="3D导演台"
+        aria-label={uiText("3D导演台")}
         style={{
           display: 'block',
           width: '100%',
@@ -109,7 +115,7 @@ export default function DirectorDeskStandalonePage({ embeddedHome = false }: Dir
         }}
       >
         {mountNode ? createPortal(
-          <DirectorDeskApp
+          initialCloudPending ? <div role="status" style={{ display: 'grid', placeItems: 'center', height: '100%', color: '#aaa' }}>{uiText("正在加载导演台工程…")}</div> : <DirectorDeskApp
             key={cloudDesk ? `cloud-${cloudLoad}` : initialInstanceId ?? 'standalone'}
             cloudDesk={cloudDesk}
             onCloudReady={() => setCloudReady((value) => value + 1)}
@@ -122,7 +128,7 @@ export default function DirectorDeskStandalonePage({ embeddedHome = false }: Dir
           mountNode,
         ) : null}
       </div>
-      {!cloudDesk && <DirectorDeskCaptureBridge
+      {!initialCloudPending && !cloudDesk && <DirectorDeskCaptureBridge
         chapterId={chapterId}
         initialShotId={searchParams.get('shotId') || undefined}
         projectId={projectId}

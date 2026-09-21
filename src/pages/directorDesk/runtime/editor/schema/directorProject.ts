@@ -210,7 +210,7 @@ export interface DirectorCameraShot {
 }
 
 export interface DirectorProject {
-  jellyfishCloudAssets?: { assetFileId: number; relativePath: string; sha256: string; byteSize: number }[];
+  jellyfishCloudAssets?: { assetFileId: number; packageId?: string | null; relativePath: string; sha256: string; byteSize: number }[];
   version: 1;
   scene: SceneSettings;
   assets: DirectorAssetRef[];
